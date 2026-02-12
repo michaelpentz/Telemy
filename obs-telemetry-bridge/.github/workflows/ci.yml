@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - "**/*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+        working-directory: telemy-v1.2/obs-telemetry-bridge
+      - name: Test
+        run: cargo test
+        working-directory: telemy-v1.2/obs-telemetry-bridge

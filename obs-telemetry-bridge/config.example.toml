@@ -1,0 +1,40 @@
+[obs]
+host = "127.0.0.1"
+port = 4455
+password_key = "obs_password"
+auto_detect_process = true
+process_name = "obs64.exe"
+
+[server]
+port = 7070
+# token = "optional_static_token"
+
+[vault]
+# path = "C:/Users/<you>/AppData/Roaming/Telemy/vault.json"
+
+[grafana]
+enabled = false
+endpoint = "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+auth_header = "Authorization"
+auth_value_key = "grafana_auth"
+push_interval_ms = 5000
+
+[network]
+latency_target = "1.1.1.1:443"
+
+[startup]
+enable_autostart = false
+app_name = "Telemy"
+
+[tray]
+enable = true
+
+[theme]
+font_family = "Arial, sans-serif"
+bg = "#0b0e12"
+panel = "#111723"
+muted = "#8da3c1"
+good = "#33d17a"
+warn = "#f6d32d"
+bad = "#e01b24"
+line = "#1f2a3a"

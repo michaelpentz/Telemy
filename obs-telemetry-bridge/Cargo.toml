@@ -1,0 +1,28 @@
+[package]
+name = "obs-telemetry-bridge"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "time", "signal"] }
+axum = { version = "0.7", features = ["ws"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.8"
+obws = "0.11"
+sysinfo = "0.30"
+nvml-wrapper = "0.9"
+toml = "0.8"
+base64 = "0.21"
+windows = { version = "0.52", features = ["Win32_Security_Cryptography", "Win32_Foundation", "Win32_System_Memory", "Win32_System_Registry"] }
+opentelemetry = "0.21"
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.14", features = ["http-proto", "reqwest-client"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tray-item = "0.9"
+tower = { version = "0.4", features = ["limit"] }
+
+[build-dependencies]
+winres = "0.1"

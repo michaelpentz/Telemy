@@ -1,0 +1,36 @@
+{
+  "title": "Telemy v1.2 - OBS Telemetry",
+  "description": "Starter Grafana dashboard template for Telemy OTLP metrics",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Overall Health",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "telemy_health"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU Usage (%)",
+      "targets": [
+        {
+          "refId": "B",
+          "expr": "telemy_system_cpu_percent"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Upload Mbps",
+      "targets": [
+        {
+          "refId": "C",
+          "expr": "telemy_network_upload_mbps"
+        }
+      ]
+    }
+  ]
+}

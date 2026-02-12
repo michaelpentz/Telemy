@@ -1,0 +1,55 @@
+# Rust build output
+target/
+
+# Build artifacts (Windows)
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.obj
+
+# Dependencies - don't ignore Cargo.lock in root
+# (it's needed for reproducible builds)
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# System files
+.DS_Store
+Thumbs.db
+*.lnk
+
+# Configuration files - DON'T commit these with secrets
+config.toml
+
+# Vault/encrypted data
+vault.bin
+vault.*
+
+# Logs
+*.log
+
+# Cache
+.cache/
+
+# OS
+*.tmp
+
+# Editor files
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+
+# Backup files
+*.orig
+*.backup
+*.old
+*.bak
+
+# Windows specific
+Desktop.ini
+desktop.ini
