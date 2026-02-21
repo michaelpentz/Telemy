@@ -1,7 +1,7 @@
-; Inno Setup script for Telemy v1.3
+; Inno Setup script for Telemy v0.0.2
 
 #define MyAppName "Telemy"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "0.0.2"
 #define MyAppPublisher "Telemy"
 #define MyAppExeName "obs-telemetry-bridge.exe"
 #define MyAppIconSource "..\assets\telemy.ico"
