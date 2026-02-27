@@ -8,6 +8,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$workspaceRoot = Split-Path $PSScriptRoot -Parent
+$bridgeRootAutoSelected = $false
 
 function Copy-IfExists {
     param(
@@ -53,6 +55,18 @@ if (-not (Test-Path -LiteralPath $assetSourceDir)) {
     throw "Built asset staging dir not found: $assetSourceDir"
 }
 
+if (-not $BridgeRoot) {
+    $autoBridgeCandidates = @(
+        (Join-Path $workspaceRoot "aegis-dock-bridge.js"),
+        (Join-Path $workspaceRoot "aegis-dock-bridge-host.js"),
+        (Join-Path $workspaceRoot "aegis-dock-browser-host-bootstrap.js")
+    )
+    if (($autoBridgeCandidates | Where-Object { Test-Path -LiteralPath $_ }).Count -eq 3) {
+        $BridgeRoot = $workspaceRoot
+        $bridgeRootAutoSelected = $true
+    }
+}
+
 if ($BridgeRoot) {
     if (-not (Test-Path -LiteralPath $BridgeRoot)) {
         throw "BridgeRoot path not found: $BridgeRoot"
@@ -85,7 +99,11 @@ Write-Host "Deployed Aegis OBS shim -> $ObsRoot"
 Write-Host "  DLL:   $dllDest"
 Write-Host "  Assets: $assetDestDir"
 if ($BridgeRoot) {
-    Write-Host "  Bridge source override: $BridgeRoot"
+    if ($bridgeRootAutoSelected) {
+        Write-Host "  Bridge source: auto-selected workspace root ($BridgeRoot)"
+    } else {
+        Write-Host "  Bridge source override: $BridgeRoot"
+    }
 } else {
     Write-Host "  Bridge source: $assetSourceDir"
 }

@@ -55,6 +55,7 @@ Deploy plugin + assets into local OBS install:
 Notes:
 - `-BridgeRoot` forces bridge JS files to come from repo root (recommended during active dock-bridge iteration).
 - Omit `-BridgeRoot` to use build-staged bridge assets from the CMake output directory.
+- If `-BridgeRoot` is omitted and workspace-root bridge files exist, deploy auto-selects workspace root bridge files before falling back to build-staged assets.
 
 Start a local OBS + core dev session (with correct OBS working directory and bridge root):
 
