@@ -49,6 +49,10 @@ if ($BuildDockApp) {
     if (-not (Test-Path -LiteralPath $DockPreviewRoot)) {
         throw "Dock preview root not found: $DockPreviewRoot"
     }
+    $dockSourceJsx = Join-Path $RepoRoot "aegis-dock.jsx"
+    if (-not (Test-Path -LiteralPath $dockSourceJsx)) {
+        throw "Dock source JSX not found (required by dock-preview alias): $dockSourceJsx"
+    }
     $dockPackageJson = Join-Path $DockPreviewRoot "package.json"
     if (-not (Test-Path -LiteralPath $dockPackageJson)) {
         throw "Dock preview package.json not found: $dockPackageJson"

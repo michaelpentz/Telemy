@@ -109,6 +109,7 @@ Useful variants:
 ```
 
 When `-BuildDockApp` is used, dev-cycle also syncs fresh `aegis-dock-app.js` (and `aegis-dock.html` when staged) into `RepoRoot` for `AEGIS_DOCK_BRIDGE_ROOT` runs.
+`-BuildDockApp` expects `RepoRoot\aegis-dock.jsx` to exist (the `dock-preview` Vite alias resolves `@dock/aegis-dock.jsx` from repo root).
 
 ## Harness Commands (Windows)
 
