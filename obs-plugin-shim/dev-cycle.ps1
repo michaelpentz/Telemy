@@ -37,6 +37,11 @@ if (-not (Test-Path -LiteralPath $shimRoot)) {
 
 $validateAfterTimestamp = [datetime]::MinValue
 
+if ($AllowNoUsableLog -and (-not $PSBoundParameters.ContainsKey("ValidationProfile"))) {
+    $ValidationProfile = "smoke"
+    Write-Warning "Validation profile auto-set to 'smoke' because -AllowNoUsableLog was provided."
+}
+
 Write-Host "Aegis OBS dev cycle"
 Write-Host "  Workspace: $WorkspaceRoot"
 Write-Host "  BuildDir:  $BuildDir"

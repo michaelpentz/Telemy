@@ -115,6 +115,7 @@ Validation retries now cover both crash-stub/no-usable-log cases and transient s
 Validation profiles:
 - `strict` (default): requires bridge asset load + CEF page-ready evidence.
 - `smoke`: validates core plugin startup/IPC without requiring bridge/page-ready lines.
+If `-AllowNoUsableLog` is set and `-ValidationProfile` is not explicitly provided, dev-cycle auto-selects `smoke`.
 
 ## Harness Commands (Windows)
 
