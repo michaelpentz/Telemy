@@ -14,6 +14,8 @@ param(
     [string]$ValidateRequestId = "",
     [string]$ValidateActionType = "",
     [string]$ValidateTerminalStatus = "",
+    [ValidateSet("strict", "smoke")]
+    [string]$ValidationProfile = "strict",
     [int]$ValidateRetrySeconds = 30,
     [switch]$AllowNoUsableLog,
     [switch]$BuildDockApp,
@@ -40,6 +42,7 @@ Write-Host "  Workspace: $WorkspaceRoot"
 Write-Host "  BuildDir:  $BuildDir"
 Write-Host "  Config:    $Config"
 Write-Host "  ObsRoot:   $ObsRoot"
+Write-Host "  Validate:  $ValidationProfile"
 if ($BuildDockApp) {
     Write-Host "  DockBuild: $DockPreviewRoot"
 }
@@ -132,9 +135,10 @@ if (-not $SkipValidate) {
 
     Write-Host "[4/4] Validating latest OBS log..."
     Start-Sleep -Seconds 8
-    $validateArgs = @{
-        RequireBridgeAssets = $true
-        RequirePageReady = $true
+    $validateArgs = @{}
+    if ($ValidationProfile -eq "strict") {
+        $validateArgs.RequireBridgeAssets = $true
+        $validateArgs.RequirePageReady = $true
     }
     if ($validateAfterTimestamp -gt [datetime]::MinValue) {
         $validateArgs.AfterTimestamp = $validateAfterTimestamp
