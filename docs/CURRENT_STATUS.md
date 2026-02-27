@@ -206,6 +206,7 @@ Last updated: 2026-02-24 (US/Pacific, late, follow-up)
   - local operator scripts now present for repeatable workflow:
     - `obs-plugin-shim/deploy-to-obs.ps1` (deploy plugin + assets, optional `-BridgeRoot`, optional `-StopObs`)
     - `obs-plugin-shim/run-dev-session.ps1` (start core + OBS with correct working directory + `AEGIS_DOCK_BRIDGE_ROOT`)
+    - `obs-plugin-shim/dev-cycle.ps1` (one-command local build + deploy + optional run + optional log validation)
 
 ## Known Small Follow-Up (Not Blocking Current Client/Plugin Work)
 
