@@ -114,6 +114,7 @@ Use this file for a quick orientation only.
   - Tools fallback menu registration remains explicit opt-in only via `AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK=1` (single gate path)
 - Dock asset packaging flow follow-up (2026-02-27):
   - `obs-plugin-shim/dev-cycle.ps1` now supports `-BuildDockApp` (runs `dock-preview` production build before plugin/deploy steps)
+  - when `-BuildDockApp` is used, dev-cycle now also syncs fresh staged `aegis-dock-app.js` / `aegis-dock.html` into `RepoRoot` for `AEGIS_DOCK_BRIDGE_ROOT` runs
   - `obs-plugin-shim/deploy-to-obs.ps1` now keeps runtime asset selection consistent with `-BridgeRoot`: it prefers root `aegis-dock-app.js` / `aegis-dock.html` when present, then falls back to staged build assets
 - Rust `/obs` debug dashboard now supports an explicit empty-scene debug switch trigger (`allow_empty=true`) to validate `missing_scene_name` without changing production IPC semantics.
 - OBS plugin build path is now locally reproducible without a full OBS source build:

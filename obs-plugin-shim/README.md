@@ -104,6 +104,8 @@ Useful variants:
 .\dev-cycle.ps1 -BuildDockApp
 ```
 
+When `-BuildDockApp` is used, dev-cycle also syncs fresh `aegis-dock-app.js` (and `aegis-dock.html` when staged) into `RepoRoot` for `AEGIS_DOCK_BRIDGE_ROOT` runs.
+
 ## Harness Commands (Windows)
 
 - `start` / `stop`

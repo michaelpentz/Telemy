@@ -53,6 +53,19 @@ if ($BuildDockApp) {
     }
     Write-Host "[0/4] Building dock app bundle..."
     npm run build --prefix $DockPreviewRoot
+
+    $stageDockDir = Join-Path $BuildDir "$Config\data\obs-plugins\aegis-obs-shim"
+    $stageApp = Join-Path $stageDockDir "aegis-dock-app.js"
+    $stageHtml = Join-Path $stageDockDir "aegis-dock.html"
+    $repoApp = Join-Path $RepoRoot "aegis-dock-app.js"
+    $repoHtml = Join-Path $RepoRoot "aegis-dock.html"
+    if ((Test-Path -LiteralPath $RepoRoot) -and (Test-Path -LiteralPath $stageApp)) {
+        Copy-Item -LiteralPath $stageApp -Destination $repoApp -Force
+        if (Test-Path -LiteralPath $stageHtml) {
+            Copy-Item -LiteralPath $stageHtml -Destination $repoHtml -Force
+        }
+        Write-Host "      Synced dock runtime assets to repo root for AEGIS_DOCK_BRIDGE_ROOT."
+    }
 }
 
 if (-not $SkipBuild) {
