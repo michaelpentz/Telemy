@@ -3,12 +3,42 @@ param(
     [string]$WorkspaceRoot = "E:\Code\telemyapp\telemy-v0.0.3",
     [string]$ObsRoot = "C:\Program Files (x86)\obs-studio",
     [switch]$StopExisting,
+    [switch]$ForceStopExisting,
     [switch]$DisableShutdownCheck,
     [string]$SelfTestActionJson = "",
     [switch]$SelfTestDirectPluginIntake
 )
 
 $ErrorActionPreference = "Stop"
+
+function Stop-ObsProcess {
+    param(
+        [switch]$Force,
+        [int]$TimeoutSeconds = 8
+    )
+    $obs = Get-Process obs64 -ErrorAction SilentlyContinue
+    if (-not $obs) {
+        return
+    }
+
+    if ($Force) {
+        $obs | Stop-Process -Force -ErrorAction SilentlyContinue
+        return
+    }
+
+    foreach ($p in $obs) {
+        try {
+            [void]$p.CloseMainWindow()
+        } catch {
+            # ignore and evaluate below
+        }
+    }
+    Start-Sleep -Milliseconds 300
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Process obs64 -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) {
+        Start-Sleep -Milliseconds 300
+    }
+}
 
 $coreExe = Join-Path $WorkspaceRoot "obs-telemetry-bridge\target\debug\obs-telemetry-bridge.exe"
 $coreWd = Join-Path $WorkspaceRoot "obs-telemetry-bridge"
@@ -27,7 +57,10 @@ if (-not (Test-Path -LiteralPath $RepoRoot)) {
 
 if ($StopExisting) {
     Write-Host "Stopping existing obs64 / obs-telemetry-bridge..."
-    Get-Process obs64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Stop-ObsProcess -Force:$ForceStopExisting
+    if (Get-Process obs64 -ErrorAction SilentlyContinue) {
+        throw "OBS is still running after graceful stop. Re-run with -ForceStopExisting if needed."
+    }
     Get-Process obs-telemetry-bridge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 }

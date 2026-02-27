@@ -60,6 +60,7 @@ Notes:
 - When `-BridgeRoot` is set, deploy now also prefers `aegis-dock-app.js` and `aegis-dock.html` from that root when present, then falls back to build-staged files.
 - Omit `-BridgeRoot` to use build-staged bridge assets from the CMake output directory.
 - If `-BridgeRoot` is omitted and workspace-root bridge files exist, deploy auto-selects workspace root bridge files before falling back to build-staged assets.
+- `-StopObs` now attempts graceful OBS shutdown first; use `-ForceStopObs` only if OBS does not exit.
 
 Start a local OBS + core dev session (with correct OBS working directory and bridge root):
 
@@ -68,6 +69,7 @@ Start a local OBS + core dev session (with correct OBS working directory and bri
 ```
 
 If OBS still opens the crash-recovery prompt after a forced kill, dismiss it once and rerun the command.
+`-StopExisting` now attempts graceful OBS shutdown first; use `-ForceStopExisting` only when needed.
 
 Optional selftest action injection on page-ready:
 

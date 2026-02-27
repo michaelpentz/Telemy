@@ -4,12 +4,42 @@ param(
     [string]$Config = "Release",
     [string]$ObsRoot = "C:\Program Files (x86)\obs-studio",
     [string]$BridgeRoot = "",
-    [switch]$StopObs
+    [switch]$StopObs,
+    [switch]$ForceStopObs
 )
 
 $ErrorActionPreference = "Stop"
 $workspaceRoot = Split-Path $PSScriptRoot -Parent
 $bridgeRootAutoSelected = $false
+
+function Stop-ObsProcess {
+    param(
+        [switch]$Force,
+        [int]$TimeoutSeconds = 8
+    )
+    $obs = Get-Process obs64 -ErrorAction SilentlyContinue
+    if (-not $obs) {
+        return
+    }
+
+    if ($Force) {
+        $obs | Stop-Process -Force -ErrorAction SilentlyContinue
+        return
+    }
+
+    foreach ($p in $obs) {
+        try {
+            [void]$p.CloseMainWindow()
+        } catch {
+            # ignore and evaluate below
+        }
+    }
+    Start-Sleep -Milliseconds 300
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Process obs64 -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) {
+        Start-Sleep -Milliseconds 300
+    }
+}
 
 function Copy-IfExists {
     param(
@@ -90,7 +120,10 @@ if ($BridgeRoot) {
 
 if ($StopObs) {
     Write-Host "Stopping OBS processes before deploy..."
-    Get-Process obs64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Stop-ObsProcess -Force:$ForceStopObs
+    if (Get-Process obs64 -ErrorAction SilentlyContinue) {
+        throw "OBS is still running after graceful stop. Re-run with -ForceStopObs if needed."
+    }
     Start-Sleep -Milliseconds 300
 }
 
