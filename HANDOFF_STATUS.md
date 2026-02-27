@@ -6,7 +6,7 @@ Use this file for a quick orientation only.
 - Handoff index / latest addenda pointers: `docs/archive/HANDOFF_STATUS.md`
 - Full historical handoff log: `docs/archive/HANDOFF_HISTORY.md`
 
-## Current Project State (as of 2026-02-25, US/Pacific)
+## Current Project State (as of 2026-02-27, US/Pacific)
 
 - Backend/cloud side is materially ahead and live-validated in AWS mode.
 - Rust app (`obs-telemetry-bridge`) has live-validated Aegis control-plane client plumbing:
@@ -104,6 +104,10 @@ Use this file for a quick orientation only.
     - dock action forwarding still uses temporary `document.title` signaling for native intake
     - bootstrap now restores the previous title immediately after signaling so encoded action payload text does not persist in the dock title bar
   - temporary action-forwarded bootstrap diagnostics were removed after transport revalidation
+- OBS validation automation follow-up (2026-02-27):
+  - `obs-plugin-shim/validate-obs-log.ps1` now supports targeted dock-action checks by `-ActionType` and optional `-TerminalStatus` (`completed|failed|rejected`), in addition to `-RequestId`
+  - `obs-plugin-shim/dev-cycle.ps1` now passes optional self-test action payloads through to `run-dev-session.ps1` and can auto-derive validate filters from the self-test JSON
+  - fixed dev-cycle argument binding bug by switching run/validate script invocation to hashtable splatting (prevents accidental positional binding of switch args)
 - Rust `/obs` debug dashboard now supports an explicit empty-scene debug switch trigger (`allow_empty=true`) to validate `missing_scene_name` without changing production IPC semantics.
 - OBS plugin build path is now locally reproducible without a full OBS source build:
   - headers from vendored `third_party/obs-studio` (matched to OBS `32.0.4`)

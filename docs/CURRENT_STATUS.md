@@ -1,6 +1,6 @@
 # Current Status (v0.0.3)
 
-Last updated: 2026-02-24 (US/Pacific, late, follow-up)
+Last updated: 2026-02-27 (US/Pacific, late, follow-up)
 
 ## Project State
 
@@ -207,6 +207,10 @@ Last updated: 2026-02-24 (US/Pacific, late, follow-up)
     - `obs-plugin-shim/deploy-to-obs.ps1` (deploy plugin + assets, optional `-BridgeRoot`, optional `-StopObs`)
     - `obs-plugin-shim/run-dev-session.ps1` (start core + OBS with correct working directory + `AEGIS_DOCK_BRIDGE_ROOT`)
     - `obs-plugin-shim/dev-cycle.ps1` (one-command local build + deploy + optional run + optional log validation)
+- Validation automation follow-up (2026-02-27):
+  - `obs-plugin-shim/validate-obs-log.ps1` now supports filtered dock-action lifecycle checks by `-ActionType` and optional `-TerminalStatus` (`completed|failed|rejected`), in addition to `-RequestId`
+  - `obs-plugin-shim/dev-cycle.ps1` now forwards optional self-test action payloads to `run-dev-session.ps1` and can auto-derive validate filters from the self-test JSON
+  - fixed dev-cycle script arg binding for run/validate calls using hashtable splatting (eliminates prior switch/positional binding bug)
 
 ## Known Small Follow-Up (Not Blocking Current Client/Plugin Work)
 
