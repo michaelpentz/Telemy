@@ -68,6 +68,9 @@ if ($BuildDockApp) {
     Write-Host "  DockBuild: $DockPreviewRoot"
 }
 Write-Host ""
+if ($stepTotal -eq 0) {
+    Write-Warning "No stages selected (all steps were skipped)."
+}
 
 if ($BuildDockApp) {
     if (-not (Test-Path -LiteralPath $DockPreviewRoot)) {
