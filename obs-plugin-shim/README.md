@@ -95,6 +95,12 @@ Run an end-to-end local dev cycle (build + deploy + run + validate):
 .\dev-cycle.ps1
 ```
 
+Run the recommended fast UI smoke cycle (configure + dock bundle + run + smoke validation):
+
+```powershell
+.\run-ui-smoke.ps1
+```
+
 Useful variants:
 
 ```powershell

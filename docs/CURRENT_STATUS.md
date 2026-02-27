@@ -224,6 +224,7 @@ Last updated: 2026-02-27 (US/Pacific, late, follow-up)
   - `obs-plugin-shim/dev-cycle.ps1` now supports `-ConfigureObsCef` to run the same configure path inline before build/deploy/run steps
   - dev-cycle validation retries now also cover transient startup evidence misses (`Missing log evidence: ...`) until timeout, reducing startup-race false negatives in local OBS runs
   - `obs-plugin-shim/dev-cycle.ps1` now supports `-ValidationProfile strict|smoke` (default strict) to allow lighter plugin/IPC startup checks in smoke runs
+  - added `obs-plugin-shim/run-ui-smoke.ps1` for the common fast local UI smoke path with configure + dock bundle build + smoke validation defaults
 
 ## Known Small Follow-Up (Not Blocking Current Client/Plugin Work)
 
