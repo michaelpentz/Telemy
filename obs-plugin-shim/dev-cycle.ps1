@@ -13,7 +13,8 @@ param(
     [switch]$SelfTestDirectPluginIntake,
     [string]$ValidateRequestId = "",
     [string]$ValidateActionType = "",
-    [string]$ValidateTerminalStatus = ""
+    [string]$ValidateTerminalStatus = "",
+    [int]$ValidateRetrySeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
@@ -102,7 +103,24 @@ if (-not $SkipValidate) {
     if ($ValidateTerminalStatus) {
         $validateArgs.TerminalStatus = $ValidateTerminalStatus
     }
-    & $validateScript @validateArgs
+
+    $retryUntil = (Get-Date).AddSeconds([Math]::Max(0, $ValidateRetrySeconds))
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        try {
+            & $validateScript @validateArgs
+            break
+        } catch {
+            $msg = $_.Exception.Message
+            $retryable = $msg -like "*No usable OBS log found at/after*"
+            if (-not $retryable -or (Get-Date) -ge $retryUntil) {
+                throw
+            }
+            Write-Warning "Validation attempt $attempt had no usable current-session log yet; retrying..."
+            Start-Sleep -Seconds 4
+        }
+    }
 }
 
 Write-Host ""

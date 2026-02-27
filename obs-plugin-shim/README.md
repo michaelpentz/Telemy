@@ -94,6 +94,7 @@ Useful variants:
 .\dev-cycle.ps1 -SkipBuild
 .\dev-cycle.ps1 -SelfTestActionJson '{"type":"request_status","requestId":"selftest_req_status"}' -SelfTestDirectPluginIntake -ValidateTerminalStatus completed
 .\dev-cycle.ps1 -SelfTestActionJson '{"type":"set_mode","mode":"studio","requestId":"selftest_set_mode_studio"}' -SelfTestDirectPluginIntake -ValidateTerminalStatus completed
+.\dev-cycle.ps1 -ValidateRetrySeconds 45
 ```
 
 ## Harness Commands (Windows)
