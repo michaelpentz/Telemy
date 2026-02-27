@@ -17,7 +17,8 @@ param(
     [int]$ValidateRetrySeconds = 30,
     [switch]$AllowNoUsableLog,
     [switch]$BuildDockApp,
-    [string]$DockPreviewRoot = "E:\Code\telemyapp\dock-preview"
+    [string]$DockPreviewRoot = "E:\Code\telemyapp\dock-preview",
+    [switch]$ConfigureObsCef
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,7 @@ $shimRoot = Join-Path $WorkspaceRoot "obs-plugin-shim"
 $deployScript = Join-Path $shimRoot "deploy-to-obs.ps1"
 $runScript = Join-Path $shimRoot "run-dev-session.ps1"
 $validateScript = Join-Path $shimRoot "validate-obs-log.ps1"
+$configureScript = Join-Path $shimRoot "configure-obs-cef.ps1"
 
 if (-not (Test-Path -LiteralPath $shimRoot)) {
     throw "Shim root not found: $shimRoot"
@@ -66,6 +68,14 @@ if ($BuildDockApp) {
         }
         Write-Host "      Synced dock runtime assets to repo root for AEGIS_DOCK_BRIDGE_ROOT."
     }
+}
+
+if ($ConfigureObsCef) {
+    if (-not (Test-Path -LiteralPath $configureScript)) {
+        throw "Configure helper not found: $configureScript"
+    }
+    Write-Host "[0/4] Configuring OBS CEF plugin build..."
+    & $configureScript -WorkspaceRoot $WorkspaceRoot -BuildDir $BuildDir
 }
 
 if (-not $SkipBuild) {

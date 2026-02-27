@@ -105,6 +105,7 @@ Useful variants:
 .\dev-cycle.ps1 -ValidateRetrySeconds 45
 .\dev-cycle.ps1 -SkipBuild -SkipDeploy -AllowNoUsableLog
 .\dev-cycle.ps1 -BuildDockApp
+.\dev-cycle.ps1 -ConfigureObsCef -SkipBuild -SkipDeploy -SkipRun -SkipValidate
 ```
 
 When `-BuildDockApp` is used, dev-cycle also syncs fresh `aegis-dock-app.js` (and `aegis-dock.html` when staged) into `RepoRoot` for `AEGIS_DOCK_BRIDGE_ROOT` runs.
