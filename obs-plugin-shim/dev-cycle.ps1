@@ -14,7 +14,8 @@ param(
     [string]$ValidateRequestId = "",
     [string]$ValidateActionType = "",
     [string]$ValidateTerminalStatus = "",
-    [int]$ValidateRetrySeconds = 30
+    [int]$ValidateRetrySeconds = 30,
+    [switch]$AllowNoUsableLog
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,6 +115,10 @@ if (-not $SkipValidate) {
         } catch {
             $msg = $_.Exception.Message
             $retryable = $msg -like "*No usable OBS log found at/after*"
+            if ($retryable -and (Get-Date) -ge $retryUntil -and $AllowNoUsableLog) {
+                Write-Warning "Validation skipped after retry timeout: no usable OBS log for current session."
+                break
+            }
             if (-not $retryable -or (Get-Date) -ge $retryUntil) {
                 throw
             }
