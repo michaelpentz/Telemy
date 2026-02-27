@@ -1208,8 +1208,15 @@ void MaybeRunDockActionSelfTestAfterPageReady() {
     }
     g_dock_action_selftest_attempted = true;
 
+    if (!IsEnvEnabled("AEGIS_DOCK_ENABLE_SELFTEST")) {
+        return;
+    }
+
     const char* raw_action_json = std::getenv("AEGIS_DOCK_SELFTEST_ACTION_JSON");
     if (!raw_action_json || !*raw_action_json) {
+        blog(
+            LOG_INFO,
+            "[aegis-obs-shim] dock selftest enabled but no action json provided (AEGIS_DOCK_SELFTEST_ACTION_JSON)");
         return;
     }
 
@@ -1978,12 +1985,7 @@ bool obs_module_load(void) {
     }
     if (!g_tools_menu_show_dock_registered) {
         const bool enable_show_menu_fallback = IsEnvEnabled("AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK");
-        const bool disable_show_menu_fallback = IsEnvEnabled("AEGIS_DOCK_DISABLE_SHOW_MENU_FALLBACK");
-        if (disable_show_menu_fallback) {
-            blog(
-                LOG_INFO,
-                "[aegis-obs-shim] skipped Tools menu fallback registration (AEGIS_DOCK_DISABLE_SHOW_MENU_FALLBACK)");
-        } else if (!enable_show_menu_fallback) {
+        if (!enable_show_menu_fallback) {
             blog(
                 LOG_INFO,
                 "[aegis-obs-shim] skipped Tools menu fallback registration (default disabled; set AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK=1 to enable)");

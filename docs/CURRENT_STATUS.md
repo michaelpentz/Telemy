@@ -212,6 +212,9 @@ Last updated: 2026-02-27 (US/Pacific, late, follow-up)
   - validator also supports `-AfterTimestamp` so dev-cycle checks can be scoped to current-session logs only
   - `obs-plugin-shim/dev-cycle.ps1` now forwards optional self-test action payloads to `run-dev-session.ps1` and can auto-derive validate filters from the self-test JSON
   - fixed dev-cycle script arg binding for run/validate calls using hashtable splatting and now passes session start time into validation to avoid stale-log matches
+- Temporary validation aids are now explicitly gated (2026-02-27):
+  - dock selftest dispatch requires `AEGIS_DOCK_ENABLE_SELFTEST=1` and is only enabled by helper scripts when a selftest action payload is provided
+  - `Tools -> Show Aegis Dock (Telemy)` fallback menu remains opt-in via `AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK=1`
 
 ## Known Small Follow-Up (Not Blocking Current Client/Plugin Work)
 

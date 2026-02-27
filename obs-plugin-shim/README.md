@@ -71,6 +71,10 @@ Optional selftest action injection on page-ready:
 .\run-dev-session.ps1 -StopExisting -DisableShutdownCheck -SelfTestActionJson '{"type":"request_status","requestId":"selftest_req_status"}' -SelfTestDirectPluginIntake
 ```
 
+Notes:
+- Selftest dispatch is now explicitly gated behind `AEGIS_DOCK_ENABLE_SELFTEST=1` (the helper scripts set this automatically when `-SelfTestActionJson` is provided).
+- Tools-menu dock fallback is opt-in only via `AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK=1`.
+
 Validate latest OBS log for startup (and optional action lifecycle):
 
 ```powershell

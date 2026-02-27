@@ -109,6 +109,9 @@ Use this file for a quick orientation only.
   - validator now supports `-AfterTimestamp` to scope checks to current-session logs and avoid stale-log false positives
   - `obs-plugin-shim/dev-cycle.ps1` now passes optional self-test action payloads through to `run-dev-session.ps1` and can auto-derive validate filters from the self-test JSON
   - fixed dev-cycle argument binding bug by switching run/validate script invocation to hashtable splatting and passing session start time into validation
+- Temporary validation aid lifecycle follow-up (2026-02-27):
+  - dock selftest dispatch now requires explicit opt-in gate `AEGIS_DOCK_ENABLE_SELFTEST=1` (helper scripts set this only when `-SelfTestActionJson` is passed)
+  - Tools fallback menu registration remains explicit opt-in only via `AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK=1` (single gate path)
 - Rust `/obs` debug dashboard now supports an explicit empty-scene debug switch trigger (`allow_empty=true`) to validate `missing_scene_name` without changing production IPC semantics.
 - OBS plugin build path is now locally reproducible without a full OBS source build:
   - headers from vendored `third_party/obs-studio` (matched to OBS `32.0.4`)
