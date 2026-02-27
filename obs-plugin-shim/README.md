@@ -65,6 +65,13 @@ Start a local OBS + core dev session (with correct OBS working directory and bri
 
 If OBS still opens the crash-recovery prompt after a forced kill, dismiss it once and rerun the command.
 
+Validate latest OBS log for startup (and optional action lifecycle):
+
+```powershell
+.\validate-obs-log.ps1 -RequireBridgeAssets -RequirePageReady
+.\validate-obs-log.ps1 -RequestId selftest_set_setting_manual_override_true
+```
+
 ## Harness Commands (Windows)
 
 - `start` / `stop`
