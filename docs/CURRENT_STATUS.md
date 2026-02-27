@@ -227,6 +227,7 @@ Last updated: 2026-02-27 (US/Pacific, late, follow-up)
   - added `obs-plugin-shim/run-ui-smoke.ps1` for the common fast local UI smoke path with configure + dock bundle build + smoke validation defaults
   - added `obs-plugin-shim/run-strict-cycle.ps1` for one-command strict startup evidence validation runs
   - OBS stop behavior in dev scripts is now graceful-first (`run-dev-session.ps1`, `deploy-to-obs.ps1`) with explicit force-kill opt-in switches to reduce safe-mode prompts after iterative runs
+  - added `obs-plugin-shim/stop-dev-session.ps1` and wrapper lifecycle updates so smoke/strict runners stop sessions gracefully by default and only escalate to force when needed
 
 ## Known Small Follow-Up (Not Blocking Current Client/Plugin Work)
 

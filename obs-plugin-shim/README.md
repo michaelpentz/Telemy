@@ -103,11 +103,23 @@ Run the recommended fast UI smoke cycle (configure + dock bundle + run + smoke v
 .\run-ui-smoke.ps1
 ```
 
+By default `run-ui-smoke.ps1` stops OBS/core at the end via graceful shutdown. Use `-LeaveRunning` to keep them running for manual checks.
+
 Run strict startup validation cycle (configure + dock bundle + run + strict validation):
 
 ```powershell
 .\run-strict-cycle.ps1
 ```
+
+By default `run-strict-cycle.ps1` also stops OBS/core at the end; use `-LeaveRunning` if you want to keep the session alive.
+
+Stop an active local session explicitly:
+
+```powershell
+.\stop-dev-session.ps1
+```
+
+`stop-dev-session.ps1` attempts graceful OBS shutdown first. Use `-ForceIfNeeded` to auto-escalate only when graceful timeout is exceeded.
 
 Useful variants:
 
