@@ -39,6 +39,9 @@ vault.*
 # Logs
 *.log
 
+# Coordination docs (live in parent directory, outside repo)
+AGENTS.md
+
 # Installer output
 obs-telemetry-bridge/installer/Output/
 
