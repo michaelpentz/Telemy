@@ -57,9 +57,16 @@ This checklist provides manual verification steps for the Telemy OBS/CEF dock, f
 ## 7. Negative & Failure Checks
 | Step | Scenario | Expected Result | Pass/Fail |
 | :--- | :--- | :--- | :--- |
-| 6.1 | Core Down | Stop the Rust Core process. | UI shows `Pipe: DOWN`; Relay status becomes `inactive`. | |
-| 6.2 | Completion Timeout | Trigger action while suppressing follow-on snapshots (debug scenario). | Terminal `failed` with `completion_timeout` observed. | |
-| 6.3 | Layout Hidden | Start OBS with dock hidden by layout persistence. | Use `Tools -> Show Aegis Dock (Telemy)` to recover; verify state replays correctly. | |
+| 7.1 | Core Down | Stop the Rust Core process. | UI shows `Pipe: DOWN`; Relay status becomes `inactive`. | |
+| 7.2 | Completion Timeout | Trigger action while suppressing follow-on snapshots (debug scenario). | Terminal `failed` with `completion_timeout` observed. | |
+| 7.3 | Layout Hidden | Start OBS with dock hidden by layout persistence. | Use `Tools -> Show Aegis Dock (Telemy)` to recover; verify state replays correctly. | |
+
+## 10. Fix Verification (v0.0.3+ Patch)
+| Step | Target Fix | Verification Method | Pass/Fail |
+| :--- | :--- | :--- | :--- |
+| 10.1 | **Idempotency Key (#4)** | Start Relay; check Go logs for `400 Bad Request`. Fix is OK if relay starts and Go receives UUID-v4. | |
+| 10.2 | **IPC Pipe DACL (#1)** | Attempt to connect to named pipe from a different user account. Fix is OK if connection is denied. | |
+| 10.3 | **Token Logging (#2)** | Check OBS/Core logs for dashboard URL. Fix is OK if token is truncated or absent. | |
 
 ## 8. Automated Smoke Path (Local)
 - Build/deploy only:
