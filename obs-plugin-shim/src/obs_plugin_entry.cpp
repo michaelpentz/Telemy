@@ -23,6 +23,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -59,7 +60,10 @@ std::vector<PendingSetModeAction> g_pending_set_mode_actions;
 std::mutex g_pending_set_setting_actions_mu;
 std::vector<PendingSetSettingAction> g_pending_set_setting_actions;
 constexpr std::chrono::milliseconds kDockActionCompletionTimeoutMs(3000);
+constexpr std::chrono::milliseconds kDockActionDuplicateWindowMs(1500);
 std::uint64_t g_local_dock_action_seq = 0;
+std::mutex g_recent_dock_actions_mu;
+std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_recent_dock_actions;
 bool g_obs_timer_registered = false;
 bool g_frontend_event_callback_registered = false;
 bool g_frontend_exit_seen = false;
@@ -878,6 +882,32 @@ bool IsRecognizedDockSettingKey(const std::string& key) {
            key == "alerts";
 }
 
+bool ShouldDeduplicateDockActionByRequestId(
+    const std::string& action_type,
+    const std::string& request_id) {
+    if (request_id.empty() || action_type.empty()) {
+        return false;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const std::string dedupe_key = action_type + "|" + request_id;
+    std::lock_guard<std::mutex> lock(g_recent_dock_actions_mu);
+
+    for (auto it = g_recent_dock_actions.begin(); it != g_recent_dock_actions.end();) {
+        if ((now - it->second) > kDockActionDuplicateWindowMs) {
+            it = g_recent_dock_actions.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto found = g_recent_dock_actions.find(dedupe_key);
+    if (found != g_recent_dock_actions.end()) {
+        return true;
+    }
+    g_recent_dock_actions.emplace(dedupe_key, now);
+    return false;
+}
+
 void TrackPendingDockRequestStatusAction(const std::string& request_id) {
     if (request_id.empty()) {
         return;
@@ -1238,18 +1268,22 @@ void MaybeRunDockActionSelfTestAfterPageReady() {
           "var payload="
        << JsStringLiteral(action_json)
        << ";"
+          "var sent=false;"
           "if(window.aegisDockNative&&typeof window.aegisDockNative.sendDockActionJson==='function'){"
-          "  window.aegisDockNative.sendDockActionJson(payload); return 'native_api';"
+          "  try{ window.aegisDockNative.sendDockActionJson(payload); sent=true; }catch(_e){}"
           "}"
           "if(typeof document!=='undefined'&&typeof document.title==='string'&&typeof encodeURIComponent==='function'){"
-          "  document.title='__AEGIS_DOCK_ACTION__:'+encodeURIComponent(payload); return 'title_fallback';"
+          "  try{ document.title='__AEGIS_DOCK_ACTION__:'+encodeURIComponent(payload); sent=true; }catch(_e){}"
           "}"
-          "return false; })();";
+          "if(typeof location!=='undefined'&&typeof location.hash==='string'&&typeof encodeURIComponent==='function'){"
+          "  try{ location.hash='__AEGIS_DOCK_ACTION__:'+encodeURIComponent(payload); sent=true; }catch(_e){}"
+          "}"
+          "return sent; })();";
 
     const bool dispatched = TryExecuteDockBrowserJs(js.str());
     blog(
         dispatched ? LOG_INFO : LOG_WARNING,
-        "[aegis-obs-shim] dock selftest action dispatch page_ready ok=%s json=%s (path=native_api_or_title_fallback)",
+        "[aegis-obs-shim] dock selftest action dispatch page_ready ok=%s json=%s (path=native_api_plus_title_hash)",
         dispatched ? "true" : "false",
         action_json.c_str());
 }
@@ -1796,6 +1830,15 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
             request_id = "dock_" + std::to_string(now_ms) + "_" + std::to_string(g_local_dock_action_seq);
         }
     };
+    ensure_request_id();
+    if (ShouldDeduplicateDockActionByRequestId(action_type, request_id)) {
+        blog(
+            LOG_DEBUG,
+            "[aegis-obs-shim] dock action deduplicated: type=%s request_id=%s",
+            action_type.c_str(),
+            request_id.c_str());
+        return true;
+    }
 
     if (action_type == "switch_scene") {
         std::string scene_name;
@@ -1803,7 +1846,6 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         if (scene_name.empty()) {
             (void)TryExtractJsonStringField(action_json, "scene_name", &scene_name);
         }
-        ensure_request_id();
         if (scene_name.empty()) {
             blog(
                 LOG_WARNING,
@@ -1824,7 +1866,6 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     }
 
     if (action_type == "request_status") {
-        ensure_request_id();
         blog(
             LOG_INFO,
             "[aegis-obs-shim] dock action queued: type=request_status request_id=%s",
@@ -1836,7 +1877,6 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     }
 
     if (action_type == "set_mode") {
-        ensure_request_id();
         std::string mode;
         (void)TryExtractJsonStringField(action_json, "mode", &mode);
         if (!IsRecognizedDockMode(mode)) {
@@ -1860,7 +1900,6 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     }
 
     if (action_type == "set_setting") {
-        ensure_request_id();
         std::string key;
         bool value = false;
         const bool has_value = TryExtractJsonBoolField(action_json, "value", &value);
@@ -1984,16 +2023,9 @@ bool obs_module_load(void) {
         blog(LOG_INFO, "[aegis-obs-shim] registered frontend event callback");
     }
     if (!g_tools_menu_show_dock_registered) {
-        const bool enable_show_menu_fallback = IsEnvEnabled("AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK");
-        if (!enable_show_menu_fallback) {
-            blog(
-                LOG_INFO,
-                "[aegis-obs-shim] skipped Tools menu fallback registration (default disabled; set AEGIS_DOCK_ENABLE_SHOW_MENU_FALLBACK=1 to enable)");
-        } else {
-            obs_frontend_add_tools_menu_item("Show Aegis Dock (Telemy)", OnToolsMenuShowDock, nullptr);
-            g_tools_menu_show_dock_registered = true;
-            blog(LOG_INFO, "[aegis-obs-shim] registered Tools menu item: Show Aegis Dock (Telemy)");
-        }
+        obs_frontend_add_tools_menu_item("Show Aegis Dock (Telemy)", OnToolsMenuShowDock, nullptr);
+        g_tools_menu_show_dock_registered = true;
+        blog(LOG_INFO, "[aegis-obs-shim] registered Tools menu item: Show Aegis Dock (Telemy)");
     }
     LogSceneSnapshot("module_load");
 
@@ -2035,6 +2067,10 @@ void obs_module_unload(void) {
     {
         std::lock_guard<std::mutex> lock(g_pending_set_setting_actions_mu);
         g_pending_set_setting_actions.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_recent_dock_actions_mu);
+        g_recent_dock_actions.clear();
     }
     g_dock_action_selftest_attempted = false;
     SetDockSceneSnapshotEmitter({});

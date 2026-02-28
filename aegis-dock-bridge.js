@@ -49,6 +49,27 @@
     return level === "warn" ? "warning" : (level || "info");
   }
 
+  function normalizeOutputBitrates(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((item, idx) => {
+        if (!item || typeof item !== "object") return null;
+        const platform = item.platform || item.name || item.host || ("Output " + String(idx + 1));
+        const kbpsRaw = item.kbps != null ? item.kbps : (item.bitrate_kbps != null ? item.bitrate_kbps : item.bitrate);
+        const kbps = Number(kbpsRaw);
+        return {
+          platform: String(platform),
+          kbps: Number.isFinite(kbps) ? kbps : null,
+          status: item.status || null,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function sanitizeTheme(theme) {
+    return theme && typeof theme === "object" ? Object.assign({}, theme) : null;
+  }
+
   function projectDockState(cache, cfg) {
     const session = cache.session || {};
     const core = cache.core || {};
@@ -92,10 +113,8 @@
       typeof snapshotSettings.alerts === "boolean"
         ? snapshotSettings.alerts
         : null;
-    const theme =
-      snapshot && snapshot.theme && typeof snapshot.theme === "object"
-        ? snapshot.theme
-        : null;
+    const snapshotTheme = sanitizeTheme(snapshot && snapshot.theme);
+    const theme = snapshotTheme || sanitizeTheme(core.lastTheme);
 
     const state = {
       header: {
@@ -119,6 +138,18 @@
       },
       bitrate: {
         bondedKbps: Number(snapshot.bitrate_kbps || 0),
+        relayBondedKbps: Number(
+          snapshot.relay_bonded_kbps ||
+          (snapshot.relay && (snapshot.relay.bonded_kbps || snapshot.relay.ingest_bonded_kbps)) ||
+          snapshot.bitrate_kbps ||
+          0
+        ),
+        outputs: normalizeOutputBitrates(
+          snapshot.multistream_outputs ||
+          snapshot.output_ingests ||
+          (snapshot.multistream && snapshot.multistream.outputs) ||
+          []
+        ),
       },
       relay: {
         enabled: (snapshot.mode === "irl") || !!(snapshot.relay && snapshot.relay.status && snapshot.relay.status !== "inactive"),
@@ -259,7 +290,15 @@
           cache.session.lastPongMs = ts;
         } else if (type === "status_snapshot") {
           cache.session.connected = true;
-          cache.core.statusSnapshot = Object.assign({}, payload);
+          const mergedSnapshot = Object.assign({}, cache.core.statusSnapshot || {}, payload);
+          const payloadTheme = sanitizeTheme(payload && payload.theme);
+          if (payloadTheme) {
+            cache.core.lastTheme = payloadTheme;
+            mergedSnapshot.theme = payloadTheme;
+          } else if (!sanitizeTheme(mergedSnapshot.theme) && sanitizeTheme(cache.core.lastTheme)) {
+            mergedSnapshot.theme = sanitizeTheme(cache.core.lastTheme);
+          }
+          cache.core.statusSnapshot = mergedSnapshot;
         } else if (type === "switch_scene") {
           cache.plugin.pendingScene = {
             requestId: payload.request_id || null,

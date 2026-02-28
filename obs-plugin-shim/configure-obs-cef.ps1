@@ -37,14 +37,18 @@ Write-Host "  Generator:     $Generator"
 Write-Host ""
 
 $obsIncludeDirs = "$obsLibobsInclude;$obsFrontendApiInclude"
-
-cmake -S $shimRoot -B $BuildDir -G $Generator `
-    -DAEGIS_BUILD_OBS_PLUGIN=ON `
-    -DAEGIS_ENABLE_OBS_BROWSER_DOCK_HOST=ON `
-    -DAEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF=ON `
-    -DOBS_INCLUDE_DIRS=$obsIncludeDirs `
-    -DOBS_LIBRARY_DIRS=$ObsImportLibDir `
-    -DOBS_LIBRARIES="obs;obs-frontend-api"
+$cmakeArgs = @(
+    "-S", $shimRoot,
+    "-B", $BuildDir,
+    "-G", $Generator,
+    "-DAEGIS_BUILD_OBS_PLUGIN=ON",
+    "-DAEGIS_ENABLE_OBS_BROWSER_DOCK_HOST=ON",
+    "-DAEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF=ON",
+    "-DOBS_INCLUDE_DIRS=$obsIncludeDirs",
+    "-DOBS_LIBRARY_DIRS=$ObsImportLibDir",
+    "-DOBS_LIBRARIES=obs;obs-frontend-api"
+)
+& cmake @cmakeArgs
 
 Write-Host ""
 Write-Host "Configure complete."

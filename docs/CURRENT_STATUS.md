@@ -1,6 +1,6 @@
 # Current Status (v0.0.3)
 
-Last updated: 2026-02-27 (US/Pacific, late, follow-up)
+Last updated: 2026-02-28 (US/Pacific, pre-nightly validation snapshot)
 
 ## Project State
 
@@ -242,6 +242,39 @@ Last updated: 2026-02-27 (US/Pacific, late, follow-up)
 - Replace generated diagnostic dock page with a proper `dock.html` asset (or equivalent) once runtime path is stable.
 - After browser-dock embedding exists, route real OBS scene inventory/current-scene callbacks through the existing emitter/bridge host path.
 - Align dock terms/labels with v0.0.3 state-machine + IPC contracts while matching `aegis-dock.jsx` / `aegis-dock-wide.jsx` aesthetic direction.
+
+## Pre-Nightly Validation Snapshot (2026-02-28, US/Pacific)
+
+- Local Rust checks in `obs-telemetry-bridge`:
+  - `cargo test` passed (`31` passed, `0` failed)
+  - `cargo build --release` passed
+  - `cargo clippy --all-targets --all-features` passed (warnings only)
+- `cargo fmt --all -- --check` failed due to formatting drift in:
+  - `src/aegis/mod.rs`
+  - `src/config/mod.rs`
+  - `src/ipc/mod.rs`
+  - `src/main.rs`
+  - `src/server/mod.rs`
+- No new real OBS runtime validation was run in this pass; 2026-02-27 runtime status remains the latest validated baseline.
+
+## Session Update (2026-02-27, US/Pacific, late - dock UX/auto-scene pass)
+
+- Auto Scene rules are now dynamic in the React dock UI:
+  - add/remove rules
+  - per-rule label edit
+  - per-rule threshold value
+  - per-rule scene linking to real OBS scenes
+- Rules layout moved from crowded inline controls to compact rows with expandable `Edit` controls.
+- Compact row now shows live summary of configured values (`threshold -> linked scene`).
+- Per-rule threshold enablement added (`Threshold` checkbox):
+  - enabled rules participate in bitrate auto-switching
+  - disabled rules remain manual/command-only
+- Manual scene clicks now disarm auto-threshold switching (forces manual mode) before applying scene switch.
+- Light-theme readability improved for active/selected rows using theme-aware contrast-safe styling.
+- Persistent threshold help copy removed from the scene section to reduce visual crowding.
+
+Validation outcome (user-confirmed in-session):
+- theme behavior, scene linking, auto-switch armed/manual transitions, and compact edit UX are all working after the above fixes.
 
 ## Read Next
 

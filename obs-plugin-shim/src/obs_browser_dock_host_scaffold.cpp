@@ -54,6 +54,7 @@ constexpr const char* kDockId = "aegis_obs_core_ipc_dock";
 constexpr const char* kDockTitle = "Aegis Dock (Telemy v0.0.3)";
 constexpr const char* kEnvDockBridgeRoot = "AEGIS_DOCK_BRIDGE_ROOT";
 constexpr const char* kDockActionTitlePrefix = "__AEGIS_DOCK_ACTION__:";
+constexpr const char* kDockReadyTitlePrefix = "__AEGIS_DOCK_READY__:";
 
 #if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE) || defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
 
@@ -310,20 +311,72 @@ bool TryExtractJsonStringFieldQt(
     return false;
 }
 
-bool TryHandleDockActionTitleMessage(const QString& title_text) {
-    if (title_text.isEmpty()) {
+bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& prefixed_text) {
+    if (prefixed_text.isEmpty()) {
         return false;
     }
-    const QString prefix = QString::fromUtf8(kDockActionTitlePrefix);
-    if (!title_text.startsWith(prefix)) {
+    const QString strict_prefix = QString::fromUtf8(kDockActionTitlePrefix);
+    QString encoded;
+    const int strict_pos = prefixed_text.indexOf(strict_prefix, 0, Qt::CaseInsensitive);
+    if (strict_pos >= 0) {
+        encoded = prefixed_text.mid(strict_pos + strict_prefix.size());
+    } else {
+        const int token_pos =
+            prefixed_text.indexOf(QStringLiteral("aegis_dock_action"), 0, Qt::CaseInsensitive);
+        if (token_pos < 0) {
+            return false;
+        }
+        const int colon_pos = prefixed_text.indexOf(QChar(':'), token_pos);
+        if (colon_pos < 0) {
+            return false;
+        }
+        encoded = prefixed_text.mid(colon_pos + 1);
+    }
+    while (!encoded.isEmpty()) {
+        const QChar ch = encoded.at(0);
+        if (ch == QChar('#') || ch == QChar('_') || ch == QChar(':') || ch.isSpace()) {
+            encoded.remove(0, 1);
+            continue;
+        }
+        break;
+    }
+    if (encoded.isEmpty()) {
+        blog(
+            LOG_DEBUG,
+            "[aegis-obs-shim] browser dock scaffold action %s parse skipped: empty encoded payload",
+            source_tag ? source_tag : "unknown");
+        return false;
+    }
+    if (!(encoded.startsWith(QStringLiteral("%7B"), Qt::CaseInsensitive) ||
+          encoded.startsWith(QStringLiteral("%257B"), Qt::CaseInsensitive) ||
+          encoded.startsWith(QStringLiteral("{")))) {
+        const QByteArray encoded_bytes = encoded.left(160).toUtf8();
+        blog(
+            LOG_DEBUG,
+            "[aegis-obs-shim] browser dock scaffold action %s parse skipped: unexpected prefix sample=%s",
+            source_tag ? source_tag : "unknown",
+            encoded_bytes.constData());
         return false;
     }
 
-    const QString encoded = title_text.mid(prefix.size());
-    const QString decoded_text = QUrl::fromPercentEncoding(encoded.toUtf8());
+    QString decoded_text = encoded;
+    for (int i = 0; i < 3; ++i) {
+        const QString pass = QUrl::fromPercentEncoding(decoded_text.toUtf8());
+        if (pass == decoded_text) {
+            break;
+        }
+        decoded_text = pass;
+        if (decoded_text.startsWith(QChar('{')) && decoded_text.contains(QStringLiteral("\"type\""))) {
+            break;
+        }
+    }
+
     const QByteArray decoded_bytes = decoded_text.toUtf8();
     if (decoded_bytes.isEmpty()) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold action title decode failed");
+        blog(
+            LOG_WARNING,
+            "[aegis-obs-shim] browser dock scaffold action %s decode failed",
+            source_tag ? source_tag : "unknown");
         return true;
     }
 
@@ -335,7 +388,8 @@ bool TryHandleDockActionTitleMessage(const QString& title_text) {
     }
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold action title decode: type=%s request_id=%s bytes=%d",
+        "[aegis-obs-shim] browser dock scaffold action %s decode: type=%s request_id=%s bytes=%d",
+        source_tag ? source_tag : "unknown",
         action_type.isEmpty() ? "" : action_type.toUtf8().constData(),
         request_id.isEmpty() ? "" : request_id.toUtf8().constData(),
         static_cast<int>(decoded_bytes.size()));
@@ -343,12 +397,54 @@ bool TryHandleDockActionTitleMessage(const QString& title_text) {
     const bool ok = aegis_obs_shim_receive_dock_action_json(decoded_bytes.constData());
     blog(
         ok ? LOG_INFO : LOG_DEBUG,
-        "[aegis-obs-shim] browser dock scaffold dock action title forwarded ok=%s type=%s request_id=%s bytes=%d",
+        "[aegis-obs-shim] browser dock scaffold dock action %s forwarded ok=%s type=%s request_id=%s bytes=%d",
+        source_tag ? source_tag : "unknown",
         ok ? "true" : "false",
         action_type.isEmpty() ? "" : action_type.toUtf8().constData(),
         request_id.isEmpty() ? "" : request_id.toUtf8().constData(),
         static_cast<int>(decoded_bytes.size()));
     return true;
+}
+
+bool TryHandleDockActionTitleMessage(const QString& title_text) {
+    return TryHandleDockActionPrefixedMessage("title", title_text);
+}
+
+bool ContainsDockReadySignal(const QString& text) {
+    if (text.isEmpty()) {
+        return false;
+    }
+    const QString marker = QString::fromUtf8(kDockReadyTitlePrefix);
+    return text.contains(marker, Qt::CaseInsensitive);
+}
+
+bool TryHandleDockActionUrlMessage(const QString& url_text) {
+    if (url_text.isEmpty()) {
+        return false;
+    }
+
+    const QString prefix = QString::fromUtf8(kDockActionTitlePrefix);
+    const QString hash_prefix = QStringLiteral("#") + prefix;
+    QString candidate;
+
+    const int hash_prefix_pos = url_text.lastIndexOf(hash_prefix);
+    if (hash_prefix_pos >= 0) {
+        candidate = url_text.mid(hash_prefix_pos + 1);
+    }
+
+    if (candidate.isEmpty() && !url_text.startsWith(QStringLiteral("data:"), Qt::CaseInsensitive)) {
+        const QUrl parsed(url_text);
+        const QString fragment = parsed.fragment(QUrl::FullyEncoded);
+        if (!fragment.isEmpty()) {
+            if (fragment.startsWith(prefix)) {
+                candidate = fragment;
+            } else if (fragment.startsWith(QStringLiteral("/") + prefix)) {
+                candidate = fragment.mid(1);
+            }
+        }
+    }
+
+    return TryHandleDockActionPrefixedMessage("url", candidate);
 }
 
 DockBridgeAssets LoadDockBridgeAssets() {
@@ -883,6 +979,15 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
         return nullptr;
     }
     dock->setWidget(view);
+    const QMetaObject* view_meta = view->metaObject();
+    const int sig_title_idx = view_meta ? view_meta->indexOfSignal("titleChanged(QString)") : -1;
+    const int sig_url_idx = view_meta ? view_meta->indexOfSignal("urlChanged(QString)") : -1;
+    blog(
+        LOG_INFO,
+        "[aegis-obs-shim] browser dock scaffold CEF signal introspection: class=%s titleChanged_idx=%d urlChanged_idx=%d",
+        view_meta ? view_meta->className() : "null",
+        sig_title_idx,
+        sig_url_idx);
 
     QObject::connect(view, &QObject::destroyed, dock, []() {
         g_cef_dock_state.page_ready_notified = false;
@@ -901,9 +1006,42 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     });
     // Bridge QCefWidget's non-exported custom titleChanged signal into an exported Qt slot/signal path.
     // We can't link directly against QCefWidget::titleChanged with function-pointer syntax from the plugin.
-    QObject::connect(view, SIGNAL(titleChanged(QString)), dock, SLOT(setWindowTitle(QString)));
-    QObject::connect(dock, &QWidget::windowTitleChanged, dock, [](const QString& title) {
-        (void)TryHandleDockActionTitleMessage(title);
+    const auto title_bridge_conn =
+        QObject::connect(view, SIGNAL(titleChanged(QString)), dock, SLOT(setWindowTitle(QString)));
+    const auto url_bridge_conn =
+        QObject::connect(view, SIGNAL(urlChanged(QString)), dock, SLOT(setWindowTitle(QString)));
+    if (!title_bridge_conn) {
+        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold titleChanged bridge connect failed");
+    }
+    if (!url_bridge_conn) {
+        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold urlChanged bridge connect failed");
+    }
+    QObject::connect(dock, &QWidget::windowTitleChanged, dock, [dock](const QString& title) {
+        if (!title.isEmpty()) {
+            const QByteArray sample = title.left(180).toUtf8();
+            blog(
+                LOG_DEBUG,
+                "[aegis-obs-shim] browser dock scaffold windowTitleChanged bytes=%d sample=%s",
+                static_cast<int>(title.toUtf8().size()),
+                sample.constData());
+        }
+        if (title.contains(QStringLiteral("#__AEGIS_DOCK_ACTION__:"), Qt::CaseInsensitive)) {
+            blog(
+                LOG_INFO,
+                "[aegis-obs-shim] browser dock scaffold observed window title transport payload bytes=%d",
+                static_cast<int>(title.toUtf8().size()));
+        }
+        if (ContainsDockReadySignal(title)) {
+            MarkCefPageReadyOnce("bridge_ready_signal");
+            dock->setWindowTitle(QString::fromUtf8(kDockTitle));
+            return;
+        }
+        const bool handled =
+            TryHandleDockActionTitleMessage(title) || TryHandleDockActionUrlMessage(title);
+        if (handled) {
+            // Keep dock chrome title stable even when action transport uses title signaling.
+            dock->setWindowTitle(QString::fromUtf8(kDockTitle));
+        }
     });
 
     auto* ready_timer = new QTimer(dock);

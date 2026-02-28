@@ -159,6 +159,7 @@ Use this file for a quick orientation only.
 
 ## Latest Addenda (see `docs/archive/HANDOFF_HISTORY.md`)
 
+- `Pre-Nightly Local Validation Snapshot Addendum (2026-02-28, US/Pacific)`
 - `Post-Timeout-Mitigation + Access Hardening Addendum (2026-02-22, US/Pacific)`
 - `Client/Aegis Integration + Temporary Dashboard Clarification Addendum (2026-02-23, US/Pacific)`
 - `IPC Foundations + C++ Shim Harness Validation Addendum (2026-02-23, US/Pacific)`
@@ -195,3 +196,71 @@ Use this file for a quick orientation only.
 2. Native support expansion for mode/settings (currently preview-validating path exists).
 3. Per-link telemetry schema/UI enrichment when IPC contract expands.
 4. UX polish iterations in React dock (Claude-owned) on the now-stable real OBS path.
+
+## Handoff Addendum (2026-02-27 late, dock auto-scene UX pass)
+
+### Completed in This Session
+- Auto Scene rules are now operator-editable in the dock:
+  - add/remove custom rules
+  - per-rule label
+  - per-rule threshold Mbps
+  - per-rule OBS scene link (from real OBS scene inventory)
+- Rules UI is now compact + expandable:
+  - default collapsed row shows rule label + compact summary
+  - `Edit` opens advanced controls instead of always showing all fields inline
+  - layout no longer overlays scene titles in narrow dock widths
+- Compact row now shows current edited values:
+  - threshold summary
+  - linked scene name (or `Unlinked`)
+- Threshold gating improved:
+  - per-rule checkbox `Threshold` enables/disables threshold participation
+  - disabled threshold rules are manual/command-only and ignored by auto-threshold selection
+- Manual scene switch now forces auto-scene-switch lockout:
+  - if `ARMED`, manual switch flips to manual mode before switching scene
+  - prevents immediate threshold override after an operator click
+- Theme/readability polish:
+  - active rule row styling is now light-theme aware
+  - removed persistent threshold help text block that crowded scene controls
+
+### Runtime Validation Notes
+- User validated in-session on real OBS dock behavior:
+  - theme switching (including light theme readability fix) works
+  - scene dropdown now binds to real OBS scene list
+  - auto scene switch armed/manual behavior restored
+  - compact+edit workflow accepted after iterations
+- Latest deployed dock bundle hash at session close:
+  - `4C004E6840620F86E0D567F6F5599C424F4327CCA6244B56624E720AF4192368`
+  - path: `C:\Program Files (x86)\obs-studio\data\obs-plugins\aegis-obs-shim\aegis-dock-app.js`
+
+### Carry-Forward
+1. Optional UX follow-up: move threshold guidance to tooltip/help affordance instead of persistent copy.
+2. Add explicit manual override indicator per row (optional) if operators need stronger visual state.
+3. Continue smoke checks with graceful stop scripts to avoid OBS safe-mode prompts between runs.
+
+## Handoff Addendum (2026-02-28, pre-nightly reset, US/Pacific)
+
+### Completed in This Session
+- Ran local Rust validation in `telemy-v0.0.3/obs-telemetry-bridge`:
+  - `cargo test` passed (`31` passed, `0` failed)
+  - `cargo build --release` passed
+  - `cargo clippy --all-targets --all-features` passed (warnings only)
+- Captured current non-blocking warning surface from clippy/build:
+  - `dead_code`: `src/aegis/mod.rs` (`build_relay_active_request`)
+  - `dead_code`: `src/ipc/mod.rs` (`build_status_snapshot`)
+  - `clippy::derivable_impls`: `src/config/mod.rs`
+  - `clippy::io_other_error`: `src/ipc/mod.rs`
+  - `clippy::too_many_arguments`: `src/server/mod.rs` (`start`)
+  - `clippy::useless_format`: `src/server/mod.rs`
+  - `clippy::single_match`: `src/ipc/mod.rs`
+- Ran formatting gate:
+  - `cargo fmt --all -- --check` failed (formatting drift only, no compile/runtime failure)
+  - reported files: `src/aegis/mod.rs`, `src/config/mod.rs`, `src/ipc/mod.rs`, `src/main.rs`, `src/server/mod.rs`
+
+### Runtime Validation Scope in This Session
+- No new real OBS runtime/dock validation was executed in this pass.
+- Existing OBS/CEF runtime status from 2026-02-27 remains the latest runtime-validated baseline.
+
+### Carry-Forward (Claude/Gemini)
+1. Run `cargo fmt --all`, then re-run `cargo fmt --all -- --check` to clear format drift.
+2. Optionally reduce the current clippy warning set (start with `io_other_error` and `useless_format` for low-risk cleanup).
+3. If OBS runtime time is available, run `obs-plugin-shim/run-ui-smoke.ps1` for a fast regression smoke on the current CEF path.

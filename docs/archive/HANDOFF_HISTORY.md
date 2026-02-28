@@ -1117,3 +1117,36 @@ Observed evidence patterns in latest logs remained consistent with healthy host/
 - Dock runtime regressions from the interim transport refactor are recovered.
 - Core action transport path remains active while visible dock behavior matches expected UX for scenes, settings toggle state, and dynamic theme.
 - Remaining work should prioritize packaging/cleanup and reducing temporary runtime bring-up instrumentation where no longer needed.
+
+## Pre-Nightly Local Validation Snapshot Addendum (2026-02-28, US/Pacific)
+
+This addendum captures a pre-nightly-reset local validation-only pass (no new OBS runtime run).
+
+### Completed in This Session
+
+- Ran local Rust validation in `telemy-v0.0.3/obs-telemetry-bridge`:
+  - `cargo test` passed (`31` passed, `0` failed)
+  - `cargo build --release` passed
+  - `cargo clippy --all-targets --all-features` passed (warnings only)
+- Captured current warning surface:
+  - `dead_code`: `src/aegis/mod.rs` (`build_relay_active_request`)
+  - `dead_code`: `src/ipc/mod.rs` (`build_status_snapshot`)
+  - `clippy::derivable_impls`: `src/config/mod.rs`
+  - `clippy::io_other_error`: `src/ipc/mod.rs`
+  - `clippy::too_many_arguments`: `src/server/mod.rs` (`start`)
+  - `clippy::useless_format`: `src/server/mod.rs`
+  - `clippy::single_match`: `src/ipc/mod.rs`
+- Formatting gate status:
+  - `cargo fmt --all -- --check` failed (formatting drift only)
+  - files reported: `src/aegis/mod.rs`, `src/config/mod.rs`, `src/ipc/mod.rs`, `src/main.rs`, `src/server/mod.rs`
+
+### Runtime Scope
+
+- No new real OBS/CEF runtime or dock behavior validation was executed in this pass.
+- Latest runtime-validated baseline remains the 2026-02-27 session state.
+
+### Carry-Forward
+
+1. Run `cargo fmt --all` and re-check with `cargo fmt --all -- --check`.
+2. Optionally trim low-risk clippy warnings (`io_other_error`, `useless_format`) before deeper refactors.
+3. Use `obs-plugin-shim/run-ui-smoke.ps1` for fast runtime regression smoke when OBS time is available.

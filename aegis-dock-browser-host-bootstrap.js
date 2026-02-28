@@ -18,15 +18,110 @@
   const g = globalObj || (typeof window !== "undefined" ? window : globalThis);
   if (!g) return;
 
+  function parseJsonSafe(jsonText) {
+    try {
+      return { ok: true, value: JSON.parse(String(jsonText)) };
+    } catch (_e) {
+      return { ok: false, value: null };
+    }
+  }
+
+  function createFallbackHostFromBridge() {
+    var bridgeApi = g.AegisDockBridge;
+    if (!bridgeApi || typeof bridgeApi.createAegisDockBridgeHost !== "function") {
+      return null;
+    }
+    var bridge = (g.__AEGIS_DOCK_BRIDGE__ && typeof g.__AEGIS_DOCK_BRIDGE__.getState === "function")
+      ? g.__AEGIS_DOCK_BRIDGE__
+      : bridgeApi.createAegisDockBridgeHost();
+    if (typeof bridgeApi.attachAegisDockBridgeToWindow === "function") {
+      bridgeApi.attachAegisDockBridgeToWindow(bridge);
+    } else {
+      g.__AEGIS_DOCK_BRIDGE__ = bridge;
+    }
+
+    var fallbackHost = {
+      getState: function () { return bridge.getState(); },
+      sendDockAction: function (action) { return bridge.sendAction(action); },
+      receiveIpcEnvelope: function (envelope) {
+        if (typeof bridge.handleIpcEnvelope === "function") {
+          bridge.handleIpcEnvelope(envelope);
+          return true;
+        }
+        return false;
+      },
+      receiveIpcEnvelopeJson: function (jsonText) {
+        var parsed = parseJsonSafe(jsonText);
+        return parsed.ok ? fallbackHost.receiveIpcEnvelope(parsed.value) : false;
+      },
+      setObsSceneSnapshot: function (payload) {
+        var ok = true;
+        if (typeof bridge.setObsSceneNames === "function") {
+          bridge.setObsSceneNames(Array.isArray(payload && payload.sceneNames) ? payload.sceneNames : []);
+        }
+        if (typeof bridge.setObsActiveSceneName === "function") {
+          bridge.setObsActiveSceneName(payload && payload.currentSceneName != null ? String(payload.currentSceneName) : null);
+        }
+        return ok;
+      },
+      setObsSceneSnapshotJson: function (jsonText) {
+        var parsed = parseJsonSafe(jsonText);
+        return parsed.ok ? fallbackHost.setObsSceneSnapshot(parsed.value) : false;
+      },
+      setPipeStatus: function (status) {
+        if (typeof bridge.setPipeStatus === "function") {
+          bridge.setPipeStatus(status || null);
+          return true;
+        }
+        return false;
+      },
+      setObsCurrentScene: function (sceneName) {
+        if (typeof bridge.setObsActiveSceneName === "function") {
+          bridge.setObsActiveSceneName(sceneName == null ? null : String(sceneName));
+          return true;
+        }
+        return false;
+      },
+      notifySceneSwitchCompleted: function (result) {
+        if (typeof bridge.notifySceneSwitchCompleted === "function") {
+          bridge.notifySceneSwitchCompleted(result || {});
+          return true;
+        }
+        return false;
+      },
+      notifySceneSwitchCompletedJson: function (jsonText) {
+        var parsed = parseJsonSafe(jsonText);
+        return parsed.ok ? fallbackHost.notifySceneSwitchCompleted(parsed.value) : false;
+      },
+    };
+    return fallbackHost;
+  }
+
   function ensureHost() {
     if (g.aegisDockHost && typeof g.aegisDockHost.getState === "function") {
       return g.aegisDockHost;
     }
+    // Prefer fallback host that directly matches AegisDockBridge global API.
+    // The separate AegisDockBridgeHost adapter may be present but out-of-sync
+    // with bridge method names; fallback is safer for OBS embedded runtime.
+    var fallbackHost = createFallbackHostFromBridge();
+    if (fallbackHost) {
+      g.aegisDockHost = fallbackHost;
+      dispatch("aegis:dock:host-fallback", { ok: true, source: "AegisDockBridge" });
+      return fallbackHost;
+    }
+
     const exports = g.AegisDockBridgeHost;
     if (!exports || typeof exports.createWindowAegisDockBridgeHost !== "function") {
-      throw new Error("AegisDockBridgeHost.createWindowAegisDockBridgeHost is not available");
+      throw new Error("No compatible dock bridge host is available");
     }
-    return exports.createWindowAegisDockBridgeHost();
+    try {
+      var host = exports.createWindowAegisDockBridgeHost();
+      g.aegisDockHost = host;
+      return host;
+    } catch (_e) {
+      throw new Error("Failed to initialize dock bridge host");
+    }
   }
 
   function dispatch(name, detail) {
@@ -48,22 +143,61 @@
     }
   }
 
-  function tryForwardDockActionJsonToNative(actionJson) {
+  function tryForwardDockActionJsonToNativeViaTitle(actionJson) {
     if (typeof actionJson !== "string" || !actionJson.length) return false;
     if (typeof document === "undefined" || typeof document.title !== "string") return false;
     if (typeof encodeURIComponent !== "function") return false;
     try {
-      var previousTitle = String(document.title || "Aegis Dock");
-      document.title = "__AEGIS_DOCK_ACTION__:" + encodeURIComponent(actionJson);
-      setTimeout(function restoreTitleAfterDockActionSignal() {
-        try {
-          document.title = previousTitle;
-        } catch (_restoreErr) {}
-      }, 0);
+      var actionTitle = "__AEGIS_DOCK_ACTION__:" + encodeURIComponent(actionJson);
+      document.title = actionTitle;
       return true;
     } catch (_e) {
       return false;
     }
+  }
+
+  function tryForwardDockActionJsonToNativeViaHash(actionJson) {
+    if (typeof actionJson !== "string" || !actionJson.length) return false;
+    if (typeof location === "undefined") return false;
+    if (typeof encodeURIComponent !== "function") return false;
+    try {
+      var actionHash = "__AEGIS_DOCK_ACTION__:" + encodeURIComponent(actionJson);
+      if (location.hash === "#" + actionHash) {
+        location.hash = "";
+      }
+      location.hash = actionHash;
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function tryForwardDockActionJsonToNative(actionJson) {
+    var sentViaTitle = tryForwardDockActionJsonToNativeViaTitle(actionJson);
+    var sentViaHash = tryForwardDockActionJsonToNativeViaHash(actionJson);
+    return sentViaTitle || sentViaHash;
+  }
+
+  function signalDockReadyToNative() {
+    if (typeof encodeURIComponent !== "function") return false;
+    var marker = "__AEGIS_DOCK_READY__:" + encodeURIComponent(String(Date.now()));
+    var sent = false;
+    try {
+      if (typeof document !== "undefined" && typeof document.title === "string") {
+        document.title = marker;
+        sent = true;
+      }
+    } catch (_e) {}
+    try {
+      if (typeof location !== "undefined") {
+        if (location.hash === "#" + marker) {
+          location.hash = "";
+        }
+        location.hash = marker;
+        sent = true;
+      }
+    } catch (_e) {}
+    return sent;
   }
 
   const nativeApi = {
@@ -125,12 +259,6 @@
 
     sendDockAction(action) {
       var host = ensureHost();
-      var hostResult = null;
-      if (typeof host.sendDockAction === "function") {
-        hostResult = host.sendDockAction(action);
-      } else {
-        dispatch("aegis:dock:action-unsupported", { action: action || null });
-      }
       var jsonText = "";
       try {
         jsonText = JSON.stringify(action || {});
@@ -138,18 +266,40 @@
         jsonText = "";
       }
       var forwarded = tryForwardDockActionJsonToNative(jsonText);
-      return hostResult;
+      var hostResult = null;
+      if (typeof host.sendDockAction === "function") {
+        try {
+          hostResult = host.sendDockAction(action);
+        } catch (err) {
+          dispatch("aegis:dock:error", {
+            message: "Host sendDockAction threw",
+            error: String((err && err.message) || err || ""),
+          });
+        }
+      } else {
+        dispatch("aegis:dock:action-unsupported", { action: action || null });
+      }
+      return hostResult != null ? hostResult : forwarded;
     },
 
     sendDockActionJson(jsonText) {
       var parsed = parseJson(jsonText, "Invalid dock action JSON");
       if (!parsed.ok) return false;
-      var host = ensureHost();
-      if (typeof host.sendDockAction === "function") {
-        host.sendDockAction(parsed.value);
-      }
       var forwarded = tryForwardDockActionJsonToNative(String(jsonText));
-      return forwarded;
+      var host = ensureHost();
+      var hostOk = false;
+      if (typeof host.sendDockAction === "function") {
+        try {
+          host.sendDockAction(parsed.value);
+          hostOk = true;
+        } catch (err) {
+          dispatch("aegis:dock:error", {
+            message: "Host sendDockActionJson threw",
+            error: String((err && err.message) || err || ""),
+          });
+        }
+      }
+      return forwarded || hostOk;
     },
 
     getCapabilities() {
@@ -169,5 +319,6 @@
   };
 
   g.aegisDockNative = nativeApi;
+  signalDockReadyToNative();
   dispatch("aegis:dock:native-ready", { ok: true });
 })(typeof window !== "undefined" ? window : undefined);

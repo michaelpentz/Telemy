@@ -9,6 +9,7 @@ This file was reduced to an index to keep the archive easier to navigate.
 
 ## Latest Addenda (in `docs/archive/HANDOFF_HISTORY.md`)
 
+- `Pre-Nightly Local Validation Snapshot Addendum (2026-02-28, US/Pacific)`
 - `Dock Runtime Regression Recovery (Scenes/Toggle/Theme/Title) Addendum (2026-02-26, US/Pacific)`
 - `Dock Action Status-Lifecycle + Mode/Setting Mapping Sync Addendum (2026-02-27, US/Pacific)`
 - `OBS/CEF JS Sink Validation + Asset Staging Follow-Up Addendum (2026-02-24, US/Pacific)`
