@@ -502,9 +502,9 @@ mod tests {
                     "session_id": "ses_1",
                     "status": "active",
                     "relay": {
-                        "public_ip": "18.236.185.240/32",
+                        "public_ip": "203.0.113.10/32",
                         "srt_port": 9000,
-                        "ws_url": "wss://18.236.185.240:7443/telemetry"
+                        "ws_url": "wss://203.0.113.10:7443/telemetry"
                     }
                 }
             }"#,
@@ -513,7 +513,7 @@ mod tests {
 
         assert_eq!(
             session.relay.unwrap().public_ip.as_deref(),
-            Some("18.236.185.240")
+            Some("203.0.113.10")
         );
     }
 

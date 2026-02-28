@@ -60,6 +60,13 @@ aegis-control-plane/.gocache/
 *.old
 *.bak
 
+# Internal coordination docs (live in parent folder, not in repo)
+HANDOFF_STATUS.md
+CURRENT_STATUS.md
+HANDOFF_HISTORY.md
+AGENT_RELAY.md
+GEMINI_RELAY.md
+
 # Windows specific
 Desktop.ini
 desktop.ini
