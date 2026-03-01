@@ -1,4 +1,7 @@
-use crate::aegis::RelaySession;
+use crate::aegis::{
+    RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest,
+};
+use crate::aegis_client::{build_aegis_client_from_local_config, generate_idempotency_key};
 use crate::model::TelemetryFrame;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -6,7 +9,7 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use uuid::Uuid;
 
 const IPC_PROTOCOL_VERSION: u8 = 1;
@@ -299,6 +302,40 @@ struct PendingSwitchScene {
     deadline_at: Instant,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RelayStartRequestPayload {
+    request_id: String,
+    #[serde(default)]
+    region_preference: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RelayStopRequestPayload {
+    request_id: String,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RelayActionResultPayload {
+    request_id: String,
+    action_type: String,
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+struct RelayTaskResult {
+    request_id: String,
+    action_type: String,
+    ok: bool,
+    error: Option<String>,
+    detail: Option<String>,
+    session: Option<RelaySession>,
+}
+
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -552,420 +589,699 @@ where
     let mut handshake_complete = false;
     let mut last_ping_at = Instant::now();
     let mut last_status_push_at = Instant::now();
+
+    let (relay_result_tx, mut relay_result_rx) = mpsc::channel::<RelayTaskResult>(4);
+    let mut relay_in_flight: Option<String> = None;
+    let mut core_cmd_closed = false;
+    let mut tick = tokio::time::interval(Duration::from_millis(250));
+
     loop {
-        while let Ok(cmd) = core_cmd_rx.try_recv() {
-            if !handshake_complete {
-                tracing::debug!("dropping core ipc command before handshake");
-                continue;
-            }
-            match cmd {
-                CoreIpcCommand::SwitchScene {
-                    scene_name,
-                    reason,
-                    deadline_ms,
-                } => {
-                    let request_id = Uuid::new_v4().to_string();
-                    let request_ts = now_unix_ms();
-                    let evt = make_envelope(
-                        "switch_scene",
-                        Priority::Critical,
-                        SwitchScenePayload {
-                            request_id: request_id.clone(),
-                            scene_name: scene_name.clone(),
-                            reason,
-                            deadline_ms,
-                        },
-                    );
-                    write_frame(evt_writer, &evt).await?;
-                    pending_switches.insert(
-                        request_id,
-                        PendingSwitchScene {
-                            scene_name,
-                            deadline_at: Instant::now() + Duration::from_millis(deadline_ms),
-                        },
-                    );
-                    let payload = evt.payload.clone();
-                    update_debug_status(&debug_status, |s| {
-                        s.pending_switch_count = pending_switches.len() as u32;
-                        s.last_switch_request = Some(IpcSwitchRequestDebug {
-                            request_id: payload.request_id,
-                            scene_name: payload.scene_name,
-                            reason: payload.reason,
-                            deadline_ms: payload.deadline_ms,
-                            ts_unix_ms: request_ts,
-                        });
-                    });
-                }
-            }
-        }
-
-        if !pending_switches.is_empty() {
-            let now = Instant::now();
-            let expired_ids: Vec<String> = pending_switches
-                .iter()
-                .filter_map(|(id, pending)| (now >= pending.deadline_at).then_some(id.clone()))
-                .collect();
-            for id in expired_ids {
-                if let Some(expired) = pending_switches.remove(&id) {
-                    tracing::warn!(
-                        request_id = %id,
-                        scene_name = %expired.scene_name,
-                        "ipc switch_scene request timed out"
-                    );
-                    let notice = make_envelope(
-                        "user_notice",
-                        Priority::High,
-                        UserNoticePayload {
-                            level: UserNoticeLevel::Warn,
-                            message: format!(
-                                "Scene switch to '{}' timed out (request {})",
-                                expired.scene_name, id
-                            ),
-                        },
-                    );
-                    let _ = write_frame(evt_writer, &notice).await;
-                    update_debug_status(&debug_status, |s| {
-                        s.pending_switch_count = pending_switches.len() as u32;
-                        s.last_switch_result = Some(IpcSwitchResultDebug {
-                            request_id: id.clone(),
-                            status: "timeout".to_string(),
-                            error: None,
-                            ts_unix_ms: now_unix_ms(),
-                        });
-                        s.last_notice = Some(format!(
-                            "Scene switch '{}' timed out ({})",
-                            expired.scene_name, id
-                        ));
-                    });
-                }
-            }
-        }
-
-        if handshake_complete && last_status_push_at.elapsed() >= STATUS_PUSH_INTERVAL {
-            let frame = rx.borrow().clone();
-            let relay = aegis_session_snapshot.lock().unwrap().clone();
-            let payload = build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
-            let snapshot = make_envelope("status_snapshot", Priority::Normal, payload);
-            write_frame(evt_writer, &snapshot).await?;
-            last_status_push_at = Instant::now();
-        }
-
-        if handshake_complete && last_ping_at.elapsed() >= HEARTBEAT_TIMEOUT {
-            let protocol_error = make_protocol_error(
-                ProtocolErrorCode::Timeout,
-                "Heartbeat timeout (missing ping)",
-                None,
-            );
-            let _ = write_frame(evt_writer, &protocol_error).await;
-            tracing::warn!("ipc session closed after heartbeat timeout");
-            update_debug_status(&debug_status, |s| {
-                s.last_notice = Some("Heartbeat timeout (missing ping)".to_string());
-            });
-            return Ok(());
-        }
-
-        let incoming: Envelope<serde_json::Value> =
-            match tokio::time::timeout(READ_POLL_TIMEOUT, read_frame(cmd_reader)).await {
-                Err(_) => continue,
-                Ok(read_res) => match read_res {
-                    Ok(frame) => frame,
-                    Err(err) if err.kind() == io::ErrorKind::InvalidData => {
-                        let msg = err.to_string();
-                        let code = if msg.contains("frame too large") {
-                            ProtocolErrorCode::FrameTooLarge
-                        } else {
-                            ProtocolErrorCode::DecodeFailed
-                        };
-                        let protocol_error = make_protocol_error(code, msg, None);
-                        let _ = write_frame(evt_writer, &protocol_error).await;
-                        update_debug_status(&debug_status, |s| {
-                            s.last_notice = Some("IPC decode/frame protocol error".to_string());
-                        });
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
+        tokio::select! {
+            // ── Arm 1: incoming IPC frame from C++ plugin ──────────────
+            frame_result = tokio::time::timeout(READ_POLL_TIMEOUT, read_frame(cmd_reader)) => {
+                let incoming: Envelope<serde_json::Value> = match frame_result {
+                    Err(_) => continue, // read timeout — no data on pipe
+                    Ok(read_res) => match read_res {
+                        Ok(frame) => frame,
+                        Err(err) if err.kind() == io::ErrorKind::InvalidData => {
+                            let msg = err.to_string();
+                            let code = if msg.contains("frame too large") {
+                                ProtocolErrorCode::FrameTooLarge
+                            } else {
+                                ProtocolErrorCode::DecodeFailed
+                            };
+                            let protocol_error = make_protocol_error(code, msg, None);
+                            let _ = write_frame(evt_writer, &protocol_error).await;
+                            update_debug_status(&debug_status, |s| {
+                                s.last_notice = Some("IPC decode/frame protocol error".to_string());
+                            });
+                            if protocol_errors.record_and_should_reset() {
+                                tracing::warn!("ipc session reset after repeated protocol errors");
+                                return Ok(());
+                            }
+                            continue;
                         }
-                        continue;
-                    }
-                    Err(err) => return Err(err),
-                },
-            };
-        if incoming.v != IPC_PROTOCOL_VERSION {
-            let notice = make_envelope(
-                "user_notice",
-                Priority::High,
-                UserNoticePayload {
-                    level: UserNoticeLevel::Error,
-                    message: format!(
-                        "IPC protocol version mismatch: plugin={}, core={}",
-                        incoming.v, IPC_PROTOCOL_VERSION
-                    ),
-                },
-            );
-            write_frame(evt_writer, &notice).await?;
-            update_debug_status(&debug_status, |s| {
-                s.last_notice = Some("IPC envelope version mismatch".to_string());
-            });
-            return Ok(());
-        }
-
-        match incoming.message_type.as_str() {
-            "hello" => {
-                let hello: HelloPayload = match decode_payload(&incoming) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
-                        }
-                        continue;
-                    }
+                        Err(err) => return Err(err),
+                    },
                 };
-                if hello.protocol_version != IPC_PROTOCOL_VERSION {
+
+                if incoming.v != IPC_PROTOCOL_VERSION {
                     let notice = make_envelope(
                         "user_notice",
                         Priority::High,
                         UserNoticePayload {
                             level: UserNoticeLevel::Error,
                             message: format!(
-                                "Protocol mismatch (plugin {}, core {})",
-                                hello.protocol_version, IPC_PROTOCOL_VERSION
+                                "IPC protocol version mismatch: plugin={}, core={}",
+                                incoming.v, IPC_PROTOCOL_VERSION
                             ),
                         },
                     );
                     write_frame(evt_writer, &notice).await?;
                     update_debug_status(&debug_status, |s| {
-                        s.last_notice = Some("IPC protocol mismatch".to_string());
+                        s.last_notice = Some("IPC envelope version mismatch".to_string());
                     });
                     return Ok(());
                 }
 
-                let ack = make_envelope(
-                    "hello_ack",
+                match incoming.message_type.as_str() {
+                    "hello" => {
+                        let hello: HelloPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        if hello.protocol_version != IPC_PROTOCOL_VERSION {
+                            let notice = make_envelope(
+                                "user_notice",
+                                Priority::High,
+                                UserNoticePayload {
+                                    level: UserNoticeLevel::Error,
+                                    message: format!(
+                                        "Protocol mismatch (plugin {}, core {})",
+                                        hello.protocol_version, IPC_PROTOCOL_VERSION
+                                    ),
+                                },
+                            );
+                            write_frame(evt_writer, &notice).await?;
+                            update_debug_status(&debug_status, |s| {
+                                s.last_notice = Some("IPC protocol mismatch".to_string());
+                            });
+                            return Ok(());
+                        }
+
+                        let ack = make_envelope(
+                            "hello_ack",
+                            Priority::High,
+                            HelloAckPayload {
+                                core_version: env!("CARGO_PKG_VERSION").to_string(),
+                                protocol_version: IPC_PROTOCOL_VERSION,
+                                capabilities: vec![
+                                    "state_machine".to_string(),
+                                    "aegis".to_string(),
+                                    "ipc_stub".to_string(),
+                                ],
+                            },
+                        );
+                        write_frame(evt_writer, &ack).await?;
+                        handshake_complete = true;
+                        last_ping_at = Instant::now();
+                        last_status_push_at = Instant::now() - STATUS_PUSH_INTERVAL;
+                    }
+                    "ping" => {
+                        let ping: PingPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        let pong =
+                            make_envelope("pong", Priority::Normal, PongPayload { nonce: ping.nonce });
+                        write_frame(evt_writer, &pong).await?;
+                        last_ping_at = Instant::now();
+                    }
+                    "request_status" => {
+                        let _: RequestStatusPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        let frame = rx.borrow().clone();
+                        let relay = aegis_session_snapshot.lock().unwrap().clone();
+                        let payload =
+                            build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
+                        let snapshot = make_envelope("status_snapshot", Priority::High, payload);
+                        write_frame(evt_writer, &snapshot).await?;
+                        last_status_push_at = Instant::now();
+                    }
+                    "set_mode_request" => {
+                        let req: SetModeRequestPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        let normalized = match req.mode.as_str() {
+                            "studio" => SnapshotMode::Studio,
+                            "irl" => SnapshotMode::Irl,
+                            _ => {
+                                let protocol_error = make_protocol_error(
+                                    ProtocolErrorCode::InvalidPayload,
+                                    format!("Invalid mode for set_mode_request: {}", req.mode),
+                                    Some(incoming.id.clone()),
+                                );
+                                write_frame(evt_writer, &protocol_error).await?;
+                                continue;
+                            }
+                        };
+                        if !session_overrides.set_mode_if_changed(normalized) {
+                            tracing::debug!(mode = %req.mode, "ipc set_mode_request no-op (unchanged override)");
+                            continue;
+                        }
+                        let notice = make_envelope(
+                            "user_notice",
+                            Priority::Normal,
+                            UserNoticePayload {
+                                level: UserNoticeLevel::Info,
+                                message: format!("Dock mode override set to {}", req.mode),
+                            },
+                        );
+                        let _ = write_frame(evt_writer, &notice).await;
+                        let frame = rx.borrow().clone();
+                        let relay = aegis_session_snapshot.lock().unwrap().clone();
+                        let payload =
+                            build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
+                        let snapshot = make_envelope("status_snapshot", Priority::High, payload);
+                        write_frame(evt_writer, &snapshot).await?;
+                        last_status_push_at = Instant::now();
+                    }
+                    "set_setting_request" => {
+                        let req: SetSettingRequestPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        let changed = match session_overrides.apply_setting_if_changed(&req.key, req.value) {
+                            Ok(changed) => changed,
+                            Err(()) => {
+                                let protocol_error = make_protocol_error(
+                                    ProtocolErrorCode::InvalidPayload,
+                                    format!("Unsupported setting key for set_setting_request: {}", req.key),
+                                    Some(incoming.id.clone()),
+                                );
+                                write_frame(evt_writer, &protocol_error).await?;
+                                continue;
+                            }
+                        };
+                        if !changed {
+                            tracing::debug!(
+                                key = %req.key,
+                                value = req.value,
+                                "ipc set_setting_request no-op (unchanged override)"
+                            );
+                            continue;
+                        }
+                        let notice = make_envelope(
+                            "user_notice",
+                            Priority::Normal,
+                            UserNoticePayload {
+                                level: UserNoticeLevel::Info,
+                                message: format!("Dock setting '{}' set to {}", req.key, req.value),
+                            },
+                        );
+                        let _ = write_frame(evt_writer, &notice).await;
+                        let frame = rx.borrow().clone();
+                        let relay = aegis_session_snapshot.lock().unwrap().clone();
+                        let payload =
+                            build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
+                        let snapshot = make_envelope("status_snapshot", Priority::High, payload);
+                        write_frame(evt_writer, &snapshot).await?;
+                        last_status_push_at = Instant::now();
+                    }
+                    "scene_switch_result" => {
+                        let result: SceneSwitchResultPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        tracing::info!(
+                            request_id = %result.request_id,
+                            ok = result.ok,
+                            error = ?result.error,
+                            "ipc scene_switch_result received"
+                        );
+                        if pending_switches.remove(&result.request_id).is_none() {
+                            tracing::warn!(
+                                request_id = %result.request_id,
+                                "ipc scene_switch_result received for unknown request"
+                            );
+                            update_debug_status(&debug_status, |s| {
+                                s.last_switch_result = Some(IpcSwitchResultDebug {
+                                    request_id: result.request_id.clone(),
+                                    status: "unknown_request".to_string(),
+                                    error: result.error.clone(),
+                                    ts_unix_ms: now_unix_ms(),
+                                });
+                                s.last_notice = Some("scene_switch_result for unknown request".to_string());
+                            });
+                        } else {
+                            update_debug_status(&debug_status, |s| {
+                                s.pending_switch_count = pending_switches.len() as u32;
+                                s.last_switch_result = Some(IpcSwitchResultDebug {
+                                    request_id: result.request_id.clone(),
+                                    status: if result.ok { "ok" } else { "error" }.to_string(),
+                                    error: result.error.clone(),
+                                    ts_unix_ms: now_unix_ms(),
+                                });
+                            });
+                        }
+                    }
+                    "relay_start_request" => {
+                        let req: RelayStartRequestPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+
+                        if relay_in_flight.is_some() {
+                            let result_evt = make_envelope(
+                                "relay_action_result",
+                                Priority::High,
+                                RelayActionResultPayload {
+                                    request_id: req.request_id,
+                                    action_type: "relay_start".to_string(),
+                                    ok: false,
+                                    error: Some("relay_action_already_in_flight".to_string()),
+                                    detail: None,
+                                },
+                            );
+                            let _ = write_frame(evt_writer, &result_evt).await;
+                            continue;
+                        }
+
+                        let client = match build_aegis_client_from_local_config() {
+                            Ok(c) => c,
+                            Err(err) => {
+                                let result_evt = make_envelope(
+                                    "relay_action_result",
+                                    Priority::High,
+                                    RelayActionResultPayload {
+                                        request_id: req.request_id,
+                                        action_type: "relay_start".to_string(),
+                                        ok: false,
+                                        error: Some(err),
+                                        detail: None,
+                                    },
+                                );
+                                let _ = write_frame(evt_writer, &result_evt).await;
+                                continue;
+                            }
+                        };
+
+                        relay_in_flight = Some(req.request_id.clone());
+                        let tx = relay_result_tx.clone();
+                        let request_id = req.request_id;
+                        let region_preference = req.region_preference;
+
+                        tokio::spawn(async move {
+                            let idem = generate_idempotency_key();
+                            let request = RelayStartRequest {
+                                region_preference,
+                                client_context: Some(RelayStartClientContext {
+                                    obs_connected: None,
+                                    mode: Some("studio".to_string()),
+                                    requested_by: Some("ipc".to_string()),
+                                }),
+                            };
+
+                            let result = match client.relay_start(&idem, &request).await {
+                                Ok(session) => {
+                                    tracing::info!(
+                                        session_id = %session.session_id,
+                                        status = %session.status,
+                                        "ipc relay_start completed"
+                                    );
+                                    RelayTaskResult {
+                                        request_id,
+                                        action_type: "relay_start".to_string(),
+                                        ok: true,
+                                        error: None,
+                                        detail: Some(format!("session {}", session.session_id)),
+                                        session: Some(session),
+                                    }
+                                }
+                                Err(err) => {
+                                    tracing::warn!(error = %err, "ipc relay_start failed");
+                                    RelayTaskResult {
+                                        request_id,
+                                        action_type: "relay_start".to_string(),
+                                        ok: false,
+                                        error: Some(err.to_string()),
+                                        detail: None,
+                                        session: None,
+                                    }
+                                }
+                            };
+                            let _ = tx.send(result).await;
+                        });
+                    }
+                    "relay_stop_request" => {
+                        let req: RelayStopRequestPayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+
+                        if relay_in_flight.is_some() {
+                            let result_evt = make_envelope(
+                                "relay_action_result",
+                                Priority::High,
+                                RelayActionResultPayload {
+                                    request_id: req.request_id,
+                                    action_type: "relay_stop".to_string(),
+                                    ok: false,
+                                    error: Some("relay_action_already_in_flight".to_string()),
+                                    detail: None,
+                                },
+                            );
+                            let _ = write_frame(evt_writer, &result_evt).await;
+                            continue;
+                        }
+
+                        let client = match build_aegis_client_from_local_config() {
+                            Ok(c) => c,
+                            Err(err) => {
+                                let result_evt = make_envelope(
+                                    "relay_action_result",
+                                    Priority::High,
+                                    RelayActionResultPayload {
+                                        request_id: req.request_id,
+                                        action_type: "relay_stop".to_string(),
+                                        ok: false,
+                                        error: Some(err),
+                                        detail: None,
+                                    },
+                                );
+                                let _ = write_frame(evt_writer, &result_evt).await;
+                                continue;
+                            }
+                        };
+
+                        relay_in_flight = Some(req.request_id.clone());
+                        let tx = relay_result_tx.clone();
+                        let request_id = req.request_id;
+                        let reason = req.reason.unwrap_or_else(|| "user_requested".to_string());
+
+                        tokio::spawn(async move {
+                            // First, look up the active session to get session_id
+                            let active = match client.relay_active().await {
+                                Ok(Some(session)) => session,
+                                Ok(None) => {
+                                    let _ = tx.send(RelayTaskResult {
+                                        request_id,
+                                        action_type: "relay_stop".to_string(),
+                                        ok: true,
+                                        error: None,
+                                        detail: Some("no active relay session".to_string()),
+                                        session: None,
+                                    }).await;
+                                    return;
+                                }
+                                Err(err) => {
+                                    tracing::warn!(error = %err, "ipc relay_stop active lookup failed");
+                                    let _ = tx.send(RelayTaskResult {
+                                        request_id,
+                                        action_type: "relay_stop".to_string(),
+                                        ok: false,
+                                        error: Some(err.to_string()),
+                                        detail: None,
+                                        session: None,
+                                    }).await;
+                                    return;
+                                }
+                            };
+
+                            let stop_req = RelayStopRequest {
+                                session_id: active.session_id.clone(),
+                                reason,
+                            };
+
+                            let result = match client.relay_stop(&stop_req).await {
+                                Ok(_) => {
+                                    tracing::info!(
+                                        session_id = %active.session_id,
+                                        "ipc relay_stop completed"
+                                    );
+                                    RelayTaskResult {
+                                        request_id,
+                                        action_type: "relay_stop".to_string(),
+                                        ok: true,
+                                        error: None,
+                                        detail: Some(format!("stopped {}", active.session_id)),
+                                        session: None,
+                                    }
+                                }
+                                Err(err) => {
+                                    tracing::warn!(error = %err, "ipc relay_stop failed");
+                                    RelayTaskResult {
+                                        request_id,
+                                        action_type: "relay_stop".to_string(),
+                                        ok: false,
+                                        error: Some(err.to_string()),
+                                        detail: None,
+                                        session: None,
+                                    }
+                                }
+                            };
+                            let _ = tx.send(result).await;
+                        });
+                    }
+                    "obs_shutdown_notice" => {
+                        let notice: ObsShutdownNoticePayload = match decode_payload(&incoming) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
+                                if protocol_errors.record_and_should_reset() {
+                                    tracing::warn!("ipc session reset after repeated protocol errors");
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+                        };
+                        tracing::info!(reason = %notice.reason, "ipc obs shutdown notice received");
+                        update_debug_status(&debug_status, |s| {
+                            s.last_notice = Some(format!("obs shutdown notice: {}", notice.reason));
+                        });
+                        return Ok(());
+                    }
+                    other => {
+                        let protocol_error = make_protocol_error(
+                            ProtocolErrorCode::UnknownType,
+                            format!("Unsupported IPC command in core stub: {other}"),
+                            Some(incoming.id.clone()),
+                        );
+                        write_frame(evt_writer, &protocol_error).await?;
+                        update_debug_status(&debug_status, |s| {
+                            s.last_notice = Some(format!("Unsupported IPC command: {other}"));
+                        });
+                        if protocol_errors.record_and_should_reset() {
+                            tracing::warn!("ipc session reset after repeated protocol errors");
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
+            // ── Arm 2: relay background task completed ─────────────────
+            Some(result) = relay_result_rx.recv() => {
+                relay_in_flight = None;
+
+                let result_evt = make_envelope(
+                    "relay_action_result",
                     Priority::High,
-                    HelloAckPayload {
-                        core_version: env!("CARGO_PKG_VERSION").to_string(),
-                        protocol_version: IPC_PROTOCOL_VERSION,
-                        capabilities: vec![
-                            "state_machine".to_string(),
-                            "aegis".to_string(),
-                            "ipc_stub".to_string(),
-                        ],
+                    RelayActionResultPayload {
+                        request_id: result.request_id,
+                        action_type: result.action_type.clone(),
+                        ok: result.ok,
+                        error: result.error,
+                        detail: result.detail,
                     },
                 );
-                write_frame(evt_writer, &ack).await?;
-                handshake_complete = true;
-                last_ping_at = Instant::now();
-                last_status_push_at = Instant::now() - STATUS_PUSH_INTERVAL;
-            }
-            "ping" => {
-                let ping: PingPayload = match decode_payload(&incoming) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
+                let _ = write_frame(evt_writer, &result_evt).await;
+
+                // Update session snapshot
+                if result.ok {
+                    if result.action_type == "relay_start" {
+                        if let Some(session) = result.session {
+                            *aegis_session_snapshot.lock().unwrap() = Some(session);
                         }
-                        continue;
+                    } else {
+                        // relay_stop success — clear session
+                        *aegis_session_snapshot.lock().unwrap() = None;
                     }
-                };
-                let pong =
-                    make_envelope("pong", Priority::Normal, PongPayload { nonce: ping.nonce });
-                write_frame(evt_writer, &pong).await?;
-                last_ping_at = Instant::now();
-            }
-            "request_status" => {
-                let _: RequestStatusPayload = match decode_payload(&incoming) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
-                        }
-                        continue;
-                    }
-                };
-                let frame = rx.borrow().clone();
-                let relay = aegis_session_snapshot.lock().unwrap().clone();
-                let payload =
-                    build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
-                let snapshot = make_envelope("status_snapshot", Priority::High, payload);
-                write_frame(evt_writer, &snapshot).await?;
-                last_status_push_at = Instant::now();
-            }
-            "set_mode_request" => {
-                let req: SetModeRequestPayload = match decode_payload(&incoming) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
-                        }
-                        continue;
-                    }
-                };
-                let normalized = match req.mode.as_str() {
-                    "studio" => SnapshotMode::Studio,
-                    "irl" => SnapshotMode::Irl,
-                    _ => {
-                        let protocol_error = make_protocol_error(
-                            ProtocolErrorCode::InvalidPayload,
-                            format!("Invalid mode for set_mode_request: {}", req.mode),
-                            Some(incoming.id.clone()),
-                        );
-                        write_frame(evt_writer, &protocol_error).await?;
-                        continue;
-                    }
-                };
-                if !session_overrides.set_mode_if_changed(normalized) {
-                    tracing::debug!(mode = %req.mode, "ipc set_mode_request no-op (unchanged override)");
-                    continue;
                 }
-                let notice = make_envelope(
-                    "user_notice",
-                    Priority::Normal,
-                    UserNoticePayload {
-                        level: UserNoticeLevel::Info,
-                        message: format!("Dock mode override set to {}", req.mode),
-                    },
-                );
-                let _ = write_frame(evt_writer, &notice).await;
+
+                // Push updated status snapshot
                 let frame = rx.borrow().clone();
                 let relay = aegis_session_snapshot.lock().unwrap().clone();
                 let payload =
                     build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
                 let snapshot = make_envelope("status_snapshot", Priority::High, payload);
-                write_frame(evt_writer, &snapshot).await?;
+                let _ = write_frame(evt_writer, &snapshot).await;
                 last_status_push_at = Instant::now();
             }
-            "set_setting_request" => {
-                let req: SetSettingRequestPayload = match decode_payload(&incoming) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
+
+            // ── Arm 3: core command (switch_scene from failover engine) ──
+            result = core_cmd_rx.recv(), if !core_cmd_closed => {
+                match result {
+                    Ok(cmd) => {
+                        if !handshake_complete {
+                            tracing::debug!("dropping core ipc command before handshake");
+                            continue;
                         }
-                        continue;
+                        match cmd {
+                            CoreIpcCommand::SwitchScene {
+                                scene_name,
+                                reason,
+                                deadline_ms,
+                            } => {
+                                let request_id = Uuid::new_v4().to_string();
+                                let request_ts = now_unix_ms();
+                                let evt = make_envelope(
+                                    "switch_scene",
+                                    Priority::Critical,
+                                    SwitchScenePayload {
+                                        request_id: request_id.clone(),
+                                        scene_name: scene_name.clone(),
+                                        reason,
+                                        deadline_ms,
+                                    },
+                                );
+                                write_frame(evt_writer, &evt).await?;
+                                pending_switches.insert(
+                                    request_id,
+                                    PendingSwitchScene {
+                                        scene_name,
+                                        deadline_at: Instant::now() + Duration::from_millis(deadline_ms),
+                                    },
+                                );
+                                let payload = evt.payload.clone();
+                                update_debug_status(&debug_status, |s| {
+                                    s.pending_switch_count = pending_switches.len() as u32;
+                                    s.last_switch_request = Some(IpcSwitchRequestDebug {
+                                        request_id: payload.request_id,
+                                        scene_name: payload.scene_name,
+                                        reason: payload.reason,
+                                        deadline_ms: payload.deadline_ms,
+                                        ts_unix_ms: request_ts,
+                                    });
+                                });
+                            }
+                        }
                     }
-                };
-                let changed = match session_overrides.apply_setting_if_changed(&req.key, req.value) {
-                    Ok(changed) => changed,
-                    Err(()) => {
-                        let protocol_error = make_protocol_error(
-                            ProtocolErrorCode::InvalidPayload,
-                            format!("Unsupported setting key for set_setting_request: {}", req.key),
-                            Some(incoming.id.clone()),
-                        );
-                        write_frame(evt_writer, &protocol_error).await?;
-                        continue;
+                    Err(broadcast::error::RecvError::Closed) => {
+                        core_cmd_closed = true;
                     }
-                };
-                if !changed {
-                    tracing::debug!(
-                        key = %req.key,
-                        value = req.value,
-                        "ipc set_setting_request no-op (unchanged override)"
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(skipped = n, "ipc core command channel lagged");
+                    }
+                }
+            }
+
+            // ── Arm 4: periodic tick (heartbeat, status push, switch expiry) ──
+            _ = tick.tick() => {
+                // Heartbeat timeout check
+                if handshake_complete && last_ping_at.elapsed() >= HEARTBEAT_TIMEOUT {
+                    let protocol_error = make_protocol_error(
+                        ProtocolErrorCode::Timeout,
+                        "Heartbeat timeout (missing ping)",
+                        None,
                     );
-                    continue;
-                }
-                let notice = make_envelope(
-                    "user_notice",
-                    Priority::Normal,
-                    UserNoticePayload {
-                        level: UserNoticeLevel::Info,
-                        message: format!("Dock setting '{}' set to {}", req.key, req.value),
-                    },
-                );
-                let _ = write_frame(evt_writer, &notice).await;
-                let frame = rx.borrow().clone();
-                let relay = aegis_session_snapshot.lock().unwrap().clone();
-                let payload =
-                    build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
-                let snapshot = make_envelope("status_snapshot", Priority::High, payload);
-                write_frame(evt_writer, &snapshot).await?;
-                last_status_push_at = Instant::now();
-            }
-            "scene_switch_result" => {
-                let result: SceneSwitchResultPayload = match decode_payload(&incoming) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
-                        }
-                        continue;
-                    }
-                };
-                tracing::info!(
-                    request_id = %result.request_id,
-                    ok = result.ok,
-                    error = ?result.error,
-                    "ipc scene_switch_result received"
-                );
-                if pending_switches.remove(&result.request_id).is_none() {
-                    tracing::warn!(
-                        request_id = %result.request_id,
-                        "ipc scene_switch_result received for unknown request"
-                    );
+                    let _ = write_frame(evt_writer, &protocol_error).await;
+                    tracing::warn!("ipc session closed after heartbeat timeout");
                     update_debug_status(&debug_status, |s| {
-                        s.last_switch_result = Some(IpcSwitchResultDebug {
-                            request_id: result.request_id.clone(),
-                            status: "unknown_request".to_string(),
-                            error: result.error.clone(),
-                            ts_unix_ms: now_unix_ms(),
-                        });
-                        s.last_notice = Some("scene_switch_result for unknown request".to_string());
+                        s.last_notice = Some("Heartbeat timeout (missing ping)".to_string());
                     });
-                } else {
-                    update_debug_status(&debug_status, |s| {
-                        s.pending_switch_count = pending_switches.len() as u32;
-                        s.last_switch_result = Some(IpcSwitchResultDebug {
-                            request_id: result.request_id.clone(),
-                            status: if result.ok { "ok" } else { "error" }.to_string(),
-                            error: result.error.clone(),
-                            ts_unix_ms: now_unix_ms(),
-                        });
-                    });
-                }
-            }
-            "obs_shutdown_notice" => {
-                let notice: ObsShutdownNoticePayload = match decode_payload(&incoming) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        emit_protocol_error_for_payload(evt_writer, &incoming, err).await?;
-                        if protocol_errors.record_and_should_reset() {
-                            tracing::warn!("ipc session reset after repeated protocol errors");
-                            return Ok(());
-                        }
-                        continue;
-                    }
-                };
-                tracing::info!(reason = %notice.reason, "ipc obs shutdown notice received");
-                update_debug_status(&debug_status, |s| {
-                    s.last_notice = Some(format!("obs shutdown notice: {}", notice.reason));
-                });
-                return Ok(());
-            }
-            other => {
-                let protocol_error = make_protocol_error(
-                    ProtocolErrorCode::UnknownType,
-                    format!("Unsupported IPC command in core stub: {other}"),
-                    Some(incoming.id.clone()),
-                );
-                write_frame(evt_writer, &protocol_error).await?;
-                update_debug_status(&debug_status, |s| {
-                    s.last_notice = Some(format!("Unsupported IPC command: {other}"));
-                });
-                if protocol_errors.record_and_should_reset() {
-                    tracing::warn!("ipc session reset after repeated protocol errors");
                     return Ok(());
+                }
+
+                // Periodic status push
+                if handshake_complete && last_status_push_at.elapsed() >= STATUS_PUSH_INTERVAL {
+                    let frame = rx.borrow().clone();
+                    let relay = aegis_session_snapshot.lock().unwrap().clone();
+                    let payload = build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
+                    let snapshot = make_envelope("status_snapshot", Priority::Normal, payload);
+                    write_frame(evt_writer, &snapshot).await?;
+                    last_status_push_at = Instant::now();
+                }
+
+                // Pending switch expiry
+                if !pending_switches.is_empty() {
+                    let now = Instant::now();
+                    let expired_ids: Vec<String> = pending_switches
+                        .iter()
+                        .filter_map(|(id, pending)| (now >= pending.deadline_at).then_some(id.clone()))
+                        .collect();
+                    for id in expired_ids {
+                        if let Some(expired) = pending_switches.remove(&id) {
+                            tracing::warn!(
+                                request_id = %id,
+                                scene_name = %expired.scene_name,
+                                "ipc switch_scene request timed out"
+                            );
+                            let notice = make_envelope(
+                                "user_notice",
+                                Priority::High,
+                                UserNoticePayload {
+                                    level: UserNoticeLevel::Warn,
+                                    message: format!(
+                                        "Scene switch to '{}' timed out (request {})",
+                                        expired.scene_name, id
+                                    ),
+                                },
+                            );
+                            let _ = write_frame(evt_writer, &notice).await;
+                            update_debug_status(&debug_status, |s| {
+                                s.pending_switch_count = pending_switches.len() as u32;
+                                s.last_switch_result = Some(IpcSwitchResultDebug {
+                                    request_id: id.clone(),
+                                    status: "timeout".to_string(),
+                                    error: None,
+                                    ts_unix_ms: now_unix_ms(),
+                                });
+                                s.last_notice = Some(format!(
+                                    "Scene switch '{}' timed out ({})",
+                                    expired.scene_name, id
+                                ));
+                            });
+                        }
+                    }
                 }
             }
         }

@@ -1,6 +1,7 @@
 use crate::aegis::{
-    ControlPlaneClient, RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest,
+    RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest,
 };
+use crate::aegis_client::{build_aegis_client, generate_idempotency_key};
 use crate::config::{Config, ThemeConfig};
 use crate::ipc::{CoreIpcCommand, CoreIpcCommandSender, IpcDebugStatus, IpcDebugStatusHandle};
 use crate::model::TelemetryFrame;
@@ -16,13 +17,12 @@ use axum::{
     Form, Router,
 };
 use base64::{engine::general_purpose, Engine as _};
-use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -1467,7 +1467,7 @@ async fn get_aegis_status(
     if refresh_requested {
         let client = {
             let vault = state.vault.lock().unwrap();
-            build_aegis_client_from_config(&config, &vault).map_err(|err| err.to_string())
+            build_aegis_client(&config, &vault).map_err(|err| err.to_string())
         };
         let refreshed = match client {
             Ok(client) => match client.relay_active().await {
@@ -1543,7 +1543,7 @@ async fn post_aegis_start(
 
     let client = {
         let vault = state.vault.lock().unwrap();
-        build_aegis_client_from_config(&config, &vault).map_err(|err| err.to_string())
+        build_aegis_client(&config, &vault).map_err(|err| err.to_string())
     };
 
     let client = match client {
@@ -1626,7 +1626,7 @@ async fn post_aegis_stop(
 
     let client = {
         let vault = state.vault.lock().unwrap();
-        build_aegis_client_from_config(&config, &vault).map_err(|err| err.to_string())
+        build_aegis_client(&config, &vault).map_err(|err| err.to_string())
     };
     let client = match client {
         Ok(client) => client,
@@ -1767,45 +1767,6 @@ async fn post_ipc_switch_scene(
         )
             .into_response(),
     }
-}
-
-fn build_aegis_client_from_config(
-    config: &Config,
-    vault: &Vault,
-) -> Result<ControlPlaneClient, Box<dyn std::error::Error>> {
-    let base_url = config
-        .aegis
-        .base_url
-        .as_deref()
-        .ok_or("missing aegis.base_url in config")?
-        .trim();
-    let jwt_key = config
-        .aegis
-        .access_jwt_key
-        .as_deref()
-        .ok_or("missing aegis.access_jwt_key in config")?
-        .trim();
-    if base_url.is_empty() {
-        return Err("missing aegis.base_url in config".into());
-    }
-    if jwt_key.is_empty() {
-        return Err("missing aegis.access_jwt_key in config".into());
-    }
-    let access_jwt = vault.retrieve(jwt_key)?;
-    Ok(ControlPlaneClient::new(base_url, access_jwt.trim())?)
-}
-
-fn generate_idempotency_key() -> String {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let suffix: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(10)
-        .map(char::from)
-        .collect();
-    format!("dash-{ts}-{suffix}")
 }
 
 #[cfg(test)]

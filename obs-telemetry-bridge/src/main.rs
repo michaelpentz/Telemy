@@ -1,4 +1,5 @@
 mod aegis;
+mod aegis_client;
 mod app;
 mod config;
 mod exporters;

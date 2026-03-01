@@ -44,12 +44,12 @@ pub fn start_tray(
     let quit_flag = shutdown_flag.clone();
     let quit_tx = shutdown_tx.clone();
     tray.add_menu_item("Quit", move || {
-        quit_flag.store(true, Ordering::SeqCst);
+        quit_flag.store(true, Ordering::Release);
         let _ = quit_tx.send(true);
     })?;
 
     loop {
-        if shutdown_flag.load(Ordering::SeqCst) {
+        if shutdown_flag.load(Ordering::Acquire) {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));

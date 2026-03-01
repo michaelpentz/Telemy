@@ -1,16 +1,15 @@
 use crate::aegis::{
-    ControlPlaneClient, RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest,
+    RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest,
 };
+use crate::aegis_client::{build_aegis_client, generate_idempotency_key, generate_token};
 use crate::config::Config;
 use crate::exporters::GrafanaExporter;
 use crate::metrics::MetricsHub;
 use crate::model::TelemetryFrame;
 use crate::security::Vault;
-use rand::{distributions::Alphanumeric, Rng};
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 use tokio::time::Duration;
 
@@ -356,45 +355,3 @@ async fn handle_aegis_relay_stop(config: &Config) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-fn build_aegis_client(
-    config: &Config,
-    vault: &Vault,
-) -> Result<ControlPlaneClient, Box<dyn std::error::Error>> {
-    let base_url = config
-        .aegis
-        .base_url
-        .as_deref()
-        .ok_or("missing aegis.base_url in config")?
-        .trim();
-    let jwt_key = config
-        .aegis
-        .access_jwt_key
-        .as_deref()
-        .ok_or("missing aegis.access_jwt_key in config")?
-        .trim();
-    if base_url.is_empty() {
-        return Err("missing aegis.base_url in config".into());
-    }
-    if jwt_key.is_empty() {
-        return Err("missing aegis.access_jwt_key in config".into());
-    }
-    let access_jwt = vault.retrieve(jwt_key)?;
-
-    Ok(ControlPlaneClient::new(base_url, access_jwt.trim())?)
-}
-
-fn generate_token(len: usize) -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .map(char::from)
-        .collect()
-}
-
-fn generate_idempotency_key() -> String {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    format!("telemy-{}-{}", ts, generate_token(12))
-}
