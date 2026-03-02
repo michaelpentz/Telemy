@@ -2132,4 +2132,148 @@ mod tests {
         drop(client);
         let _ = task.await;
     }
+
+    // ── Relay action tests ──────────────────────────────────────────────────
+    //
+    // When `build_aegis_client_from_local_config()` fails (no config.toml in
+    // test environment), the relay handlers emit an immediate
+    // `relay_action_result { ok: false }` instead of spawning a background
+    // task.  These tests verify:
+    //   - the result arrives before the heartbeat window closes (~350ms in test
+    //     config), proving the select! loop does NOT block the pipe, and
+    //   - the result fields match the request metadata.
+
+    fn relay_start_request_envelope(request_id: &str) -> Envelope<serde_json::Value> {
+        make_envelope(
+            "relay_start_request",
+            Priority::High,
+            serde_json::json!({
+                "request_id": request_id,
+                "region_preference": null
+            }),
+        )
+    }
+
+    fn relay_stop_request_envelope(request_id: &str) -> Envelope<serde_json::Value> {
+        make_envelope(
+            "relay_stop_request",
+            Priority::High,
+            serde_json::json!({
+                "request_id": request_id,
+                "reason": null
+            }),
+        )
+    }
+
+    #[tokio::test]
+    async fn relay_start_request_missing_config_emits_immediate_failed_result() {
+        let (mut client, task, _tx, _cmd_tx) = spawn_test_session().await;
+
+        write_frame(&mut client, &hello_envelope()).await.unwrap();
+        let ack = read_event(&mut client).await;
+        assert_eq!(ack.message_type, "hello_ack");
+
+        // Drain the first periodic status_snapshot so we have a clean slate.
+        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+
+        write_frame(
+            &mut client,
+            &relay_start_request_envelope("test-relay-start-001"),
+        )
+        .await
+        .unwrap();
+
+        // Result must arrive well within the heartbeat window (350 ms test config).
+        let result = drain_until_message_type(
+            &mut client,
+            "relay_action_result",
+            Duration::from_millis(300),
+        )
+        .await;
+
+        let payload: RelayActionResultPayload =
+            serde_json::from_value(result.payload).expect("relay_action_result payload");
+        assert_eq!(payload.request_id, "test-relay-start-001");
+        assert_eq!(payload.action_type, "relay_start");
+        assert!(!payload.ok, "expected ok=false when config is missing");
+        assert!(payload.error.is_some(), "expected error field");
+
+        drop(client);
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn relay_stop_request_missing_config_emits_immediate_failed_result() {
+        let (mut client, task, _tx, _cmd_tx) = spawn_test_session().await;
+
+        write_frame(&mut client, &hello_envelope()).await.unwrap();
+        let ack = read_event(&mut client).await;
+        assert_eq!(ack.message_type, "hello_ack");
+
+        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+
+        write_frame(
+            &mut client,
+            &relay_stop_request_envelope("test-relay-stop-001"),
+        )
+        .await
+        .unwrap();
+
+        let result = drain_until_message_type(
+            &mut client,
+            "relay_action_result",
+            Duration::from_millis(300),
+        )
+        .await;
+
+        let payload: RelayActionResultPayload =
+            serde_json::from_value(result.payload).expect("relay_action_result payload");
+        assert_eq!(payload.request_id, "test-relay-stop-001");
+        assert_eq!(payload.action_type, "relay_stop");
+        assert!(!payload.ok, "expected ok=false when config is missing");
+        assert!(payload.error.is_some(), "expected error field");
+
+        drop(client);
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn session_stays_alive_while_relay_start_result_pending() {
+        // After a relay_start_request the session must continue processing
+        // ping/pong without dying from heartbeat timeout.
+        let (mut client, task, _tx, _cmd_tx) = spawn_test_session().await;
+
+        write_frame(&mut client, &hello_envelope()).await.unwrap();
+        let ack = read_event(&mut client).await;
+        assert_eq!(ack.message_type, "hello_ack");
+
+        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+
+        write_frame(
+            &mut client,
+            &relay_start_request_envelope("test-relay-alive-001"),
+        )
+        .await
+        .unwrap();
+
+        // Drain the relay result.
+        let _ = drain_until_message_type(
+            &mut client,
+            "relay_action_result",
+            Duration::from_millis(300),
+        )
+        .await;
+
+        // Verify the session is still alive by exchanging a ping/pong.
+        write_frame(&mut client, &ping_envelope("alive-check"))
+            .await
+            .unwrap();
+        let pong =
+            drain_until_message_type(&mut client, "pong", Duration::from_millis(500)).await;
+        let pong_payload: PongPayload = serde_json::from_value(pong.payload).unwrap();
+        assert_eq!(pong_payload.nonce, "alive-check");
+
+        drop(client);
+        let _ = task.await;
+    }
 }
