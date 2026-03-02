@@ -1090,12 +1090,33 @@ bool TryRegisterCefDockHost() {
 
     g_cef_dock_state.dock_registered = true;
     aegis_obs_browser_dock_host_scaffold_set_js_executor(&CefDockExecuteJs, &g_cef_executor_state);
-    // Validation-friendly behavior: force the custom dock visible so it is not lost in a saved layout.
-    dock->setFloating(true);
-    dock->resize(420, 720);
-    dock->show();
-    dock->raise();
-    dock->activateWindow();
+    // Defer the show/float decision to give OBS time to restore its saved
+    // DockState layout.  Without this delay the dock briefly floats in the
+    // center of the screen before OBS moves it to its saved docked position,
+    // creating a visual flash on every launch.
+    auto* show_timer = new QTimer(dock);
+    show_timer->setSingleShot(true);
+    QObject::connect(show_timer, &QTimer::timeout, dock, [dock, show_timer]() {
+        show_timer->deleteLater();
+        if (dock->isVisible()) {
+            // OBS restored saved layout — dock is already where it should be.
+            blog(LOG_INFO,
+                 "[aegis-obs-shim] browser dock scaffold deferred show: "
+                 "already visible (saved layout restored)");
+            return;
+        }
+        // No saved state for this dock (first install) — float it so the
+        // user can discover and position it.
+        dock->setFloating(true);
+        dock->resize(420, 720);
+        dock->show();
+        dock->raise();
+        dock->activateWindow();
+        blog(LOG_INFO,
+             "[aegis-obs-shim] browser dock scaffold deferred show: "
+             "floating (no saved layout)");
+    });
+    show_timer->start(1500);
     blog(
         LOG_INFO,
         "[aegis-obs-shim] browser dock scaffold initialize id=%s title=%s (OBS/CEF host active)",

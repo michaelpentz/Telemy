@@ -9,6 +9,7 @@
 #include <obs-frontend-api.h>
 #include <QApplication>
 #include <QColor>
+#include <QDir>
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <mutex>
 #include <sstream>
@@ -1190,6 +1192,28 @@ void ReplayDockStateToJsSinkIfAvailable() {
     }
     if (!snapshot.ipc_status_snapshot_envelope_json.empty()) {
         EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", snapshot.ipc_status_snapshot_envelope_json);
+    } else {
+        // No status_snapshot from IPC yet — synthesize a minimal one from the cached
+        // Qt theme so the dock picks up the OBS color scheme on page load / refresh.
+        const ObsDockThemeSlots cached_theme = GetCachedObsDockTheme();
+        if (cached_theme.valid) {
+            QJsonObject theme_obj = QtThemeToJsonObject(cached_theme);
+            QJsonObject payload;
+            payload.insert(QStringLiteral("theme"), theme_obj);
+            QJsonObject envelope;
+            envelope.insert(QStringLiteral("type"), QStringLiteral("status_snapshot"));
+            envelope.insert(QStringLiteral("payload"), payload);
+            const std::string synthetic_json =
+                QJsonDocument(envelope).toJson(QJsonDocument::Compact).toStdString();
+            const bool delivered =
+                EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", synthetic_json);
+            blog(
+                delivered ? LOG_INFO : LOG_WARNING,
+                "[aegis-obs-shim] dock replay: synthetic theme status_snapshot emitted "
+                "(no IPC snapshot cached) delivered=%s bytes=%d",
+                delivered ? "true" : "false",
+                static_cast<int>(synthetic_json.size()));
+        }
     }
     for (const auto& event_envelope_json : snapshot.recent_ipc_event_envelope_jsons) {
         if (!event_envelope_json.empty()) {
@@ -1940,6 +1964,86 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         TrackPendingDockSetSettingAction(request_id, key, value);
         g_runtime.QueueSetSettingRequest(key, value);
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_core_ipc");
+        return true;
+    }
+
+    // ── load_scene_prefs: read dock_scene_prefs.json from plugin config dir ──
+    if (action_type == "load_scene_prefs") {
+        char* config_dir = obs_module_config_path("");
+        if (!config_dir) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=load_scene_prefs request_id=%s error=no_config_path",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_config_path", "");
+            return false;
+        }
+        std::string prefs_path = std::string(config_dir) + "/dock_scene_prefs.json";
+        bfree(config_dir);
+
+        std::ifstream in(prefs_path, std::ios::in | std::ios::binary);
+        if (!in.is_open()) {
+            // No prefs file yet — return empty object so the dock hydrates cleanly
+            blog(LOG_INFO,
+                "[aegis-obs-shim] dock action completed: type=load_scene_prefs request_id=%s detail=no_prefs_file",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "completed", true, "", "{}");
+            return true;
+        }
+        std::ostringstream contents;
+        contents << in.rdbuf();
+        in.close();
+        const std::string data = contents.str();
+        blog(LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=load_scene_prefs request_id=%s bytes=%d",
+            request_id.c_str(),
+            static_cast<int>(data.size()));
+        EmitDockActionResult(action_type, request_id, "completed", true, "", data);
+        return true;
+    }
+
+    // ── save_scene_prefs: write prefsJson to dock_scene_prefs.json ──
+    if (action_type == "save_scene_prefs") {
+        std::string prefs_json;
+        (void)TryExtractJsonStringField(action_json, "prefsJson", &prefs_json);
+        if (prefs_json.empty()) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action rejected: type=save_scene_prefs request_id=%s error=missing_prefs_json",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_prefs_json", "");
+            return false;
+        }
+
+        char* config_dir = obs_module_config_path("");
+        if (!config_dir) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=save_scene_prefs request_id=%s error=no_config_path",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_config_path", "");
+            return false;
+        }
+        const std::string config_dir_str(config_dir);
+        bfree(config_dir);
+
+        // Ensure the config directory exists
+        QDir().mkpath(QString::fromStdString(config_dir_str));
+
+        const std::string prefs_path = config_dir_str + "/dock_scene_prefs.json";
+        std::ofstream out(prefs_path, std::ios::out | std::ios::trunc | std::ios::binary);
+        if (!out.is_open()) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=save_scene_prefs request_id=%s error=file_write_failed path=%s",
+                request_id.c_str(),
+                prefs_path.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "file_write_failed", "");
+            return false;
+        }
+        out.write(prefs_json.data(), static_cast<std::streamsize>(prefs_json.size()));
+        out.close();
+        blog(LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=save_scene_prefs request_id=%s bytes=%d",
+            request_id.c_str(),
+            static_cast<int>(prefs_json.size()));
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         return true;
     }
 
