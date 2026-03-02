@@ -3,6 +3,9 @@ param(
     [string]$RepoRoot = "E:\Code\telemyapp",
     [string]$ObsRoot = "C:\Program Files (x86)\obs-studio",
     [int]$ValidateRetrySeconds = 30,
+    [string]$SelfTestActionJson = "",
+    [switch]$ValidateForbidCompletionTimeout,
+    [switch]$ValidateAllowAfterTimestampFallback,
     [switch]$StopWhenDone
 )
 
@@ -19,16 +22,21 @@ if (-not (Test-Path -LiteralPath $stopScript)) {
 
 $scriptFailed = $false
 try {
-    & $devCycle `
-        -WorkspaceRoot $WorkspaceRoot `
-        -RepoRoot $RepoRoot `
-        -ObsRoot $ObsRoot `
-        -ConfigureObsCef `
-        -BuildDockApp `
-        -SkipBuild `
-        -SkipDeploy `
-        -ValidationProfile strict `
-        -ValidateRetrySeconds $ValidateRetrySeconds
+    $cycleArgs = @{
+        WorkspaceRoot        = $WorkspaceRoot
+        RepoRoot             = $RepoRoot
+        ObsRoot              = $ObsRoot
+        ConfigureObsCef      = $true
+        BuildDockApp         = $true
+        SkipBuild            = $true
+        SkipDeploy           = $true
+        ValidationProfile    = "strict"
+        ValidateRetrySeconds = $ValidateRetrySeconds
+    }
+    if ($SelfTestActionJson) { $cycleArgs.SelfTestActionJson = $SelfTestActionJson }
+    if ($ValidateForbidCompletionTimeout) { $cycleArgs.ValidateForbidCompletionTimeout = $true }
+    if ($ValidateAllowAfterTimestampFallback) { $cycleArgs.ValidateAllowAfterTimestampFallback = $true }
+    & $devCycle @cycleArgs
 } catch {
     $scriptFailed = $true
     throw

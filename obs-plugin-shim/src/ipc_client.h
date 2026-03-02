@@ -47,6 +47,8 @@ public:
     void QueueSetSettingRequest(const std::string& key, bool value);
     void QueueSceneSwitchResult(const std::string& request_id, bool ok, const std::string& error);
     void QueueObsShutdownNotice(const std::string& reason);
+    void QueueRelayStartRequest(const std::string& request_id);
+    void QueueRelayStopRequest(const std::string& request_id);
 
 private:
     enum class ReadFrameResult {
@@ -79,10 +81,12 @@ private:
     bool SendSceneSwitchResult(const std::string& request_id, bool ok, const std::string& error);
     bool SendObsShutdownNotice(const std::string& reason);
     bool SendSceneSwitchResultOk(const std::string& request_id);
+    bool SendRelayRequest(const std::string& type, const std::string& request_id);
     void DrainPendingSetModeRequests();
     void DrainPendingSetSettingRequests();
     void DrainPendingSceneSwitchResults();
     void DrainPendingShutdownNotices();
+    void DrainPendingRelayRequests();
     bool HandleIncomingFrame(const std::vector<std::uint8_t>& payload);
     bool TryExtractStringField(const std::vector<std::uint8_t>& payload, const char* field_name, std::string& out_value);
 
@@ -102,6 +106,12 @@ private:
     std::vector<std::tuple<std::string, bool, std::string>> pending_scene_results_;
     std::mutex pending_shutdown_notices_mu_;
     std::vector<std::string> pending_shutdown_notices_;
+    struct RelayRequest {
+        std::string type;       // "relay_start_request" or "relay_stop_request"
+        std::string request_id;
+    };
+    std::mutex pending_relay_mu_;
+    std::vector<RelayRequest> pending_relay_requests_;
 
     bool handshake_sent_ = false;
     bool request_status_sent_ = false;

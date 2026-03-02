@@ -82,6 +82,21 @@ The UI interacts with the system through a stable interface exposed by the bridg
 - receiveDockActionResultJson(json): Reports if an action was queued, rejected, or completed.
 - receiveSceneSwitchCompletedJson(json): Authoritative scene switch result.
 
+---
+
+## ⚠️ Regression Guard: Bridge-Data Synchronization (React)
+
+To prevent the **SIM fallback contamination bug** (where mock data like "Live - Main" replaces real OBS data on startup), any `useEffect` in the React dock UI that synchronizes bridge-derived state (scenes, connections, settings, etc.) **must** use the `useBridge` guard.
+
+**Correct Pattern:**
+```javascript
+useEffect(() => {
+  if (!useBridge) return; // Guard: do not sync while using SIM fallback
+  setCachedData(bridgeData);
+}, [bridgeData, useBridge]);
+```
+This ensures that the first render cycle (where `bridgeAvailable=false`) does not overwrite persistent or live caches with simulation data.
+
 ## Runtime Path and Asset Loading
 
 ### Active Path: OBS/CEF

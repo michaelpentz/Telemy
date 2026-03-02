@@ -17,6 +17,7 @@ This checklist provides manual verification steps for the Telemy OBS/CEF dock, f
 | 2.3 | Re-show via Menu | Navigate to `Tools -> Show Aegis Dock (Telemy)`. Dock panel reappears immediately. | |
 | 2.4 | Restart OBS | Dock panel persistence check: Panel should appear where it was last placed. | |
 | 2.5 | Theme Check | Launch OBS in Light Theme (or switch themes). | **Fix:** Dock should apply the OBS color scheme immediately on load/refresh (synthetic theme replay). | |
+| 2.6 | Scene Dropdown Startup | Launch OBS (cold start). Observe scene dropdown. | **Fix:** Dropdown shows real OBS scene names (not "Live - Main") within 3s, without manual interaction. | |
 
 ## 3. State Population (CEF Path)
 *Verify these elements are populated and updated in the visible dock UI.*

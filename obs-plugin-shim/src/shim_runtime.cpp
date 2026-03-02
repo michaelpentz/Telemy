@@ -62,4 +62,12 @@ void ShimRuntime::QueueObsShutdownNotice(const std::string& reason) {
     ipc_.QueueObsShutdownNotice(reason);
 }
 
+void ShimRuntime::QueueRelayStartRequest(const std::string& request_id) {
+    ipc_.QueueRelayStartRequest(request_id);
+}
+
+void ShimRuntime::QueueRelayStopRequest(const std::string& request_id) {
+    ipc_.QueueRelayStopRequest(request_id);
+}
+
 } // namespace aegis

@@ -339,8 +339,65 @@ bool MpToJson(MpReader& r, std::string& out_json) {
         out_json = std::to_string(u);
         return true;
     }
-
-    // Unsupported MsgPack type in current protocol subset (e.g., float/signed/ext/bin).
+    // negative fixint (0xe0–0xff): signed 1-byte integer
+    if (b >= 0xe0) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        out_json = std::to_string(static_cast<std::int8_t>(tmp));
+        return true;
+    }
+    // int8 (0xd0)
+    if (b == 0xd0) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        if (!r.ReadByte(tmp)) return false;
+        out_json = std::to_string(static_cast<std::int8_t>(tmp));
+        return true;
+    }
+    // int16 (0xd1)
+    if (b == 0xd1) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        if (!r.ReadN(2, p)) return false;
+        std::int16_t v = static_cast<std::int16_t>((std::uint16_t(p[0]) << 8) | p[1]);
+        out_json = std::to_string(v);
+        return true;
+    }
+    // int32 (0xd2)
+    if (b == 0xd2) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        if (!r.ReadN(4, p)) return false;
+        std::int32_t v = static_cast<std::int32_t>(
+            (std::uint32_t(p[0]) << 24) | (std::uint32_t(p[1]) << 16) |
+            (std::uint32_t(p[2]) << 8) | p[3]);
+        out_json = std::to_string(v);
+        return true;
+    }
+    // int64 (0xd3)
+    if (b == 0xd3) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        if (!r.ReadN(8, p)) return false;
+        std::int64_t v = 0;
+        for (int i = 0; i < 8; ++i) v = (v << 8) | p[i];
+        out_json = std::to_string(v);
+        return true;
+    }
+    // Unsupported MsgPack type in current protocol subset (float/ext/bin handled by MpSkip only).
+    // Skip them gracefully to avoid decode failure.
+    {
+        MpReader tmp_r = r;
+        if (MpSkip(tmp_r)) {
+            // Advance reader past the unsupported type and output null.
+            r.pos = tmp_r.pos;
+            out_json = "null";
+            return true;
+        }
+    }
     return false;
 }
 
@@ -348,14 +405,22 @@ bool MpSkip(MpReader& r) {
     std::uint8_t b = 0;
     if (!r.PeekByte(b)) return false;
 
-    if ((b & 0x80) == 0x00 || (b & 0xe0) == 0xa0 || (b & 0xf0) == 0x80 || (b & 0xf0) == 0x90) {
-        // fixint / fixstr / fixmap / fixarray handled by typed readers after consuming header.
+    // positive fixint (0x00–0x7f)
+    if (b <= 0x7f) {
+        std::uint64_t u = 0;
+        return MpReadUInt(r, u);
     }
-
+    // negative fixint (0xe0–0xff)
+    if (b >= 0xe0) {
+        std::uint8_t tmp = 0;
+        return r.ReadByte(tmp);
+    }
+    // fixstr (0xa0–0xbf)
     if ((b & 0xe0) == 0xa0) {
         std::string s;
         return MpReadString(r, s);
     }
+    // fixmap (0x80–0x8f)
     if ((b & 0xf0) == 0x80) {
         std::size_t n = 0;
         if (!MpReadMapHeader(r, n)) return false;
@@ -365,6 +430,7 @@ bool MpSkip(MpReader& r) {
         }
         return true;
     }
+    // fixarray (0x90–0x9f)
     if ((b & 0xf0) == 0x90) {
         std::size_t n = 0;
         if (!MpReadArrayHeader(r, n)) return false;
@@ -373,26 +439,133 @@ bool MpSkip(MpReader& r) {
         }
         return true;
     }
-    if (b <= 0x7f) {
-        std::uint64_t u = 0;
-        return MpReadUInt(r, u);
-    }
+    // nil (0xc0)
     if (b == 0xc0) {
         std::uint8_t tmp = 0;
         return r.ReadByte(tmp);
     }
+    // bool (0xc2, 0xc3)
     if (b == 0xc2 || b == 0xc3) {
         bool v = false;
         return MpReadBool(r, v);
     }
+    // uint8/16/32/64 (0xcc–0xcf)
     if (b == 0xcc || b == 0xcd || b == 0xce || b == 0xcf) {
         std::uint64_t u = 0;
         return MpReadUInt(r, u);
     }
+    // int8 (0xd0): type byte + 1 data byte
+    if (b == 0xd0) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        if (!r.ReadByte(tmp)) return false;
+        return true;
+    }
+    // int16 (0xd1): type byte + 2 data bytes
+    if (b == 0xd1) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        return r.ReadN(2, p);
+    }
+    // int32 (0xd2): type byte + 4 data bytes
+    if (b == 0xd2) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        return r.ReadN(4, p);
+    }
+    // int64 (0xd3): type byte + 8 data bytes
+    if (b == 0xd3) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        return r.ReadN(8, p);
+    }
+    // float32 (0xca): type byte + 4 data bytes
+    if (b == 0xca) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        return r.ReadN(4, p);
+    }
+    // float64 (0xcb): type byte + 8 data bytes
+    if (b == 0xcb) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        return r.ReadN(8, p);
+    }
+    // bin8 (0xc4): type byte + 1-byte length + data
+    if (b == 0xc4) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        return r.ReadN(tmp, p);
+    }
+    // bin16 (0xc5): type byte + 2-byte length + data
+    if (b == 0xc5) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        if (!r.ReadN(2, p)) return false;
+        std::size_t len = (std::size_t(p[0]) << 8) | p[1];
+        return r.ReadN(len, p);
+    }
+    // bin32 (0xc6): type byte + 4-byte length + data
+    if (b == 0xc6) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        if (!r.ReadN(4, p)) return false;
+        std::size_t len = (std::size_t(p[0]) << 24) | (std::size_t(p[1]) << 16) |
+                          (std::size_t(p[2]) << 8) | p[3];
+        return r.ReadN(len, p);
+    }
+    // fixext1/2/4/8/16 (0xd4–0xd8): type byte + 1 fixtype byte + N data bytes
+    if (b == 0xd4) { std::uint8_t t; const std::uint8_t* p = nullptr; return r.ReadByte(t) && r.ReadN(2, p); }
+    if (b == 0xd5) { std::uint8_t t; const std::uint8_t* p = nullptr; return r.ReadByte(t) && r.ReadN(3, p); }
+    if (b == 0xd6) { std::uint8_t t; const std::uint8_t* p = nullptr; return r.ReadByte(t) && r.ReadN(5, p); }
+    if (b == 0xd7) { std::uint8_t t; const std::uint8_t* p = nullptr; return r.ReadByte(t) && r.ReadN(9, p); }
+    if (b == 0xd8) { std::uint8_t t; const std::uint8_t* p = nullptr; return r.ReadByte(t) && r.ReadN(17, p); }
+    // ext8 (0xc7): type byte + 1-byte length + 1 fixtype byte + data
+    if (b == 0xc7) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        if (!r.ReadByte(tmp)) return false;
+        std::size_t len = tmp;
+        if (!r.ReadByte(tmp)) return false; // fixtype byte
+        const std::uint8_t* p = nullptr;
+        return r.ReadN(len, p);
+    }
+    // ext16 (0xc8): type byte + 2-byte length + 1 fixtype byte + data
+    if (b == 0xc8) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        if (!r.ReadN(2, p)) return false;
+        std::size_t len = (std::size_t(p[0]) << 8) | p[1];
+        if (!r.ReadByte(tmp)) return false; // fixtype byte
+        return r.ReadN(len, p);
+    }
+    // ext32 (0xc9): type byte + 4-byte length + 1 fixtype byte + data
+    if (b == 0xc9) {
+        std::uint8_t tmp = 0;
+        if (!r.ReadByte(tmp)) return false;
+        const std::uint8_t* p = nullptr;
+        if (!r.ReadN(4, p)) return false;
+        std::size_t len = (std::size_t(p[0]) << 24) | (std::size_t(p[1]) << 16) |
+                          (std::size_t(p[2]) << 8) | p[3];
+        if (!r.ReadByte(tmp)) return false; // fixtype byte
+        return r.ReadN(len, p);
+    }
+    // str8/16/32 (0xd9–0xdb)
     if (b == 0xd9 || b == 0xda || b == 0xdb) {
         std::string s;
         return MpReadString(r, s);
     }
+    // map16/32 (0xde–0xdf)
     if (b == 0xde || b == 0xdf) {
         std::size_t n = 0;
         if (!MpReadMapHeader(r, n)) return false;
@@ -402,6 +575,7 @@ bool MpSkip(MpReader& r) {
         }
         return true;
     }
+    // array16/32 (0xdc–0xdd)
     if (b == 0xdc || b == 0xdd) {
         std::size_t n = 0;
         if (!MpReadArrayHeader(r, n)) return false;
@@ -410,6 +584,7 @@ bool MpSkip(MpReader& r) {
         }
         return true;
     }
+    // c1 is reserved/never-used in msgpack spec
     return false;
 }
 
@@ -719,6 +894,29 @@ std::vector<std::uint8_t> BuildEnvelopeObsShutdownNotice(const std::string& reas
     MpWriteString(out, reason.empty() ? "obs_module_unload" : reason);
     return out;
 }
+
+// type is the envelope type string, e.g. "relay_start_request" or "relay_stop_request"
+std::vector<std::uint8_t> BuildEnvelopeRelayRequest(
+    const std::string& type,
+    const std::string& request_id) {
+    std::vector<std::uint8_t> out;
+    MpWriteMapHeader(out, 6);
+    MpWriteString(out, "v");
+    MpWriteUInt(out, 1);
+    MpWriteString(out, "id");
+    MpWriteString(out, NewId());
+    MpWriteString(out, "ts_unix_ms");
+    MpWriteUInt(out, NowUnixMs());
+    MpWriteString(out, "type");
+    MpWriteString(out, type);
+    MpWriteString(out, "priority");
+    MpWriteString(out, "high");
+    MpWriteString(out, "payload");
+    MpWriteMapHeader(out, 1);
+    MpWriteString(out, "request_id");
+    MpWriteString(out, request_id);
+    return out;
+}
 }
 
 namespace aegis {
@@ -827,6 +1025,34 @@ void IpcClient::QueueObsShutdownNotice(const std::string& reason) {
     Log(oss.str());
 }
 
+void IpcClient::QueueRelayStartRequest(const std::string& request_id) {
+    if (request_id.empty()) {
+        Log("QueueRelayStartRequest ignored empty request_id");
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(pending_relay_mu_);
+        pending_relay_requests_.push_back(RelayRequest{"relay_start_request", request_id});
+    }
+    std::ostringstream oss;
+    oss << "queued relay_start_request request_id=" << request_id;
+    Log(oss.str());
+}
+
+void IpcClient::QueueRelayStopRequest(const std::string& request_id) {
+    if (request_id.empty()) {
+        Log("QueueRelayStopRequest ignored empty request_id");
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(pending_relay_mu_);
+        pending_relay_requests_.push_back(RelayRequest{"relay_stop_request", request_id});
+    }
+    std::ostringstream oss;
+    oss << "queued relay_stop_request request_id=" << request_id;
+    Log(oss.str());
+}
+
 bool IpcClient::IsRunning() const {
     return running_.load();
 }
@@ -902,6 +1128,7 @@ void IpcClient::ConnectedSessionLoop() {
         DrainPendingSetSettingRequests();
         DrainPendingSceneSwitchResults();
         DrainPendingShutdownNotices();
+        DrainPendingRelayRequests();
 
         if (handshake_sent_ && request_status_sent_ && pending_request_status_.exchange(false)) {
             if (!SendRequestStatus()) {
@@ -1155,6 +1382,10 @@ bool IpcClient::SendSceneSwitchResultOk(const std::string& request_id) {
     return WriteFrame(BuildEnvelopeSceneSwitchResultOk(request_id));
 }
 
+bool IpcClient::SendRelayRequest(const std::string& type, const std::string& request_id) {
+    return WriteFrame(BuildEnvelopeRelayRequest(type, request_id));
+}
+
 void IpcClient::DrainPendingSetModeRequests() {
     if (!handshake_sent_) {
         return;
@@ -1287,10 +1518,47 @@ void IpcClient::DrainPendingShutdownNotices() {
     }
 }
 
+void IpcClient::DrainPendingRelayRequests() {
+    if (!handshake_sent_) {
+        return;
+    }
+    std::vector<RelayRequest> pending;
+    {
+        std::lock_guard<std::mutex> lock(pending_relay_mu_);
+        if (pending_relay_requests_.empty()) {
+            return;
+        }
+        pending.swap(pending_relay_requests_);
+    }
+
+    for (std::size_t i = 0; i < pending.size(); ++i) {
+        const auto& req = pending[i];
+        if (!SendRelayRequest(req.type, req.request_id)) {
+            std::ostringstream oss;
+            oss << "failed to send queued " << req.type << " request_id=" << req.request_id;
+            Log(oss.str());
+            std::lock_guard<std::mutex> lock(pending_relay_mu_);
+            pending_relay_requests_.insert(
+                pending_relay_requests_.begin(),
+                std::make_move_iterator(pending.begin() + static_cast<std::ptrdiff_t>(i)),
+                std::make_move_iterator(pending.end()));
+            break;
+        }
+        std::ostringstream oss;
+        oss << "sent queued " << req.type << " request_id=" << req.request_id;
+        Log(oss.str());
+    }
+}
+
 bool IpcClient::HandleIncomingFrame(const std::vector<std::uint8_t>& payload) {
     ParsedEnvelopeMeta meta;
     if (!MpEnvelopeTypeAndSwitchSceneMeta(payload, meta)) {
-        Log("received frame (decode failed)");
+        std::ostringstream dbg;
+        dbg << "received frame (decode failed) sz=" << payload.size() << " hex=";
+        for (std::size_t i = 0; i < std::min(payload.size(), static_cast<std::size_t>(40)); ++i) {
+            dbg << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned>(payload[i]) << " ";
+        }
+        Log(dbg.str());
         return true;
     }
 

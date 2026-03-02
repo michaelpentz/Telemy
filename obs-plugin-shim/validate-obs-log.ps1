@@ -7,7 +7,8 @@ param(
     [switch]$RequireQueued,
     [switch]$RequireTerminal,
     [switch]$RequirePageReady,
-    [switch]$RequireBridgeAssets
+    [switch]$RequireBridgeAssets,
+    [switch]$AllowAfterTimestampFallback
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,16 +20,21 @@ if ($TerminalStatus -and @("completed", "failed", "rejected") -notcontains $Term
     throw "Invalid -TerminalStatus '$TerminalStatus'. Expected one of: completed, failed, rejected."
 }
 
-$logs = Get-ChildItem -LiteralPath $ObsLogDir -File |
+$allLogs = Get-ChildItem -LiteralPath $ObsLogDir -File |
     Sort-Object LastWriteTime -Descending
+$logs = $allLogs
 if ($AfterTimestamp -gt [datetime]::MinValue) {
-    $logs = $logs | Where-Object { $_.LastWriteTime -ge $AfterTimestamp }
+    $logs = $allLogs | Where-Object { $_.LastWriteTime -ge $AfterTimestamp }
 }
 if (-not $logs) {
-    if ($AfterTimestamp -gt [datetime]::MinValue) {
+    if ($AfterTimestamp -gt [datetime]::MinValue -and $AllowAfterTimestampFallback) {
+        Write-Warning "No OBS logs found at/after $AfterTimestamp; falling back to all logs."
+        $logs = $allLogs
+    } elseif ($AfterTimestamp -gt [datetime]::MinValue) {
         throw "No OBS logs found in '$ObsLogDir' at/after $AfterTimestamp"
+    } else {
+        throw "No OBS logs found in: $ObsLogDir"
     }
-    throw "No OBS logs found in: $ObsLogDir"
 }
 $log = $null
 $content = $null
@@ -42,6 +48,20 @@ foreach ($candidate in $logs) {
     $log = $candidate
     $content = $candidateContent
     break
+}
+if (-not $log -and $AfterTimestamp -gt [datetime]::MinValue -and $AllowAfterTimestampFallback) {
+    Write-Warning "No usable OBS log found at/after $AfterTimestamp; falling back to all logs."
+    foreach ($candidate in $allLogs) {
+        $candidateContent = Get-Content -LiteralPath $candidate.FullName
+        $hasOnlyCrashNotice = $candidateContent.Count -le 3 -and
+            (($candidateContent | Select-String -Pattern "Crash or unclean shutdown detected").Count -gt 0)
+        if ($hasOnlyCrashNotice) {
+            continue
+        }
+        $log = $candidate
+        $content = $candidateContent
+        break
+    }
 }
 if (-not $log) {
     if ($AfterTimestamp -gt [datetime]::MinValue) {

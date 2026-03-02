@@ -23,6 +23,8 @@ public:
     void QueueSetSettingRequest(const std::string& key, bool value);
     void QueueSceneSwitchResult(const std::string& request_id, bool ok, const std::string& error);
     void QueueObsShutdownNotice(const std::string& reason);
+    void QueueRelayStartRequest(const std::string& request_id);
+    void QueueRelayStopRequest(const std::string& request_id);
 
 private:
     IpcClient ipc_;

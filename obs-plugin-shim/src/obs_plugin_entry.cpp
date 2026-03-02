@@ -14,6 +14,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPalette>
+#include <QTimer>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -57,10 +58,17 @@ struct PendingSetSettingAction {
     bool value = false;
     std::chrono::steady_clock::time_point queued_at;
 };
+struct PendingRelayAction {
+    std::string request_id;
+    std::string action_type;
+    std::chrono::steady_clock::time_point queued_at;
+};
 std::mutex g_pending_set_mode_actions_mu;
 std::vector<PendingSetModeAction> g_pending_set_mode_actions;
 std::mutex g_pending_set_setting_actions_mu;
 std::vector<PendingSetSettingAction> g_pending_set_setting_actions;
+std::mutex g_pending_relay_actions_mu;
+std::vector<PendingRelayAction> g_pending_relay_actions;
 constexpr std::chrono::milliseconds kDockActionCompletionTimeoutMs(3000);
 constexpr std::chrono::milliseconds kDockActionDuplicateWindowMs(1500);
 std::uint64_t g_local_dock_action_seq = 0;
@@ -130,6 +138,7 @@ void EmitDockActionResult(const std::string& action_type,
                           bool ok,
                           const std::string& error,
                           const std::string& detail);
+void HandleRelayActionResultIfPresent(const std::string& envelope_json);
 
 struct ObsDockThemeSlots {
     std::string bg;
@@ -1473,6 +1482,60 @@ bool EmitDockSceneSnapshotPayload(const std::string& payload_json) {
     return delivered;
 }
 
+void HandleRelayActionResultIfPresent(const std::string& envelope_json) {
+    // Quick-exit: only process relay_action_result envelopes.
+    if (envelope_json.find("relay_action_result") == std::string::npos) {
+        return;
+    }
+    const std::string envelope_type = TryExtractEnvelopeTypeFromJson(envelope_json);
+    if (envelope_type != "relay_action_result") {
+        return;
+    }
+
+    std::string request_id;
+    std::string action_type;
+    bool ok = false;
+    std::string error;
+
+    (void)TryExtractJsonStringField(envelope_json, "request_id", &request_id);
+    (void)TryExtractJsonStringField(envelope_json, "action_type", &action_type);
+    (void)TryExtractJsonBoolField(envelope_json, "ok", &ok);
+    (void)TryExtractJsonStringField(envelope_json, "error", &error);
+
+    bool pending_match = false;
+    if (!request_id.empty()) {
+        std::lock_guard<std::mutex> lock(g_pending_relay_actions_mu);
+        for (auto it = g_pending_relay_actions.begin(); it != g_pending_relay_actions.end(); ++it) {
+            if (it->request_id == request_id) {
+                if (action_type.empty()) {
+                    action_type = it->action_type;
+                }
+                it = g_pending_relay_actions.erase(it);
+                pending_match = true;
+                break;
+            }
+        }
+    }
+
+    blog(
+        LOG_INFO,
+        "[aegis-obs-shim] relay action result resolved: request_id=%s action_type=%s pending_match=%s ok=%s",
+        request_id.c_str(),
+        action_type.c_str(),
+        pending_match ? "true" : "false",
+        ok ? "true" : "false");
+
+    if (pending_match && !action_type.empty() && !request_id.empty()) {
+        EmitDockActionResult(
+            action_type,
+            request_id,
+            ok ? "completed" : "failed",
+            ok,
+            ok ? "" : error,
+            "");
+    }
+}
+
 void EmitDockIpcEnvelopeJson(const std::string& envelope_json) {
     const std::string themed_envelope_json = MaybeAugmentStatusSnapshotEnvelopeWithObsTheme(envelope_json);
     const std::string envelope_type = TryExtractEnvelopeTypeFromJson(themed_envelope_json);
@@ -1800,6 +1863,17 @@ extern "C" void aegis_obs_shim_notify_dock_page_ready(void) {
     ReplayDockStateToJsSinkIfAvailable();
     g_runtime.QueueRequestStatus();
     MaybeRunDockActionSelfTestAfterPageReady();
+
+    // Safety net: fire a deferred fresh scene enumeration 1s after page-ready.
+    // The initial replay's executeJavaScript is fire-and-forget into CEF's IPC
+    // pipeline — if the render process hasn't fully committed the V8 context,
+    // the scene snapshot JS call can be silently dropped.  This deferred
+    // re-enumeration ensures the dock always gets scene data.
+    QTimer::singleShot(1000, qApp, []() {
+        blog(LOG_INFO,
+             "[aegis-obs-shim] deferred page-ready scene snapshot firing");
+        LogSceneSnapshot("page_ready_deferred");
+    });
 #endif
 }
 
@@ -2047,6 +2121,37 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
+    // ── request_scene_snapshot: force a fresh OBS scene enumeration ──
+    if (action_type == "request_scene_snapshot") {
+        blog(
+            LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=request_scene_snapshot request_id=%s",
+            request_id.c_str());
+        LogSceneSnapshot("dock_request");
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "scene_snapshot_emitted");
+        return true;
+    }
+
+    if (action_type == "relay_start" || action_type == "relay_stop") {
+        blog(
+            LOG_INFO,
+            "[aegis-obs-shim] dock action queued: type=%s request_id=%s detail=queued_core_ipc",
+            action_type.c_str(),
+            request_id.c_str());
+        {
+            std::lock_guard<std::mutex> lock(g_pending_relay_actions_mu);
+            g_pending_relay_actions.push_back(
+                PendingRelayAction{request_id, action_type, std::chrono::steady_clock::now()});
+        }
+        if (action_type == "relay_start") {
+            g_runtime.QueueRelayStartRequest(request_id);
+        } else {
+            g_runtime.QueueRelayStopRequest(request_id);
+        }
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_core_ipc");
+        return true;
+    }
+
     blog(
         LOG_INFO,
         "[aegis-obs-shim] dock action rejected: type=%s request_id=%s error=unsupported_action_type",
@@ -2112,6 +2217,7 @@ bool obs_module_load(void) {
         blog(LOG_DEBUG, "[aegis-obs-shim] ipc message type=%s", type.c_str());
     };
     callbacks.on_incoming_envelope_json = [](const std::string& envelope_json) {
+        HandleRelayActionResultIfPresent(envelope_json);
         EmitDockIpcEnvelopeJson(envelope_json);
     };
     callbacks.on_switch_scene_request = [](const std::string& request_id,
@@ -2171,6 +2277,10 @@ void obs_module_unload(void) {
     {
         std::lock_guard<std::mutex> lock(g_pending_set_setting_actions_mu);
         g_pending_set_setting_actions.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_pending_relay_actions_mu);
+        g_pending_relay_actions.clear();
     }
     {
         std::lock_guard<std::mutex> lock(g_recent_dock_actions_mu);

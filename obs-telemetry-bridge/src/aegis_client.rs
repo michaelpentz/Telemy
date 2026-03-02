@@ -2,7 +2,7 @@ use crate::aegis::ControlPlaneClient;
 use crate::config::Config;
 use crate::security::Vault;
 use rand::{distributions::Alphanumeric, Rng};
-use std::time::{SystemTime, UNIX_EPOCH};
+use uuid::Uuid;
 
 /// Build a `ControlPlaneClient` from pre-loaded config and vault references.
 pub fn build_aegis_client(
@@ -40,13 +40,9 @@ pub fn generate_token(len: usize) -> String {
         .collect()
 }
 
-/// Generate a prefixed idempotency key with timestamp and random suffix.
+/// Generate a UUID v4 idempotency key.
 pub fn generate_idempotency_key() -> String {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    format!("telemy-{}-{}", ts, generate_token(12))
+    Uuid::new_v4().to_string()
 }
 
 /// Build a `ControlPlaneClient` by loading config and vault from disk.

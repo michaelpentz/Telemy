@@ -25,3 +25,13 @@ Relay action validation is "good enough" if:
 1.  **Execute Single-Action Strict Run:** Run `run-strict-cycle.ps1 -SelfTestActionJson ... -ValidateAllowAfterTimestampFallback -ValidateForbidCompletionTimeout`.
 2.  **Monitor for Stale-Fallback Signal:** If `NonRetryable` is hit, manually verify if OBS is even launching/logging or if the logs are being written to an unexpected path.
 3.  **Trace Core Emission:** If timeouts persist in logs despite the relay starting, manually verify the Rust core's `relay_action_result` emission log line.
+
+---
+
+## Addendum: Validation Policy Gaps (2026-03-01)
+
+The following gaps were identified between the recommended policy and the current script implementation:
+
+1.  **Validator Timeout Guard:** `validate-obs-log.ps1` currently lacks an explicit `-ForbidCompletionTimeout` parameter. While `dev-cycle.ps1` has a similarly named flag, it controls validation loop termination rather than inspecting the log content for the literal `error=completion_timeout` string. The validator should be updated to explicitly fail if a matched terminal result contains a timeout error when this guard is active.
+2.  **NonRetryable Signal:** The `NonRetryable:` prefix in error messages (recommended for the fail-fast stale-fallback guard) is not yet consistently implemented in the throwing paths of `validate-obs-log.ps1`. Scripts like `dev-cycle.ps1` currently rely on generic `Missing log evidence` matching, which may lead to unnecessary retry attempts in fallback scenarios.
+3.  **Fallback requestId Assert:** In fallback mode, the validator should explicitly throw a non-retryable error immediately if the requested `requestId` is present in the fallback log but associated with a stale timestamp or mismatched status, preventing false positives from previous runs.

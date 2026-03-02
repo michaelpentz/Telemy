@@ -18,6 +18,8 @@ param(
     [string]$ValidationProfile = "strict",
     [int]$ValidateRetrySeconds = 30,
     [switch]$AllowNoUsableLog,
+    [switch]$ValidateForbidCompletionTimeout,
+    [switch]$ValidateAllowAfterTimestampFallback,
     [switch]$BuildDockApp,
     [string]$DockPreviewRoot = "E:\Code\telemyapp\dock-preview",
     [switch]$ConfigureObsCef,
@@ -193,6 +195,9 @@ if (-not $SkipValidate) {
     if ($ValidateTerminalStatus) {
         $validateArgs.TerminalStatus = $ValidateTerminalStatus
     }
+    if ($ValidateAllowAfterTimestampFallback) {
+        $validateArgs.AllowAfterTimestampFallback = $true
+    }
 
     $retryUntil = (Get-Date).AddSeconds([Math]::Max(0, $ValidateRetrySeconds))
     $attempt = 0
@@ -206,6 +211,9 @@ if (-not $SkipValidate) {
             $retryable = ($msg -like "*No usable OBS log found at/after*") -or
                          ($msg -like "*Missing log evidence:*")
             if ($retryable -and (Get-Date) -ge $retryUntil -and $AllowNoUsableLog) {
+                if ($ValidateForbidCompletionTimeout) {
+                    throw
+                }
                 Write-Warning "Validation skipped after retry timeout: startup evidence not fully available in current-session logs."
                 break
             }
