@@ -12,6 +12,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{broadcast, mpsc, watch};
 use uuid::Uuid;
 
+use crate::util::MutexExt;
+
 const IPC_PROTOCOL_VERSION: u8 = 1;
 const MAX_FRAME_SIZE: usize = 64 * 1024;
 pub const CMD_PIPE_NAME: &str = r"\\.\pipe\aegis_cmd_v1";
@@ -374,7 +376,7 @@ fn update_debug_status<F>(debug_status: &IpcDebugStatusHandle, f: F)
 where
     F: FnOnce(&mut IpcDebugStatus),
 {
-    let mut s = debug_status.lock().unwrap();
+    let mut s = debug_status.lock_or_recover();
     f(&mut s);
     s.updated_ts_unix_ms = Some(now_unix_ms());
 }
@@ -724,7 +726,7 @@ where
                             }
                         };
                         let frame = rx.borrow().clone();
-                        let relay = aegis_session_snapshot.lock().unwrap().clone();
+                        let relay = aegis_session_snapshot.lock_or_recover().clone();
                         let payload =
                             build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
                         let snapshot = make_envelope("status_snapshot", Priority::High, payload);
@@ -770,7 +772,7 @@ where
                         );
                         let _ = write_frame(evt_writer, &notice).await;
                         let frame = rx.borrow().clone();
-                        let relay = aegis_session_snapshot.lock().unwrap().clone();
+                        let relay = aegis_session_snapshot.lock_or_recover().clone();
                         let payload =
                             build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
                         let snapshot = make_envelope("status_snapshot", Priority::High, payload);
@@ -819,7 +821,7 @@ where
                         );
                         let _ = write_frame(evt_writer, &notice).await;
                         let frame = rx.borrow().clone();
-                        let relay = aegis_session_snapshot.lock().unwrap().clone();
+                        let relay = aegis_session_snapshot.lock_or_recover().clone();
                         let payload =
                             build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
                         let snapshot = make_envelope("status_snapshot", Priority::High, payload);
@@ -1139,17 +1141,17 @@ where
                 if result.ok {
                     if result.action_type == "relay_start" {
                         if let Some(session) = result.session {
-                            *aegis_session_snapshot.lock().unwrap() = Some(session);
+                            *aegis_session_snapshot.lock_or_recover() = Some(session);
                         }
                     } else {
                         // relay_stop success — clear session
-                        *aegis_session_snapshot.lock().unwrap() = None;
+                        *aegis_session_snapshot.lock_or_recover() = None;
                     }
                 }
 
                 // Push updated status snapshot
                 let frame = rx.borrow().clone();
-                let relay = aegis_session_snapshot.lock().unwrap().clone();
+                let relay = aegis_session_snapshot.lock_or_recover().clone();
                 let payload =
                     build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
                 let snapshot = make_envelope("status_snapshot", Priority::High, payload);
@@ -1234,7 +1236,7 @@ where
                 // Periodic status push
                 if handshake_complete && last_status_push_at.elapsed() >= STATUS_PUSH_INTERVAL {
                     let frame = rx.borrow().clone();
-                    let relay = aegis_session_snapshot.lock().unwrap().clone();
+                    let relay = aegis_session_snapshot.lock_or_recover().clone();
                     let payload = build_status_snapshot_with_overrides(&frame, relay.as_ref(), &session_overrides);
                     let snapshot = make_envelope("status_snapshot", Priority::Normal, payload);
                     write_frame(evt_writer, &snapshot).await?;

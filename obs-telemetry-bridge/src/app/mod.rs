@@ -13,6 +13,8 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 use tokio::time::Duration;
 
+use crate::util::MutexExt;
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load()?;
 
@@ -49,7 +51,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let vault = Arc::new(Mutex::new(Vault::new(config.vault.path.as_deref())?));
 
     let obs_password = {
-        let v = vault.lock().unwrap();
+        let v = vault.lock_or_recover();
         match config.obs.password_key.as_deref() {
             Some(key) => v.retrieve(key).ok().map(|p| p.trim().to_string()),
             None => None,
@@ -57,7 +59,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let grafana_auth_value = {
-        let v = vault.lock().unwrap();
+        let v = vault.lock_or_recover();
         match config.grafana.auth_value_key.as_deref() {
             Some(key) => v.retrieve(key).ok(),
             None => None,
@@ -117,17 +119,37 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
 
                     match exporter {
-                        Ok(exporter) => {
+                        Ok((exporter, health)) => {
+                            tracing::info!(
+                                endpoint = %endpoint,
+                                interval_ms = interval_ms,
+                                "grafana exporter started"
+                            );
                             let mut ticker =
                                 tokio::time::interval(Duration::from_millis(interval_ms));
+                            let mut cycle_count: u64 = 0;
+                            let mut last_error_count: u64 = 0;
                             loop {
                                 ticker.tick().await;
                                 let frame = export_rx.borrow().clone();
                                 exporter.record(&frame);
+                                cycle_count += 1;
+                                // Log export health every ~60 cycles
+                                if cycle_count % 60 == 0 {
+                                    let errors = health.error_count();
+                                    if errors > last_error_count {
+                                        tracing::warn!(
+                                            total_errors = errors,
+                                            new_errors = errors - last_error_count,
+                                            "grafana exporter errors detected"
+                                        );
+                                        last_error_count = errors;
+                                    }
+                                }
                             }
                         }
                         Err(err) => {
-                            eprintln!("grafana exporter init failed: {err}");
+                            tracing::warn!(error = %err, "grafana exporter init failed");
                             tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                             backoff_ms = (backoff_ms * 2).min(30_000);
                         }
@@ -150,14 +172,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         token
     } else {
         // Try to retrieve existing token from vault
-        let vault_lock = vault.lock().unwrap();
+        let vault_lock = vault.lock_or_recover();
         match vault_lock.retrieve("server_token") {
             Ok(existing_token) => existing_token,
             Err(_) => {
                 // Generate new token and store in vault
                 drop(vault_lock); // Drop lock before re-acquiring
                 let new_token = generate_token(32);
-                let mut vault_lock = vault.lock().unwrap();
+                let mut vault_lock = vault.lock_or_recover();
                 if let Err(e) = vault_lock.store("server_token", &new_token) {
                     tracing::warn!("Failed to store server token in vault: {}", e);
                 }
@@ -230,7 +252,7 @@ async fn run_aegis_startup_probe(
     }
 
     let client = {
-        let guard = vault.lock().unwrap();
+        let guard = vault.lock_or_recover();
         match build_aegis_client(config, &guard) {
             Ok(client) => client,
             Err(err) => {
@@ -248,7 +270,7 @@ async fn run_aegis_startup_probe(
                 region = ?session.region,
                 "aegis startup probe: active/provisioning session found"
             );
-            *snapshot.lock().unwrap() = Some(session);
+            *snapshot.lock_or_recover() = Some(session);
         }
         Ok(None) => {
             tracing::info!("aegis startup probe: no active relay session");

@@ -3,9 +3,24 @@ use opentelemetry::{global, metrics::Histogram, metrics::MeterProvider as _, Key
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemporalitySelector};
 use opentelemetry_sdk::metrics::{MeterProvider, PeriodicReader};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 
 type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+/// Shared counter tracking OTel export errors reported by the PeriodicReader.
+/// Exposed so the app loop can observe degradation.
+#[derive(Clone, Default)]
+pub struct ExporterHealth {
+    error_count: Arc<AtomicU64>,
+}
+
+impl ExporterHealth {
+    pub fn error_count(&self) -> u64 {
+        self.error_count.load(Ordering::Relaxed)
+    }
+}
 
 pub struct GrafanaExporter {
     health: Histogram<f64>,
@@ -34,7 +49,7 @@ impl GrafanaExporter {
         auth_header: &str,
         auth_value: Option<String>,
         interval_ms: u64,
-    ) -> Result<Self, AnyError> {
+    ) -> Result<(Self, ExporterHealth), AnyError> {
         let mut headers = HashMap::new();
         if let Some(value) = auth_value {
             headers.insert(auth_header.to_string(), value);
@@ -56,6 +71,15 @@ impl GrafanaExporter {
         let provider = MeterProvider::builder().with_reader(reader).build();
         let meter = provider.meter("telemy");
         global::set_meter_provider(provider);
+
+        let exporter_health = ExporterHealth::default();
+        let health_for_handler = exporter_health.clone();
+        let _ = global::set_error_handler(move |err| {
+            health_for_handler
+                .error_count
+                .fetch_add(1, Ordering::Relaxed);
+            tracing::warn!(error = %err, "opentelemetry export error");
+        });
 
         let health = meter.f64_histogram("telemy.health").init();
         let cpu = meter.f64_histogram("telemy.system.cpu_percent").init();
@@ -80,26 +104,29 @@ impl GrafanaExporter {
         let active_fps = meter.f64_histogram("telemy.obs.active_fps").init();
         let disk_space = meter.f64_histogram("telemy.obs.disk_space_mb").init();
 
-        Ok(Self {
-            health,
-            cpu,
-            mem,
-            gpu,
-            gpu_temp,
-            upload,
-            download,
-            latency,
-            out_bitrate,
-            out_drop,
-            out_fps,
-            out_lag,
-            render_missed,
-            render_total,
-            output_skipped,
-            output_total,
-            active_fps,
-            disk_space,
-        })
+        Ok((
+            Self {
+                health,
+                cpu,
+                mem,
+                gpu,
+                gpu_temp,
+                upload,
+                download,
+                latency,
+                out_bitrate,
+                out_drop,
+                out_fps,
+                out_lag,
+                render_missed,
+                render_total,
+                output_skipped,
+                output_total,
+                active_fps,
+                disk_space,
+            },
+            exporter_health,
+        ))
     }
 
     pub fn record(&self, frame: &TelemetryFrame) {

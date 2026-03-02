@@ -27,6 +27,8 @@ use std::{
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
+use crate::util::MutexExt;
+
 #[derive(Clone)]
 #[allow(dead_code)]
 struct ServerState {
@@ -800,7 +802,7 @@ async fn settings_page(
     };
     let css = theme_css(&state.theme);
 
-    let grafana_configured = *state.grafana_configured.lock().unwrap();
+    let grafana_configured = *state.grafana_configured.lock_or_recover();
     let grafana_status = if grafana_configured {
         r#"<div class="status status-ok">Grafana Cloud: Connected</div>"#
     } else {
@@ -1010,7 +1012,7 @@ async fn settings_submit(
     // OBS password — only update if user provided a new one
     if let Some(ref pw) = form.obs_password {
         if !pw.is_empty() {
-            let mut vault = state.vault.lock().unwrap();
+            let mut vault = state.vault.lock_or_recover();
             if let Err(e) = vault.store("obs_password", pw) {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -1051,7 +1053,7 @@ async fn settings_submit(
         let auth_value = format!("Basic {}", encoded);
 
         {
-            let mut vault = state.vault.lock().unwrap();
+            let mut vault = state.vault.lock_or_recover();
             if let Err(e) = vault.store("grafana_auth", &auth_value) {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -1064,7 +1066,7 @@ async fn settings_submit(
         config.grafana.enabled = true;
         config.grafana.endpoint = Some(endpoint);
         config.grafana.auth_value_key = Some("grafana_auth".to_string());
-        *state.grafana_configured.lock().unwrap() = true;
+        *state.grafana_configured.lock_or_recover() = true;
     } else if !endpoint.is_empty() {
         // Allow updating just the endpoint without re-entering credentials
         config.grafana.endpoint = Some(endpoint);
@@ -1416,7 +1418,7 @@ async fn get_ipc_status(
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
 
-    let snapshot: IpcDebugStatus = state.ipc_debug_status.lock().unwrap().clone();
+    let snapshot: IpcDebugStatus = state.ipc_debug_status.lock_or_recover().clone();
     (StatusCode::OK, axum::Json(snapshot)).into_response()
 }
 
@@ -1442,7 +1444,7 @@ async fn get_aegis_status(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(AegisStatusResponse {
                     enabled: false,
-                    session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                    session: state.aegis_session_snapshot.lock_or_recover().clone(),
                     refreshed: false,
                     error: Some(format!("config load failed: {err}")),
                 }),
@@ -1466,13 +1468,13 @@ async fn get_aegis_status(
 
     if refresh_requested {
         let client = {
-            let vault = state.vault.lock().unwrap();
+            let vault = state.vault.lock_or_recover();
             build_aegis_client(&config, &vault).map_err(|err| err.to_string())
         };
         let refreshed = match client {
             Ok(client) => match client.relay_active().await {
                 Ok(session) => {
-                    *state.aegis_session_snapshot.lock().unwrap() = session.clone();
+                    *state.aegis_session_snapshot.lock_or_recover() = session.clone();
                     Ok(session)
                 }
                 Err(err) => Err(format!("{err}")),
@@ -1495,7 +1497,7 @@ async fn get_aegis_status(
                 StatusCode::BAD_GATEWAY,
                 axum::Json(AegisStatusResponse {
                     enabled: true,
-                    session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                    session: state.aegis_session_snapshot.lock_or_recover().clone(),
                     refreshed: false,
                     error: Some(err),
                 }),
@@ -1508,7 +1510,7 @@ async fn get_aegis_status(
         StatusCode::OK,
         axum::Json(AegisStatusResponse {
             enabled: true,
-            session: state.aegis_session_snapshot.lock().unwrap().clone(),
+            session: state.aegis_session_snapshot.lock_or_recover().clone(),
             refreshed: false,
             error: None,
         }),
@@ -1533,7 +1535,7 @@ async fn post_aegis_start(
                 axum::Json(AegisActionResponse {
                     ok: false,
                     message: "config load failed".to_string(),
-                    session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                    session: state.aegis_session_snapshot.lock_or_recover().clone(),
                     error: Some(err.to_string()),
                 }),
             )
@@ -1542,7 +1544,7 @@ async fn post_aegis_start(
     };
 
     let client = {
-        let vault = state.vault.lock().unwrap();
+        let vault = state.vault.lock_or_recover();
         build_aegis_client(&config, &vault).map_err(|err| err.to_string())
     };
 
@@ -1554,7 +1556,7 @@ async fn post_aegis_start(
                 axum::Json(AegisActionResponse {
                     ok: false,
                     message: "aegis client config invalid".to_string(),
-                    session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                    session: state.aegis_session_snapshot.lock_or_recover().clone(),
                     error: Some(err),
                 }),
             )
@@ -1574,7 +1576,7 @@ async fn post_aegis_start(
 
     match client.relay_start(&idem, &request).await {
         Ok(session) => {
-            *state.aegis_session_snapshot.lock().unwrap() = Some(session.clone());
+            *state.aegis_session_snapshot.lock_or_recover() = Some(session.clone());
             (
                 StatusCode::OK,
                 axum::Json(AegisActionResponse {
@@ -1591,7 +1593,7 @@ async fn post_aegis_start(
             axum::Json(AegisActionResponse {
                 ok: false,
                 message: "relay start failed".to_string(),
-                session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                session: state.aegis_session_snapshot.lock_or_recover().clone(),
                 error: Some(err.to_string()),
             }),
         )
@@ -1616,7 +1618,7 @@ async fn post_aegis_stop(
                 axum::Json(AegisActionResponse {
                     ok: false,
                     message: "config load failed".to_string(),
-                    session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                    session: state.aegis_session_snapshot.lock_or_recover().clone(),
                     error: Some(err.to_string()),
                 }),
             )
@@ -1625,7 +1627,7 @@ async fn post_aegis_stop(
     };
 
     let client = {
-        let vault = state.vault.lock().unwrap();
+        let vault = state.vault.lock_or_recover();
         build_aegis_client(&config, &vault).map_err(|err| err.to_string())
     };
     let client = match client {
@@ -1636,7 +1638,7 @@ async fn post_aegis_stop(
                 axum::Json(AegisActionResponse {
                     ok: false,
                     message: "aegis client config invalid".to_string(),
-                    session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                    session: state.aegis_session_snapshot.lock_or_recover().clone(),
                     error: Some(err),
                 }),
             )
@@ -1652,7 +1654,7 @@ async fn post_aegis_stop(
                 axum::Json(AegisActionResponse {
                     ok: false,
                     message: "relay active lookup failed".to_string(),
-                    session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                    session: state.aegis_session_snapshot.lock_or_recover().clone(),
                     error: Some(err.to_string()),
                 }),
             )
@@ -1661,7 +1663,7 @@ async fn post_aegis_stop(
     };
 
     let Some(session) = current else {
-        *state.aegis_session_snapshot.lock().unwrap() = None;
+        *state.aegis_session_snapshot.lock_or_recover() = None;
         return (
             StatusCode::OK,
             axum::Json(AegisActionResponse {
@@ -1680,7 +1682,7 @@ async fn post_aegis_stop(
     };
     match client.relay_stop(&stop_req).await {
         Ok(_) => {
-            *state.aegis_session_snapshot.lock().unwrap() = None;
+            *state.aegis_session_snapshot.lock_or_recover() = None;
             (
                 StatusCode::OK,
                 axum::Json(AegisActionResponse {
@@ -1697,7 +1699,7 @@ async fn post_aegis_stop(
             axum::Json(AegisActionResponse {
                 ok: false,
                 message: "relay stop failed".to_string(),
-                session: state.aegis_session_snapshot.lock().unwrap().clone(),
+                session: state.aegis_session_snapshot.lock_or_recover().clone(),
                 error: Some(err.to_string()),
             }),
         )

@@ -10,6 +10,7 @@ mod security;
 mod server;
 mod startup;
 mod tray;
+mod util;
 
 #[tokio::main]
 async fn main() {
