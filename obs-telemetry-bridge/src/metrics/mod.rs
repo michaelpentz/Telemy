@@ -1,6 +1,7 @@
 use crate::model::{NetworkFrame, ObsFrame, StreamOutput, SystemFrame, TelemetryFrame};
 use nvml_wrapper::Nvml;
 use obws::Client as ObsClient;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Networks, System};
@@ -24,6 +25,8 @@ pub struct MetricsHub {
     obs_process_name: String,
     last_process_check: Instant,
     obs_process_running: bool,
+    /// Per-output previous bytes for delta-based instantaneous bitrate.
+    last_output_bytes: HashMap<String, u64>,
 }
 
 impl MetricsHub {
@@ -51,6 +54,7 @@ impl MetricsHub {
             obs_process_name,
             last_process_check: Instant::now() - Duration::from_secs(5),
             obs_process_running: true,
+            last_output_bytes: HashMap::new(),
         }
     }
 
@@ -85,7 +89,6 @@ impl MetricsHub {
                             let skipped_frames = status.skipped_frames as f32;
                             let duration_secs =
                                 status.duration.whole_milliseconds() as f32 / 1000.0;
-                            let bytes = status.bytes as f32;
 
                             if total_frames > 0.0 {
                                 stream.drop_pct = skipped_frames / total_frames;
@@ -96,8 +99,19 @@ impl MetricsHub {
                                 };
                             }
 
-                            if duration_secs > 0.0 {
-                                let kbps = (bytes * 8.0) / duration_secs / 1000.0;
+                            // Delta-based instantaneous bitrate (same pattern as collect_network)
+                            let current_bytes = status.bytes as u64;
+                            let prev_bytes = self
+                                .last_output_bytes
+                                .insert(stream.name.clone(), current_bytes)
+                                .unwrap_or(current_bytes);
+                            let delta_bytes = current_bytes.saturating_sub(prev_bytes);
+                            // Poll interval is 500ms; use duration delta when available,
+                            // otherwise fall back to session average.
+                            if delta_bytes > 0 && duration_secs > 0.0 {
+                                // Use 0.5s as the poll interval (matches ticker in app/mod.rs)
+                                let dt = 0.5_f32;
+                                let kbps = (delta_bytes as f32 * 8.0) / dt / 1000.0;
                                 stream.bitrate_kbps = kbps.round() as u32;
                             }
                         }
