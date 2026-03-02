@@ -39,6 +39,14 @@
 - [ ] **Light Theme**: Switch OBS to a light theme (e.g., "System" or "Light").
   - *Expectation*: Text is readable (not white-on-white); active/selected rows use contrast-safe background/border colors.
 
+## 5. Persistence & Restarts
+- [ ] **Scene Rule Persistence**: Configure 2-3 custom scene rules with thresholds and linked scenes. Restart OBS.
+  - *Expectation*: **Fix:** Rules, labels, and scene links are restored exactly as they were.
+- [ ] **Auto-Switch Mode Persistence**: Set mode to `ARMED`. Restart OBS.
+  - *Expectation*: **Fix:** Mode remains `ARMED` after restart.
+- [ ] **Native Disk Check**: Locate `dock_scene_prefs.json` in the OBS plugin configuration directory.
+  - *Expectation*: File exists and contains valid JSON matching the dock state.
+
 ---
 
 ## Expected Log/Event Signatures

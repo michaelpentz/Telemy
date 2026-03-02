@@ -42,6 +42,10 @@ vault.*
 # Coordination docs (live in parent directory, outside repo)
 AGENTS.md
 
+# Dock bundle build artifacts (built by dock-preview, deployed to OBS runtime)
+aegis-dock-app.js
+aegis-dock.html
+
 # Installer output
 obs-telemetry-bridge/installer/Output/
 

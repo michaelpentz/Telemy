@@ -1,5 +1,29 @@
 # Release Notes - Telemy v0.0.3
 
+## [2026-03-01] Dock UX & Persistence Fixes
+
+### Summary
+This update resolves three major pain points in the OBS dock experience: floating layout flicker, theme-application delays, and configuration loss across restarts.
+
+### New Features & Improvements
+- **Stable Dock Initialization**:
+  - Implemented a **deferred show pattern** using a 1.5s QTimer.
+  - The dock now respects OBS's internal layout restoration, preventing the center-screen floating flash on launch.
+- **Immediate Theme Application**:
+  - Added **synthetic theme replay** from the Qt palette cache.
+  - The dock now applies the OBS color scheme immediately on load or refresh, even if the telemetry bridge isn't yet connected.
+- **Persistent Scene Preferences**:
+  - Added native disk storage for scene-to-rule links via `dock_scene_prefs.json`.
+  - Scene links and auto-switch settings now survive OBS restarts.
+- **Bridge Bootstrap Completion**:
+  - Patched the browser-host bootstrap to support `receiveDockActionResultJson`.
+  - All native action results (including preferences and scene switches) are now correctly delivered to the React UI.
+
+### Known Limitations
+- **Brief Theme Flash**: A very brief (sub-200ms) flash of the default theme may still occur before the synthetic theme applies.
+
+---
+
 ## [2026-02-27] Dock UX & Auto-Scene Rule Updates
 
 ### Summary

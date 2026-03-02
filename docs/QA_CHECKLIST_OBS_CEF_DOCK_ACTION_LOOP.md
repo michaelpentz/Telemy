@@ -16,6 +16,7 @@ This checklist provides manual verification steps for the Telemy OBS/CEF dock, f
 | 2.2 | Close Dock Panel | Panel disappears from the OBS layout. | |
 | 2.3 | Re-show via Menu | Navigate to `Tools -> Show Aegis Dock (Telemy)`. Dock panel reappears immediately. | |
 | 2.4 | Restart OBS | Dock panel persistence check: Panel should appear where it was last placed. | |
+| 2.5 | Theme Check | Launch OBS in Light Theme (or switch themes). | **Fix:** Dock should apply the OBS color scheme immediately on load/refresh (synthetic theme replay). | |
 
 ## 3. State Population (CEF Path)
 *Verify these elements are populated and updated in the visible dock UI.*
@@ -67,6 +68,9 @@ This checklist provides manual verification steps for the Telemy OBS/CEF dock, f
 | 10.1 | **Idempotency Key (#4)** | Start Relay; check Go logs for `400 Bad Request`. Fix is OK if relay starts and Go receives UUID-v4. | |
 | 10.2 | **IPC Pipe DACL (#1)** | Attempt to connect to named pipe from a different user account. Fix is OK if connection is denied. | |
 | 10.3 | **Token Logging (#2)** | Check OBS/Core logs for dashboard URL. Fix is OK if token is truncated or absent. | |
+| 10.4 | **Deferred Show (ab6e2d0)** | Observe OBS launch. Fix is OK if dock restores saved position without center-screen floating flash. | |
+| 10.5 | **Synthetic Theme (ab6e2d0)** | Refresh dock page (Right-Click -> Refresh) while bridge is NOT connected. Fix is OK if dock retains OBS theme colors. | |
+| 10.6 | **Bootstrap ActionResult (ab6e2d0)** | Send action (e.g. `save_scene_prefs`). Fix is OK if `receiveDockActionResultJson` is observed in logs. | |
 
 ## 8. Automated Smoke Path (Local)
 - Build/deploy only:
