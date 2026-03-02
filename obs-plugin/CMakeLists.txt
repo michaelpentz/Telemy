@@ -25,7 +25,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
   endif()
 
   add_library(aegis-obs-plugin MODULE src/obs_plugin_entry.cpp)
-  target_sources(aegis-obs-plugin PRIVATE src/config_vault.cpp src/metrics_collector.cpp)
+  target_sources(aegis-obs-plugin PRIVATE src/config_vault.cpp src/metrics_collector.cpp src/relay_client.cpp)
   target_include_directories(aegis-obs-plugin PRIVATE ${OBS_INCLUDE_DIRS})
   if (OBS_LIBRARY_DIRS)
     target_link_directories(aegis-obs-plugin PRIVATE ${OBS_LIBRARY_DIRS})
@@ -38,7 +38,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
   target_link_libraries(aegis-obs-plugin PRIVATE Qt6::Core)
 
   if (WIN32)
-    target_link_libraries(aegis-obs-plugin PRIVATE winhttp crypt32)
+    target_link_libraries(aegis-obs-plugin PRIVATE winhttp crypt32 rpcrt4)
     target_sources(aegis-obs-plugin PRIVATE src/https_client.cpp)
   endif()
 
