@@ -294,10 +294,24 @@ impl Config {
             }
         }
         if self.aegis.enabled {
-            if self.aegis.base_url.as_deref().unwrap_or("").trim().is_empty() {
+            if self
+                .aegis
+                .base_url
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+            {
                 return Err("aegis.base_url is required when aegis.enabled = true".into());
             }
-            if self.aegis.access_jwt_key.as_deref().unwrap_or("").trim().is_empty() {
+            if self
+                .aegis
+                .access_jwt_key
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+            {
                 return Err("aegis.access_jwt_key is required when aegis.enabled = true".into());
             }
         }
@@ -413,5 +427,3 @@ mod tests {
         assert!(cfg.validate().is_ok());
     }
 }
-
-

@@ -28,6 +28,36 @@ The dock needs the OBS color scheme immediately on load to avoid a "dark flash" 
 - **Path B (Synthetic Theme):** If no IPC snapshot is cached (e.g., bridge not yet connected), the plugin synthesizes a minimal `status_snapshot` envelope containing only the current Qt palette colors.
 - This ensures the dock is themed correctly even before the telemetry pipe is established.
 
+## Core Backend Hardening
+
+The v0.0.3 backend (Rust core) includes several architectural improvements focused on reliability and observability.
+
+### 1. Mutex Poison Recovery (MutexExt)
+To prevent a single thread panic from cascading into a full process crash, the Rust core uses a custom `MutexExt` trait (defined in `util.rs`).
+- **Pattern:** Replaces panicking `lock().unwrap()` calls with `lock_or_recover()`.
+- **Mechanism:** If a mutex is poisoned (meaning a previous thread panicked while holding the lock), `lock_or_recover()` explicitly clears the poison state, logs a warning via `tracing::warn`, and allows the current thread to proceed with the data.
+- **Scope:** This pattern is applied across all core modules (`app`, `server`, `ipc`), ensuring that the telemetry bridge remains operational even under partial failure conditions.
+
+### 2. Modular Server Architecture
+The `server` module has been refactored from a monolithic 1800-line file into a structured sub-module system to improve maintainability:
+- **`server/mod.rs`**: Entry point and shared server state management.
+- **`server/dashboard.rs`**: Manages the OBS dashboard HTML generation and asset serving.
+- **`server/settings.rs`**: Handles settings form submissions, validation, and persistence.
+- **`server/aegis.rs`**: Dedicated handlers for Aegis relay integration and IPC bridge communication.
+This 77% reduction in the main `mod.rs` file size facilitates easier navigation and more granular component testing.
+
+### 3. Exporter Observability
+Telemetry export health is no longer a "black box." The system now monitors the health of the Grafana/Prometheus exporter:
+- **OTel Error Handler**: A custom OpenTelemetry error handler is installed to intercept and log failures from the `PeriodicReader`.
+- **Health Tracking**: An `ExporterHealth` struct tracks cumulative export errors.
+- **Active Reporting**: The main application loop monitors this counter and logs summaries of new errors every 60 cycles (~1 minute), providing explicit visibility into network or backend-related export issues.
+
+### 4. Delta-Based Bitrate Calculation
+Bitrate metrics have been upgraded from session-level averages to high-fidelity instantaneous measurements:
+- **Algorithm**: Switched from `total_bytes / total_duration` to a delta-based calculation (`(bytes_now - bytes_prev) / (time_now - time_prev)`).
+- **Per-Output Tracking**: Tracking is performed independently for each output stream.
+- **UX Impact**: The OBS dock now shows a "live" bitrate that accurately reflects current network throughput and responds immediately to congestion or recovery.
+
 ## Data and Control Flow
 
 ### 1. Status and Telemetry (Downstream)

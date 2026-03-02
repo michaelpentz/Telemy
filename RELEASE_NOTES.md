@@ -1,5 +1,35 @@
 # Release Notes - Telemy v0.0.3
 
+## [2026-03-02] Backend Hardening & Architectural Refinement
+
+### Summary
+This update completes a comprehensive backend hardening pass, resolving 15 key findings from the 2026-02-28 code review. Core improvements focus on system reliability, observability, and codebase maintainability.
+
+### Core Backend Improvements
+- **Robust Mutex Management**:
+  - Implemented the `MutexExt` trait for **poison recovery**.
+  - Replaced 36 panicking `lock().unwrap()` calls with `lock_or_recover()`, ensuring the core service remains operational even if a thread panics while holding a lock.
+- **Enhanced Exporter Observability**:
+  - Integrated an **OpenTelemetry error handler** for the Grafana exporter.
+  - Export failures (e.g., network issues or backend unavailability) are now explicitly logged as warnings instead of being silently swallowed.
+  - Added a cumulative `ExporterHealth` error counter for system health monitoring.
+- **Precise Telemetry Metrics**:
+  - Switched from session-average to **delta-based instantaneous bitrate** calculation.
+  - Bitrate metrics now reflect current network conditions per-output, providing more accurate real-time feedback in the OBS dock.
+- **Architectural Cleanup**:
+  - Refactored the core server module, splitting it into logical sub-modules: `dashboard.rs`, `settings.rs`, and `aegis.rs`.
+  - This 77% reduction in `mod.rs` complexity significantly improves maintainability and developer velocity.
+
+### IPC & Protocol Hardening
+- **Relay Action Loop Completion**:
+  - Fully wired the `relay_start` and `relay_stop` IPC path between the C++ plugin and Rust core.
+  - The plugin now actively consumes and resolves `relay_action_result` messages, completing the terminal action lifecycle.
+- **Standards Compliance**:
+  - Switched to **UUID v4 idempotency keys** for all relay requests, ensuring 1:1 compatibility with the Go control plane requirements.
+  - Expanded the C++ MsgPack parser to support signed integers, floats, and binary data.
+
+---
+
 ## [2026-03-01] Dock UX & Persistence Fixes
 
 ### Summary

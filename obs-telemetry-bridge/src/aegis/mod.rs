@@ -103,7 +103,8 @@ impl ControlPlaneClient {
             ));
         }
 
-        let mut parsed = Url::parse(base_url.trim()).map_err(|err| ControlPlaneError::Url(err.to_string()))?;
+        let mut parsed =
+            Url::parse(base_url.trim()).map_err(|err| ControlPlaneError::Url(err.to_string()))?;
         if !parsed.path().ends_with('/') {
             let new_path = format!("{}/", parsed.path().trim_end_matches('/'));
             parsed.set_path(&new_path);
@@ -125,7 +126,11 @@ impl ControlPlaneClient {
 
     pub async fn relay_active(&self) -> Result<Option<RelaySession>, ControlPlaneError> {
         let req = self.build_request(Method::GET, "relay/active")?;
-        let resp = self.http.execute(req).await.map_err(ControlPlaneError::Http)?;
+        let resp = self
+            .http
+            .execute(req)
+            .await
+            .map_err(ControlPlaneError::Http)?;
         let status = resp.status();
         let body = resp.text().await.map_err(ControlPlaneError::Http)?;
         parse_relay_active_response(status, &body)
@@ -137,7 +142,11 @@ impl ControlPlaneClient {
         request: &RelayStartRequest,
     ) -> Result<RelaySession, ControlPlaneError> {
         let req = self.build_relay_start_request(idempotency_key, request)?;
-        let resp = self.http.execute(req).await.map_err(ControlPlaneError::Http)?;
+        let resp = self
+            .http
+            .execute(req)
+            .await
+            .map_err(ControlPlaneError::Http)?;
         let status = resp.status();
         let body = resp.text().await.map_err(ControlPlaneError::Http)?;
         parse_relay_start_response(status, &body)
@@ -148,7 +157,11 @@ impl ControlPlaneClient {
         request: &RelayStopRequest,
     ) -> Result<RelayStopResponse, ControlPlaneError> {
         let req = self.build_relay_stop_request(request)?;
-        let resp = self.http.execute(req).await.map_err(ControlPlaneError::Http)?;
+        let resp = self
+            .http
+            .execute(req)
+            .await
+            .map_err(ControlPlaneError::Http)?;
         let status = resp.status();
         let body = resp.text().await.map_err(ControlPlaneError::Http)?;
         parse_relay_stop_response(status, &body)
@@ -199,7 +212,10 @@ impl ControlPlaneClient {
         method: Method,
         path: &str,
     ) -> Result<reqwest::RequestBuilder, ControlPlaneError> {
-        let url = self.base_url.join(&format!("api/v1/{}", path)).map_err(|err| ControlPlaneError::Url(err.to_string()))?;
+        let url = self
+            .base_url
+            .join(&format!("api/v1/{}", path))
+            .map_err(|err| ControlPlaneError::Url(err.to_string()))?;
         let headers = self.common_headers()?;
         Ok(self.http.request(method, url).headers(headers))
     }
@@ -378,7 +394,8 @@ pub fn parse_relay_active_response(
         });
     }
 
-    let envelope: RelaySessionEnvelope = serde_json::from_str(body).map_err(ControlPlaneError::Json)?;
+    let envelope: RelaySessionEnvelope =
+        serde_json::from_str(body).map_err(ControlPlaneError::Json)?;
     Ok(Some(envelope.session.normalize()))
 }
 
@@ -392,7 +409,8 @@ pub fn parse_relay_start_response(
             body: body.to_string(),
         });
     }
-    let envelope: RelaySessionEnvelope = serde_json::from_str(body).map_err(ControlPlaneError::Json)?;
+    let envelope: RelaySessionEnvelope =
+        serde_json::from_str(body).map_err(ControlPlaneError::Json)?;
     Ok(envelope.session.normalize())
 }
 
@@ -439,7 +457,10 @@ mod tests {
     fn active_request_includes_required_common_headers() {
         let req = client().build_relay_active_request().unwrap();
         assert_eq!(req.method(), Method::GET);
-        assert_eq!(req.url().as_str(), "https://api.example.test/api/v1/relay/active");
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.example.test/api/v1/relay/active"
+        );
         assert_eq!(
             req.headers().get(AUTHORIZATION).unwrap(),
             &HeaderValue::from_static("Bearer jwt-123")
@@ -471,7 +492,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(req.method(), Method::POST);
-        assert_eq!(req.url().as_str(), "https://api.example.test/api/v1/relay/start");
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.example.test/api/v1/relay/start"
+        );
         assert_eq!(
             req.headers().get("Idempotency-Key").unwrap(),
             &HeaderValue::from_static("idem-123")
@@ -550,4 +574,3 @@ mod tests {
         assert!(format!("{err}").contains("Idempotency-Key"));
     }
 }
-

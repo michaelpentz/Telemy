@@ -1,6 +1,4 @@
-use crate::aegis::{
-    RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest,
-};
+use crate::aegis::{RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest};
 use crate::aegis_client::{build_aegis_client_from_local_config, generate_idempotency_key};
 use crate::model::TelemetryFrame;
 use serde::{Deserialize, Serialize};
@@ -550,13 +548,15 @@ fn build_status_snapshot_with_overrides(
         rtt_ms: frame.network.latency_ms.max(0.0).round() as u32,
         override_enabled: overrides.manual_override.unwrap_or(false),
         relay,
-        settings: overrides.has_any_settings().then_some(StatusSnapshotSettingsPayload {
-            auto_scene_switch: overrides.auto_scene_switch,
-            low_quality_fallback: overrides.low_quality_fallback,
-            manual_override: overrides.manual_override,
-            chat_bot: overrides.chat_bot,
-            alerts: overrides.alerts,
-        }),
+        settings: overrides
+            .has_any_settings()
+            .then_some(StatusSnapshotSettingsPayload {
+                auto_scene_switch: overrides.auto_scene_switch,
+                low_quality_fallback: overrides.low_quality_fallback,
+                manual_override: overrides.manual_override,
+                chat_bot: overrides.chat_bot,
+                alerts: overrides.alerts,
+            }),
     }
 }
 
@@ -1359,7 +1359,7 @@ mod windows_impl {
     use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
     use windows::Win32::Foundation::BOOL;
     use windows::Win32::Security::{
-        InitializeSecurityDescriptor, PSECURITY_DESCRIPTOR, SetSecurityDescriptorDacl,
+        InitializeSecurityDescriptor, SetSecurityDescriptorDacl, PSECURITY_DESCRIPTOR,
         SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
     };
 
@@ -1445,11 +1445,13 @@ mod windows_impl {
     fn make_permissive_pipe_security_descriptor() -> io::Result<SECURITY_DESCRIPTOR> {
         let mut sd = SECURITY_DESCRIPTOR::default();
         unsafe {
-            InitializeSecurityDescriptor(
-                PSECURITY_DESCRIPTOR(&mut sd as *mut _ as *mut _),
-                1,
-            )
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("InitializeSecurityDescriptor failed: {err}")))?;
+            InitializeSecurityDescriptor(PSECURITY_DESCRIPTOR(&mut sd as *mut _ as *mut _), 1)
+                .map_err(|err| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("InitializeSecurityDescriptor failed: {err}"),
+                    )
+                })?;
 
             SetSecurityDescriptorDacl(
                 PSECURITY_DESCRIPTOR(&mut sd as *mut _ as *mut _),
@@ -1457,7 +1459,12 @@ mod windows_impl {
                 None,
                 BOOL(0),
             )
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("SetSecurityDescriptorDacl failed: {err}")))?;
+            .map_err(|err| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("SetSecurityDescriptorDacl failed: {err}"),
+                )
+            })?;
         }
         Ok(sd)
     }
@@ -2022,15 +2029,18 @@ mod tests {
         let ack = read_event(&mut client).await;
         assert_eq!(ack.message_type, "hello_ack");
 
-        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+        let _ =
+            drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
 
         write_frame(&mut client, &set_mode_request_envelope("irl"))
             .await
             .unwrap();
-        let notice1 = drain_until_message_type(&mut client, "user_notice", Duration::from_secs(1)).await;
+        let notice1 =
+            drain_until_message_type(&mut client, "user_notice", Duration::from_secs(1)).await;
         let payload1: UserNoticePayload = serde_json::from_value(notice1.payload).unwrap();
         assert!(payload1.message.contains("irl"));
-        let snapshot1 = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+        let snapshot1 =
+            drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
         let snap1: StatusSnapshotPayload = serde_json::from_value(snapshot1.payload).unwrap();
         assert!(matches!(snap1.mode, SnapshotMode::Irl));
 
@@ -2046,7 +2056,8 @@ mod tests {
             match tokio::time::timeout(Duration::from_millis(80), read_event(&mut client)).await {
                 Ok(msg) => {
                     if msg.message_type == "user_notice" {
-                        let payload: UserNoticePayload = serde_json::from_value(msg.payload).unwrap();
+                        let payload: UserNoticePayload =
+                            serde_json::from_value(msg.payload).unwrap();
                         if payload.message.contains("Dock mode override set to irl") {
                             saw_redundant_notice = true;
                             break;
@@ -2061,8 +2072,14 @@ mod tests {
                 Err(_) => {}
             }
         }
-        assert!(!saw_redundant_notice, "unexpected duplicate user_notice for no-op set_mode_request");
-        assert!(!saw_redundant_snapshot, "unexpected duplicate status_snapshot for no-op set_mode_request");
+        assert!(
+            !saw_redundant_notice,
+            "unexpected duplicate user_notice for no-op set_mode_request"
+        );
+        assert!(
+            !saw_redundant_snapshot,
+            "unexpected duplicate status_snapshot for no-op set_mode_request"
+        );
 
         drop(client);
         let _ = task.await;
@@ -2076,7 +2093,8 @@ mod tests {
         let ack = read_event(&mut client).await;
         assert_eq!(ack.message_type, "hello_ack");
 
-        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+        let _ =
+            drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
 
         write_frame(
             &mut client,
@@ -2084,12 +2102,16 @@ mod tests {
         )
         .await
         .unwrap();
-        let notice1 = drain_until_message_type(&mut client, "user_notice", Duration::from_secs(1)).await;
+        let notice1 =
+            drain_until_message_type(&mut client, "user_notice", Duration::from_secs(1)).await;
         let payload1: UserNoticePayload = serde_json::from_value(notice1.payload).unwrap();
         assert!(payload1.message.contains("auto_scene_switch"));
-        let snapshot1 = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+        let snapshot1 =
+            drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
         let snap1: StatusSnapshotPayload = serde_json::from_value(snapshot1.payload).unwrap();
-        let settings1 = snap1.settings.expect("expected settings payload after set_setting_request");
+        let settings1 = snap1
+            .settings
+            .expect("expected settings payload after set_setting_request");
         assert_eq!(settings1.auto_scene_switch, Some(true));
 
         write_frame(
@@ -2107,7 +2129,8 @@ mod tests {
             match tokio::time::timeout(Duration::from_millis(80), read_event(&mut client)).await {
                 Ok(msg) => {
                     if msg.message_type == "user_notice" {
-                        let payload: UserNoticePayload = serde_json::from_value(msg.payload).unwrap();
+                        let payload: UserNoticePayload =
+                            serde_json::from_value(msg.payload).unwrap();
                         if payload.message.contains("auto_scene_switch") {
                             saw_redundant_notice = true;
                             break;
@@ -2176,7 +2199,8 @@ mod tests {
         assert_eq!(ack.message_type, "hello_ack");
 
         // Drain the first periodic status_snapshot so we have a clean slate.
-        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+        let _ =
+            drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
 
         write_frame(
             &mut client,
@@ -2212,7 +2236,8 @@ mod tests {
         let ack = read_event(&mut client).await;
         assert_eq!(ack.message_type, "hello_ack");
 
-        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+        let _ =
+            drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
 
         write_frame(
             &mut client,
@@ -2249,7 +2274,8 @@ mod tests {
         let ack = read_event(&mut client).await;
         assert_eq!(ack.message_type, "hello_ack");
 
-        let _ = drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
+        let _ =
+            drain_until_message_type(&mut client, "status_snapshot", Duration::from_secs(1)).await;
 
         write_frame(
             &mut client,
@@ -2270,8 +2296,7 @@ mod tests {
         write_frame(&mut client, &ping_envelope("alive-check"))
             .await
             .unwrap();
-        let pong =
-            drain_until_message_type(&mut client, "pong", Duration::from_millis(500)).await;
+        let pong = drain_until_message_type(&mut client, "pong", Duration::from_millis(500)).await;
         let pong_payload: PongPayload = serde_json::from_value(pong.payload).unwrap();
         assert_eq!(pong_payload.nonce, "alive-check");
 

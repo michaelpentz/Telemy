@@ -27,7 +27,6 @@ use std::{
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-
 #[derive(Clone)]
 #[allow(dead_code)]
 pub(super) struct ServerState {

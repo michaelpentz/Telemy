@@ -1,6 +1,4 @@
-use crate::aegis::{
-    RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest,
-};
+use crate::aegis::{RelaySession, RelayStartClientContext, RelayStartRequest, RelayStopRequest};
 use crate::aegis_client::{build_aegis_client, generate_idempotency_key, generate_token};
 use crate::config::Config;
 use crate::exporters::GrafanaExporter;
@@ -376,4 +374,3 @@ async fn handle_aegis_relay_stop(config: &Config) -> Result<(), Box<dyn std::err
     println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
 }
-

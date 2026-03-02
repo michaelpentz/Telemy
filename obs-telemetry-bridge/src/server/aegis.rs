@@ -395,7 +395,11 @@ pub(super) async fn post_ipc_switch_scene(
                     "queued ipc switch_scene '{}' (deadline={}ms{})",
                     scene_name,
                     deadline_ms,
-                    if scene_name.is_empty() { ", empty scene debug case" } else { "" }
+                    if scene_name.is_empty() {
+                        ", empty scene debug case"
+                    } else {
+                        ""
+                    }
                 ),
             }),
         )
