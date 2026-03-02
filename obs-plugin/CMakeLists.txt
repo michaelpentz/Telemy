@@ -25,6 +25,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
   endif()
 
   add_library(aegis-obs-plugin MODULE src/obs_plugin_entry.cpp)
+  target_sources(aegis-obs-plugin PRIVATE src/config_vault.cpp src/metrics_collector.cpp)
   target_include_directories(aegis-obs-plugin PRIVATE ${OBS_INCLUDE_DIRS})
   if (OBS_LIBRARY_DIRS)
     target_link_directories(aegis-obs-plugin PRIVATE ${OBS_LIBRARY_DIRS})
@@ -32,8 +33,13 @@ if (AEGIS_BUILD_OBS_PLUGIN)
   target_link_libraries(aegis-obs-plugin PRIVATE ${OBS_LIBRARIES})
   target_compile_definitions(aegis-obs-plugin PRIVATE AEGIS_OBS_PLUGIN_BUILD=1 WIN32_LEAN_AND_MEAN NOMINMAX)
 
+  # Qt6::Core is required for config_vault.cpp (QJsonDocument, QFile, QDir).
+  find_package(Qt6 COMPONENTS Core REQUIRED)
+  target_link_libraries(aegis-obs-plugin PRIVATE Qt6::Core)
+
   if (WIN32)
     target_link_libraries(aegis-obs-plugin PRIVATE winhttp crypt32)
+    target_sources(aegis-obs-plugin PRIVATE src/https_client.cpp)
   endif()
 
   if (AEGIS_STAGE_DOCK_BRIDGE_ASSETS)
