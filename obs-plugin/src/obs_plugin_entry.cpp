@@ -1,4 +1,5 @@
 #include "dock_js_bridge_api.h"
+#include "config_vault.h"
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
 #if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
@@ -118,6 +119,10 @@ struct DockReplayCache {
 std::mutex g_dock_replay_cache_mu;
 DockReplayCache g_dock_replay_cache;
 bool g_dock_action_selftest_attempted = false;
+
+// Vault and config — loaded once in obs_module_load, accessible throughout.
+aegis::Vault       g_vault;
+aegis::PluginConfig g_config;
 
 struct DockJsSinkProbeState {
     bool js_sink_registered = false;
@@ -2135,6 +2140,158 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
+    // ── load_config: return current plugin config fields to dock ──
+    if (action_type == "load_config") {
+        std::ostringstream detail;
+        detail << "{";
+        detail << "\"relay_api_host\":" << JsStringLiteral(g_config.relay_api_host) << ",";
+        detail << "\"relay_heartbeat_interval_sec\":" << g_config.relay_heartbeat_interval_sec << ",";
+        detail << "\"metrics_poll_interval_ms\":" << g_config.metrics_poll_interval_ms << ",";
+        detail << "\"grafana_enabled\":" << (g_config.grafana_enabled ? "true" : "false") << ",";
+        detail << "\"grafana_otlp_endpoint\":" << JsStringLiteral(g_config.grafana_otlp_endpoint);
+        detail << "}";
+        blog(LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=load_config request_id=%s",
+            request_id.c_str());
+        EmitDockActionResult(action_type, request_id, "completed", true, "", detail.str());
+        return true;
+    }
+
+    // ── save_config: receive config fields from dock and persist ──
+    if (action_type == "save_config") {
+        std::string relay_api_host;
+        std::string relay_heartbeat_interval_sec_str;
+        std::string metrics_poll_interval_ms_str;
+        std::string grafana_enabled_str;
+        std::string grafana_otlp_endpoint;
+
+        (void)TryExtractJsonStringField(action_json, "relay_api_host", &relay_api_host);
+        (void)TryExtractJsonStringField(action_json, "relay_heartbeat_interval_sec",
+                                         &relay_heartbeat_interval_sec_str);
+        (void)TryExtractJsonStringField(action_json, "metrics_poll_interval_ms",
+                                         &metrics_poll_interval_ms_str);
+        bool grafana_enabled_val = false;
+        const bool has_grafana_enabled =
+            TryExtractJsonBoolField(action_json, "grafana_enabled", &grafana_enabled_val);
+        (void)TryExtractJsonStringField(action_json, "grafana_otlp_endpoint",
+                                         &grafana_otlp_endpoint);
+
+        if (!relay_api_host.empty()) {
+            g_config.relay_api_host = relay_api_host;
+        }
+        if (!relay_heartbeat_interval_sec_str.empty()) {
+            try {
+                const int v = std::stoi(relay_heartbeat_interval_sec_str);
+                if (v > 0) {
+                    g_config.relay_heartbeat_interval_sec = v;
+                }
+            } catch (...) {}
+        }
+        if (!metrics_poll_interval_ms_str.empty()) {
+            try {
+                const int v = std::stoi(metrics_poll_interval_ms_str);
+                if (v > 0) {
+                    g_config.metrics_poll_interval_ms = v;
+                }
+            } catch (...) {}
+        }
+        if (has_grafana_enabled) {
+            g_config.grafana_enabled = grafana_enabled_val;
+        }
+        if (!grafana_otlp_endpoint.empty()) {
+            g_config.grafana_otlp_endpoint = grafana_otlp_endpoint;
+        }
+
+        const bool saved = g_config.SaveToDisk();
+        if (!saved) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=save_config request_id=%s error=save_failed",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "save_failed", "");
+            return false;
+        }
+        blog(LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=save_config request_id=%s",
+            request_id.c_str());
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        return true;
+    }
+
+    // ── vault_set: encrypt and store a secret ──
+    if (action_type == "vault_set") {
+        std::string key;
+        std::string value;
+        (void)TryExtractJsonStringField(action_json, "key", &key);
+        (void)TryExtractJsonStringField(action_json, "value", &value);
+        if (key.empty()) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action rejected: type=vault_set request_id=%s error=missing_key",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_key", "");
+            return false;
+        }
+        // NOTE: secret value is never logged.
+        const bool ok = g_vault.Set(key, value);
+        if (!ok) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=vault_set request_id=%s key=%s error=vault_set_failed",
+                request_id.c_str(), key.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "vault_set_failed", "");
+            return false;
+        }
+        blog(LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=vault_set request_id=%s key=%s",
+            request_id.c_str(), key.c_str());
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        return true;
+    }
+
+    // ── vault_get: retrieve a decrypted secret ──
+    if (action_type == "vault_get") {
+        std::string key;
+        (void)TryExtractJsonStringField(action_json, "key", &key);
+        if (key.empty()) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action rejected: type=vault_get request_id=%s error=missing_key",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_key", "");
+            return false;
+        }
+        const std::optional<std::string> secret = g_vault.Get(key);
+        // NOTE: secret value is never logged.
+        std::ostringstream detail;
+        if (secret.has_value()) {
+            detail << "{\"key\":" << JsStringLiteral(key)
+                   << ",\"value\":" << JsStringLiteral(secret.value()) << "}";
+        } else {
+            detail << "{\"key\":" << JsStringLiteral(key) << ",\"value\":null}";
+        }
+        blog(LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=vault_get request_id=%s key=%s found=%s",
+            request_id.c_str(), key.c_str(), secret.has_value() ? "true" : "false");
+        EmitDockActionResult(action_type, request_id, "completed", true, "", detail.str());
+        return true;
+    }
+
+    // ── vault_keys: return sorted list of stored vault key names ──
+    if (action_type == "vault_keys") {
+        const std::vector<std::string> keys = g_vault.Keys();
+        std::ostringstream detail;
+        detail << "{\"keys\":[";
+        for (size_t i = 0; i < keys.size(); ++i) {
+            if (i > 0) {
+                detail << ",";
+            }
+            detail << JsStringLiteral(keys[i]);
+        }
+        detail << "]}";
+        blog(LOG_INFO,
+            "[aegis-obs-shim] dock action completed: type=vault_keys request_id=%s count=%d",
+            request_id.c_str(), static_cast<int>(keys.size()));
+        EmitDockActionResult(action_type, request_id, "completed", true, "", detail.str());
+        return true;
+    }
+
     blog(
         LOG_INFO,
         "[aegis-obs-shim] dock action rejected: type=%s request_id=%s error=unsupported_action_type",
@@ -2150,6 +2307,10 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
 
 bool obs_module_load(void) {
     blog(LOG_INFO, "[aegis-obs-shim] module load");
+
+    // Load persisted vault and config from %APPDATA%/Telemy/ on startup.
+    g_vault.Load();
+    g_config.LoadFromDisk();
 
     if (!g_obs_timer_registered) {
         obs_add_tick_callback(SwitchScenePumpTick, nullptr);
