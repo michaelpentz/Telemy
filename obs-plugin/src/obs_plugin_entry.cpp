@@ -1,5 +1,8 @@
 #include "dock_js_bridge_api.h"
 #include "config_vault.h"
+#include "metrics_collector.h"
+#include "https_client.h"
+#include "relay_client.h"
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
 #if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
@@ -22,9 +25,11 @@
 #include <cstdlib>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -77,6 +82,8 @@ bool g_frontend_exit_seen = false;
 bool g_tools_menu_show_dock_registered = false;
 float g_switch_pump_accum_seconds = 0.0f;
 float g_theme_poll_accum_seconds = 0.0f;
+float g_metrics_poll_accum_seconds = 0.0f;
+aegis::MetricsCollector g_metrics;
 using DockSceneSnapshotEmitterFn = std::function<void(const std::string&)>;
 using DockBrowserJsExecuteFn = std::function<bool(const std::string&)>;
 std::mutex g_dock_scene_snapshot_emitter_mu;
@@ -123,6 +130,11 @@ bool g_dock_action_selftest_attempted = false;
 // Vault and config — loaded once in obs_module_load, accessible throughout.
 aegis::Vault       g_vault;
 aegis::PluginConfig g_config;
+
+// HTTPS client and relay client — g_http owns the WinHTTP session;
+// g_relay holds a reference to g_http so it must be destroyed first.
+aegis::HttpsClient g_http;
+std::unique_ptr<aegis::RelayClient> g_relay;
 
 struct DockJsSinkProbeState {
     bool js_sink_registered = false;
@@ -1793,11 +1805,53 @@ void SwitchScenePumpTick(void*, float seconds) {
     if (seconds > 0.0f) {
         g_switch_pump_accum_seconds += seconds;
         g_theme_poll_accum_seconds += seconds;
+        g_metrics_poll_accum_seconds += seconds;
     }
     DrainExpiredPendingDockActions();
     if (g_theme_poll_accum_seconds >= 0.5f) {
         g_theme_poll_accum_seconds = 0.0f;
         PollObsThemeChangesOnObsThread();
+    }
+    if (g_metrics_poll_accum_seconds >= 0.5f) {
+        g_metrics_poll_accum_seconds = 0.0f;
+        g_metrics.Poll();
+
+        // Health derivation from latest snapshot
+        const auto& snapshot = g_metrics.Latest();
+        std::string health = "good";
+        if (!snapshot.obs.streaming && !snapshot.obs.recording) {
+            health = "offline";
+        } else {
+            // Check for high drop rate across all active outputs
+            float total_drop = 0.0f;
+            int active_count = 0;
+            for (const auto& out : snapshot.outputs) {
+                if (out.active) {
+                    total_drop += out.drop_pct;
+                    active_count++;
+                }
+            }
+            if (active_count > 0 && (total_drop / active_count) > 0.05f) {
+                health = "degraded";
+            }
+            // Also check render missed frames ratio
+            if (snapshot.obs.render_total_frames > 0) {
+                float miss_pct = static_cast<float>(snapshot.obs.render_missed_frames) /
+                                 static_cast<float>(snapshot.obs.render_total_frames);
+                if (miss_pct > 0.05f) {
+                    health = "degraded";
+                }
+            }
+        }
+
+        // Build status snapshot JSON with current state.
+        // mode and relay fields are stubbed — Task 8 will wire these to the relay client.
+        std::string mode = "studio";
+        std::string relay_status = "inactive";
+        std::string relay_region = "";
+
+        std::string json = g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region);
+        EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", json);
     }
     if (g_switch_pump_accum_seconds < 0.05f) {
         return;
@@ -2317,6 +2371,7 @@ bool obs_module_load(void) {
         g_obs_timer_registered = true;
         g_switch_pump_accum_seconds = 0.0f;
         g_theme_poll_accum_seconds = 0.0f;
+        g_metrics_poll_accum_seconds = 0.0f;
         blog(LOG_INFO, "[aegis-obs-shim] registered switch-scene pump timer");
     }
 
@@ -2365,6 +2420,7 @@ void obs_module_unload(void) {
         g_obs_timer_registered = false;
         g_switch_pump_accum_seconds = 0.0f;
         g_theme_poll_accum_seconds = 0.0f;
+        g_metrics_poll_accum_seconds = 0.0f;
     }
     {
         std::lock_guard<std::mutex> lock(g_pending_switch_requests_mu);
