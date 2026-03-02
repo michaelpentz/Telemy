@@ -2178,19 +2178,104 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
-    if (action_type == "relay_start" || action_type == "relay_stop") {
+    if (action_type == "relay_start") {
         blog(
             LOG_INFO,
-            "[aegis-obs-shim] dock action queued: type=%s request_id=%s detail=queued_core_ipc",
-            action_type.c_str(),
+            "[aegis-obs-shim] dock action relay_start: request_id=%s",
             request_id.c_str());
-        {
-            std::lock_guard<std::mutex> lock(g_pending_relay_actions_mu);
-            g_pending_relay_actions.push_back(
-                PendingRelayAction{request_id, action_type, std::chrono::steady_clock::now()});
+        if (!g_relay) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=relay_start request_id=%s error=relay_not_configured",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "relay_not_configured", "");
+            return false;
         }
-        // TODO v0.0.4: implement natively (relay_start/relay_stop without IPC)
+        auto jwt_opt = g_vault.Get("relay_jwt");
+        if (!jwt_opt) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=relay_start request_id=%s error=no_relay_jwt",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_relay_jwt", "");
+            return false;
+        }
+        // Emit immediate "queued" so the dock knows the action was received.
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        // Capture by value — never capture g_relay or g_config by reference in a detached thread.
+        std::string jwt = *jwt_opt;
+        std::string req_id = request_id;
+        int heartbeat_interval = g_config.relay_heartbeat_interval_sec;
+        std::thread([jwt, req_id, heartbeat_interval]() {
+            try {
+                auto session = g_relay->Start(jwt);
+                if (session) {
+                    g_relay->StartHeartbeatLoop(jwt, session->session_id, heartbeat_interval);
+                    blog(LOG_INFO,
+                        "[aegis-obs-shim] relay_start completed: request_id=%s session_id=[redacted] region=%s status=%s",
+                        req_id.c_str(),
+                        session->region.c_str(),
+                        session->status.c_str());
+                    std::ostringstream detail;
+                    detail << "{\"session_id\":\"" << JsonEscape(session->session_id) << "\""
+                           << ",\"status\":\"" << JsonEscape(session->status) << "\""
+                           << ",\"region\":\"" << JsonEscape(session->region) << "\"}";
+                    EmitDockActionResult("relay_start", req_id, "completed", true, "", detail.str());
+                } else {
+                    blog(LOG_WARNING,
+                        "[aegis-obs-shim] relay_start failed: request_id=%s error=relay_start_failed",
+                        req_id.c_str());
+                    EmitDockActionResult("relay_start", req_id, "failed", false, "relay_start_failed", "");
+                }
+            } catch (const std::exception& e) {
+                blog(LOG_WARNING,
+                    "[aegis-obs-shim] relay_start exception: request_id=%s error=%s",
+                    req_id.c_str(), e.what());
+                EmitDockActionResult("relay_start", req_id, "failed", false, JsonEscape(e.what()), "");
+            }
+        }).detach();
+        return true;
+    }
+
+    if (action_type == "relay_stop") {
+        blog(
+            LOG_INFO,
+            "[aegis-obs-shim] dock action relay_stop: request_id=%s",
+            request_id.c_str());
+        if (!g_relay || !g_relay->HasActiveSession()) {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] dock action failed: type=relay_stop request_id=%s error=no_active_session",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_active_session", "");
+            return false;
+        }
+        auto jwt_opt = g_vault.Get("relay_jwt");
+        auto session = g_relay->CurrentSession();
+        std::string jwt = jwt_opt.value_or("");
+        std::string sid = session ? session->session_id : "";
+        // Emit immediate "queued" so the dock knows the action was received.
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        std::string req_id = request_id;
+        std::thread([jwt, sid, req_id]() {
+            try {
+                g_relay->StopHeartbeatLoop();
+                bool ok = g_relay->Stop(jwt, sid);
+                if (ok) {
+                    blog(LOG_INFO,
+                        "[aegis-obs-shim] relay_stop completed: request_id=%s",
+                        req_id.c_str());
+                    EmitDockActionResult("relay_stop", req_id, "completed", true, "", "");
+                } else {
+                    blog(LOG_WARNING,
+                        "[aegis-obs-shim] relay_stop failed: request_id=%s error=relay_stop_failed",
+                        req_id.c_str());
+                    EmitDockActionResult("relay_stop", req_id, "failed", false, "relay_stop_failed", "");
+                }
+            } catch (const std::exception& e) {
+                blog(LOG_WARNING,
+                    "[aegis-obs-shim] relay_stop exception: request_id=%s error=%s",
+                    req_id.c_str(), e.what());
+                EmitDockActionResult("relay_stop", req_id, "failed", false, JsonEscape(e.what()), "");
+            }
+        }).detach();
         return true;
     }
 
@@ -2366,6 +2451,16 @@ bool obs_module_load(void) {
     g_vault.Load();
     g_config.LoadFromDisk();
 
+    // Initialize relay client if a relay API host is configured.
+    if (!g_config.relay_api_host.empty()) {
+        g_relay = std::make_unique<aegis::RelayClient>(g_http, g_config.relay_api_host);
+        blog(LOG_INFO,
+            "[aegis-obs-shim] relay client initialized: host=%s",
+            g_config.relay_api_host.c_str());
+    } else {
+        blog(LOG_INFO, "[aegis-obs-shim] relay client skipped: relay_api_host not configured");
+    }
+
     if (!g_obs_timer_registered) {
         obs_add_tick_callback(SwitchScenePumpTick, nullptr);
         g_obs_timer_registered = true;
@@ -2450,6 +2545,22 @@ void obs_module_unload(void) {
     SetDockSceneSnapshotEmitter({});
     ShutdownBrowserDockHostBridge();
     ClearDockReplayCache();
+
+    // Emergency relay teardown — blocks up to 3 seconds to send a graceful
+    // stop to the relay API before the WinHTTP session is destroyed.
+    if (g_relay && g_relay->HasActiveSession()) {
+        blog(LOG_INFO, "[aegis-obs-shim] relay emergency stop on unload");
+        auto jwt = g_vault.Get("relay_jwt");
+        if (jwt) {
+            g_relay->EmergencyRelayStop(*jwt);
+        } else {
+            blog(LOG_WARNING,
+                "[aegis-obs-shim] relay emergency stop skipped: no relay_jwt in vault");
+        }
+    }
+    // Destroy g_relay before g_http — RelayClient holds a reference to g_http.
+    g_relay.reset();
+    blog(LOG_INFO, "[aegis-obs-shim] relay client destroyed");
 }
 
 const char* obs_module_description(void) {
