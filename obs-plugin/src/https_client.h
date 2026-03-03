@@ -2,6 +2,8 @@
 
 #include <string>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 // WinHTTP RAII handle wrapper — forward-declared here, defined in .cpp
 // to keep <windows.h>/<winhttp.h> out of every translation unit that
@@ -85,7 +87,8 @@ public:
     HttpResponse Post(const std::wstring& host,
                       const std::wstring& path,
                       const std::string& json_body,
-                      const std::wstring& bearer_token = L"");
+                      const std::wstring& bearer_token = L"",
+                      const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers = {});
 
 private:
     void* session_ = nullptr;  // HINTERNET — opaque in header, cast in .cpp

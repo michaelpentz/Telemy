@@ -2335,6 +2335,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         std::ostringstream detail;
         detail << "{";
         detail << "\"relay_api_host\":" << JsStringLiteral(g_config.relay_api_host) << ",";
+        detail << "\"relay_shared_key\":" << JsStringLiteral(g_config.relay_shared_key) << ",";
         detail << "\"relay_heartbeat_interval_sec\":" << g_config.relay_heartbeat_interval_sec << ",";
         detail << "\"metrics_poll_interval_ms\":" << g_config.metrics_poll_interval_ms << ",";
         detail << "\"grafana_enabled\":" << (g_config.grafana_enabled ? "true" : "false") << ",";
@@ -2356,12 +2357,14 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     // â”€â”€ save_config: receive config fields from dock and persist â”€â”€
     if (action_type == "save_config") {
         std::string relay_api_host;
+        std::string relay_shared_key;
         std::string relay_heartbeat_interval_sec_str;
         std::string metrics_poll_interval_ms_str;
         std::string grafana_enabled_str;
         std::string grafana_otlp_endpoint;
 
         (void)TryExtractJsonStringField(action_json, "relay_api_host", &relay_api_host);
+        (void)TryExtractJsonStringField(action_json, "relay_shared_key", &relay_shared_key);
         (void)TryExtractJsonStringField(action_json, "relay_heartbeat_interval_sec",
                                          &relay_heartbeat_interval_sec_str);
         (void)TryExtractJsonStringField(action_json, "metrics_poll_interval_ms",
@@ -2374,6 +2377,9 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
 
         if (!relay_api_host.empty()) {
             g_config.relay_api_host = relay_api_host;
+        }
+        if (!relay_shared_key.empty()) {
+            g_config.relay_shared_key = relay_shared_key;
         }
         if (!relay_heartbeat_interval_sec_str.empty()) {
             try {
@@ -2510,10 +2516,12 @@ bool obs_module_load(void) {
 
     // Initialize relay client if a relay API host is configured.
     if (!g_config.relay_api_host.empty()) {
-        g_relay = std::make_unique<aegis::RelayClient>(g_http, g_config.relay_api_host);
+        g_relay = std::make_unique<aegis::RelayClient>(
+            g_http, g_config.relay_api_host, g_config.relay_shared_key);
         blog(LOG_INFO,
-            "[aegis-obs-plugin] relay client initialized: host=%s",
-            g_config.relay_api_host.c_str());
+            "[aegis-obs-plugin] relay client initialized: host=%s shared_key=%s",
+            g_config.relay_api_host.c_str(),
+            g_config.relay_shared_key.empty() ? "missing" : "configured");
     } else {
         blog(LOG_INFO, "[aegis-obs-plugin] relay client skipped: relay_api_host not configured");
     }

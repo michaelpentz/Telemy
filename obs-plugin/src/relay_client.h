@@ -18,7 +18,9 @@ struct RelaySession {
 class RelayClient {
 public:
     // api_host is just the hostname, e.g. "api.aegis.example.com"
-    RelayClient(HttpsClient& http, const std::string& api_host);
+    RelayClient(HttpsClient& http,
+                const std::string& api_host,
+                const std::string& relay_shared_key = "");
     ~RelayClient();
 
     // Non-copyable, non-movable — owns a background thread.
@@ -47,6 +49,8 @@ public:
 private:
     HttpsClient& http_;
     std::wstring api_host_w_;  // wide string for WinHTTP
+    std::wstring relay_shared_key_w_;
+    std::atomic<bool> logged_missing_health_shared_key_{false};
 
     mutable std::mutex session_mutex_;
     std::optional<RelaySession> current_session_;

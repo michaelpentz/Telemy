@@ -400,6 +400,9 @@ bool PluginConfig::LoadFromDisk()
     if (obj.contains("relay_api_host") && obj["relay_api_host"].isString())
         relay_api_host = obj["relay_api_host"].toString().toStdString();
 
+    if (obj.contains("relay_shared_key") && obj["relay_shared_key"].isString())
+        relay_shared_key = obj["relay_shared_key"].toString().toStdString();
+
     if (obj.contains("relay_heartbeat_interval_sec") &&
         obj["relay_heartbeat_interval_sec"].isDouble())
         relay_heartbeat_interval_sec =
@@ -467,6 +470,8 @@ bool PluginConfig::SaveToDisk()
     // Overwrite known fields.
     obj["relay_api_host"] =
         QString::fromStdString(relay_api_host);
+    obj["relay_shared_key"] =
+        QString::fromStdString(relay_shared_key);
     obj["relay_heartbeat_interval_sec"] = relay_heartbeat_interval_sec;
     obj["metrics_poll_interval_ms"]     = metrics_poll_interval_ms;
     obj["grafana_enabled"]              = grafana_enabled;

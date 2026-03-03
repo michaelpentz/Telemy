@@ -195,9 +195,10 @@ HttpResponse HttpsClient::Get(const std::wstring& host,
 // POST
 // ---------------------------------------------------------------------------
 HttpResponse HttpsClient::Post(const std::wstring& host,
-                                const std::wstring& path,
-                                const std::string& json_body,
-                                const std::wstring& bearer_token)
+                                 const std::wstring& path,
+                                 const std::string& json_body,
+                                 const std::wstring& bearer_token,
+                                 const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers)
 {
     // 1. Open a connection to the host on port 443.
     WinHttpHandle connect;
@@ -245,6 +246,20 @@ HttpResponse HttpsClient::Post(const std::wstring& host,
             static_cast<DWORD>(-1L),
             WINHTTP_ADDREQ_FLAG_ADD)) {
         throw_winhttp_error("WinHttpAddRequestHeaders(Content-Type)", GetLastError());
+    }
+
+    for (const auto& kv : extra_headers) {
+        if (kv.first.empty()) {
+            continue;
+        }
+        std::wstring header_line = kv.first + L": " + kv.second;
+        if (!WinHttpAddRequestHeaders(
+                reinterpret_cast<HINTERNET>(request.h),
+                header_line.c_str(),
+                static_cast<DWORD>(-1L),
+                WINHTTP_ADDREQ_FLAG_ADD)) {
+            throw_winhttp_error("WinHttpAddRequestHeaders(Extra)", GetLastError());
+        }
     }
 
     // 5. Send the request with the JSON body.

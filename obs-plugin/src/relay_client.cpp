@@ -18,9 +18,12 @@ namespace aegis {
 // ---------------------------------------------------------------------------
 // Construction / Destruction
 // ---------------------------------------------------------------------------
-RelayClient::RelayClient(HttpsClient& http, const std::string& api_host)
+RelayClient::RelayClient(HttpsClient& http,
+                         const std::string& api_host,
+                         const std::string& relay_shared_key)
     : http_(http)
     , api_host_w_(api_host.begin(), api_host.end())
+    , relay_shared_key_w_(relay_shared_key.begin(), relay_shared_key.end())
 {
 }
 
@@ -57,9 +60,15 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     }
 
     QJsonObject obj = doc.object();
+    if (obj.contains("session") && obj["session"].isObject()) {
+        obj = obj["session"].toObject();
+    }
 
     RelaySession session;
     session.session_id = obj["session_id"].toString().toStdString();
+    if (session.session_id.empty()) {
+        session.session_id = obj["id"].toString().toStdString();
+    }
     session.status     = obj["status"].toString().toStdString();
     session.region     = obj["region"].toString().toStdString();
 
@@ -111,10 +120,16 @@ std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
     std::string uuid = GenerateUuidV4();
     std::string body = "{\"mode\":\"auto\",\"idempotency_key\":\"" + uuid + "\"}";
     std::wstring wide_jwt(jwt.begin(), jwt.end());
+    std::wstring wide_uuid(uuid.begin(), uuid.end());
 
     HttpResponse resp;
     try {
-        resp = http_.Post(api_host_w_, L"/api/v1/relay/start", body, wide_jwt);
+        resp = http_.Post(
+            api_host_w_,
+            L"/api/v1/relay/start",
+            body,
+            wide_jwt,
+            {{L"Idempotency-Key", wide_uuid}});
     } catch (const std::exception& e) {
         blog(LOG_WARNING, "relay: Start network error: %s", e.what());
         return std::nullopt;
@@ -162,10 +177,16 @@ bool RelayClient::SendHeartbeat(const std::string& jwt, const std::string& sessi
 {
     std::string body = "{\"session_id\":\"" + session_id + "\"}";
     std::wstring wide_jwt(jwt.begin(), jwt.end());
+    std::vector<std::pair<std::wstring, std::wstring>> extra_headers;
+    if (!relay_shared_key_w_.empty()) {
+        extra_headers.push_back({L"X-Relay-Auth", relay_shared_key_w_});
+    } else if (!logged_missing_health_shared_key_.exchange(true)) {
+        blog(LOG_WARNING, "relay: relay_shared_key missing; health requests will likely be rejected");
+    }
 
     HttpResponse resp;
     try {
-        resp = http_.Post(api_host_w_, L"/api/v1/relay/health", body, wide_jwt);
+        resp = http_.Post(api_host_w_, L"/api/v1/relay/health", body, wide_jwt, extra_headers);
     } catch (const std::exception& e) {
         blog(LOG_WARNING, "relay: health ping network error: %s", e.what());
         return false;
