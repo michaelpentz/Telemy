@@ -62,6 +62,12 @@ struct PluginConfig {
     int metrics_poll_interval_ms     = 500;
     bool grafana_enabled             = false;     // future, default off
     std::string grafana_otlp_endpoint;            // future
+    std::string dock_mode            = "studio";
+    bool auto_scene_switch           = false;
+    bool low_quality_fallback        = false;
+    bool manual_override             = false;
+    bool chat_bot                    = false;
+    bool alerts                      = false;
 
     // Load config.json from %APPDATA%/Telemy/. Missing keys receive defaults;
     // returns true on success or if the file does not exist yet.

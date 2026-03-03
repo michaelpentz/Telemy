@@ -141,6 +141,7 @@ struct DockJsSinkProbeState {
 
 std::string TryExtractEnvelopeTypeFromJson(const std::string& envelope_json);
 bool EmitDockNativeJsonArgCall(const char* method_name, const std::string& payload_json);
+std::string AugmentSnapshotJsonWithTheme(const std::string& snapshot_json);
 void ReemitDockStatusSnapshotWithCurrentTheme(const char* reason);
 void EmitDockActionResult(const std::string& action_type,
                           const std::string& request_id,
@@ -886,6 +887,109 @@ bool IsRecognizedDockSettingKey(const std::string& key) {
            key == "manual_override" ||
            key == "chat_bot" ||
            key == "alerts";
+}
+
+std::string EffectiveDockModeFromConfig() {
+    if (IsRecognizedDockMode(g_config.dock_mode)) {
+        return g_config.dock_mode;
+    }
+    return "studio";
+}
+
+bool SetDockSettingValueByKey(const std::string& key, bool value) {
+    if (key == "auto_scene_switch") {
+        g_config.auto_scene_switch = value;
+        return true;
+    }
+    if (key == "low_quality_fallback") {
+        g_config.low_quality_fallback = value;
+        return true;
+    }
+    if (key == "manual_override") {
+        g_config.manual_override = value;
+        return true;
+    }
+    if (key == "chat_bot") {
+        g_config.chat_bot = value;
+        return true;
+    }
+    if (key == "alerts") {
+        g_config.alerts = value;
+        return true;
+    }
+    return false;
+}
+
+QJsonObject BuildDockSettingsJsonFromConfig() {
+    QJsonObject settings;
+    settings.insert(QStringLiteral("auto_scene_switch"), g_config.auto_scene_switch);
+    settings.insert(QStringLiteral("low_quality_fallback"), g_config.low_quality_fallback);
+    settings.insert(QStringLiteral("manual_override"), g_config.manual_override);
+    settings.insert(QStringLiteral("chat_bot"), g_config.chat_bot);
+    settings.insert(QStringLiteral("alerts"), g_config.alerts);
+    return settings;
+}
+
+std::string DeriveHealthFromSnapshot(const aegis::MetricsSnapshot& snapshot) {
+    std::string health = "good";
+    if (!snapshot.obs.streaming && !snapshot.obs.recording) {
+        return "offline";
+    }
+    float total_drop = 0.0f;
+    int active_count = 0;
+    for (const auto& out : snapshot.outputs) {
+        if (!out.active) {
+            continue;
+        }
+        total_drop += out.drop_pct;
+        active_count++;
+    }
+    if (active_count > 0 && (total_drop / active_count) > 0.05f) {
+        health = "degraded";
+    }
+    if (snapshot.obs.render_total_frames > 0) {
+        const float miss_pct = static_cast<float>(snapshot.obs.render_missed_frames) /
+                               static_cast<float>(snapshot.obs.render_total_frames);
+        if (miss_pct > 0.05f) {
+            health = "degraded";
+        }
+    }
+    return health;
+}
+
+bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
+    if (force_poll) {
+        g_metrics.Poll();
+    }
+
+    const auto& snapshot = g_metrics.Latest();
+    const std::string mode = EffectiveDockModeFromConfig();
+    const std::string health = DeriveHealthFromSnapshot(snapshot);
+    const std::string relay_status = "inactive";
+    const std::string relay_region;
+
+    std::string json = g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region);
+    QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(json));
+    if (doc.isObject()) {
+        QJsonObject payload = doc.object();
+        payload.insert(QStringLiteral("settings"), BuildDockSettingsJsonFromConfig());
+        json = QJsonDocument(payload).toJson(QJsonDocument::Compact).toStdString();
+    }
+    json = AugmentSnapshotJsonWithTheme(json);
+
+    const bool delivered = EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", json);
+    {
+        std::lock_guard<std::mutex> lock(g_dock_replay_cache_mu);
+        g_dock_replay_cache.has_status_snapshot = true;
+        g_dock_replay_cache.status_snapshot_json = json;
+    }
+    blog(
+        delivered ? LOG_INFO : LOG_DEBUG,
+        "[aegis-obs-plugin] status snapshot emitted: delivered=%s reason=%s mode=%s",
+        delivered ? "true" : "false",
+        reason ? reason : "unknown",
+        mode.c_str());
+    return delivered;
 }
 
 bool ShouldDeduplicateDockActionByRequestId(
@@ -1732,52 +1836,7 @@ void SwitchScenePumpTick(void*, float seconds) {
     }
     if (g_metrics_poll_accum_seconds >= 0.5f) {
         g_metrics_poll_accum_seconds = 0.0f;
-        g_metrics.Poll();
-
-        // Health derivation from latest snapshot
-        const auto& snapshot = g_metrics.Latest();
-        std::string health = "good";
-        if (!snapshot.obs.streaming && !snapshot.obs.recording) {
-            health = "offline";
-        } else {
-            // Check for high drop rate across all active outputs
-            float total_drop = 0.0f;
-            int active_count = 0;
-            for (const auto& out : snapshot.outputs) {
-                if (out.active) {
-                    total_drop += out.drop_pct;
-                    active_count++;
-                }
-            }
-            if (active_count > 0 && (total_drop / active_count) > 0.05f) {
-                health = "degraded";
-            }
-            // Also check render missed frames ratio
-            if (snapshot.obs.render_total_frames > 0) {
-                float miss_pct = static_cast<float>(snapshot.obs.render_missed_frames) /
-                                 static_cast<float>(snapshot.obs.render_total_frames);
-                if (miss_pct > 0.05f) {
-                    health = "degraded";
-                }
-            }
-        }
-
-        // Build status snapshot JSON with current state.
-        // mode and relay fields are stubbed â€” Task 8 will wire these to the relay client.
-        std::string mode = "studio";
-        std::string relay_status = "inactive";
-        std::string relay_region = "";
-
-        std::string json = g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region);
-        json = AugmentSnapshotJsonWithTheme(json);
-        EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", json);
-
-        // Cache for dock page replay on refresh/reload.
-        {
-            std::lock_guard<std::mutex> lock(g_dock_replay_cache_mu);
-            g_dock_replay_cache.has_status_snapshot = true;
-            g_dock_replay_cache.status_snapshot_json = json;
-        }
+        EmitCurrentStatusSnapshotToDock("metrics_poll", true);
     }
     if (g_switch_pump_accum_seconds < 0.05f) {
         return;
@@ -1937,11 +1996,16 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     if (action_type == "request_status") {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action queued: type=request_status request_id=%s",
+            "[aegis-obs-plugin] dock action request_status: request_id=%s",
             request_id.c_str());
-        TrackPendingDockRequestStatusAction(request_id);
-        // TODO v0.0.4: implement natively (push telemetry snapshot to dock)
-        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_request_status");
+        const bool delivered = EmitCurrentStatusSnapshotToDock("dock_request_status", true);
+        EmitDockActionResult(
+            action_type,
+            request_id,
+            "completed",
+            true,
+            "",
+            delivered ? "status_snapshot_emitted" : "status_snapshot_cached");
         return true;
     }
 
@@ -1963,7 +2027,6 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
             request_id.c_str(),
             mode.c_str());
         TrackPendingDockSetModeAction(request_id, mode);
-        // TODO v0.0.4: implement natively (set_mode forwarding without IPC)
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         return true;
     }
@@ -2007,7 +2070,6 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
             key.c_str(),
             value ? "true" : "false");
         TrackPendingDockSetSettingAction(request_id, key, value);
-        // TODO v0.0.4: implement natively (set_setting without IPC)
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         return true;
     }
@@ -2249,7 +2311,13 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         detail << "\"relay_heartbeat_interval_sec\":" << g_config.relay_heartbeat_interval_sec << ",";
         detail << "\"metrics_poll_interval_ms\":" << g_config.metrics_poll_interval_ms << ",";
         detail << "\"grafana_enabled\":" << (g_config.grafana_enabled ? "true" : "false") << ",";
-        detail << "\"grafana_otlp_endpoint\":" << JsStringLiteral(g_config.grafana_otlp_endpoint);
+        detail << "\"grafana_otlp_endpoint\":" << JsStringLiteral(g_config.grafana_otlp_endpoint) << ",";
+        detail << "\"dock_mode\":" << JsStringLiteral(EffectiveDockModeFromConfig()) << ",";
+        detail << "\"auto_scene_switch\":" << (g_config.auto_scene_switch ? "true" : "false") << ",";
+        detail << "\"low_quality_fallback\":" << (g_config.low_quality_fallback ? "true" : "false") << ",";
+        detail << "\"manual_override\":" << (g_config.manual_override ? "true" : "false") << ",";
+        detail << "\"chat_bot\":" << (g_config.chat_bot ? "true" : "false") << ",";
+        detail << "\"alerts\":" << (g_config.alerts ? "true" : "false");
         detail << "}";
         blog(LOG_INFO,
             "[aegis-obs-plugin] dock action completed: type=load_config request_id=%s",

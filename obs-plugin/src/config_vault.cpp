@@ -418,6 +418,28 @@ bool PluginConfig::LoadFromDisk()
         grafana_otlp_endpoint =
             obj["grafana_otlp_endpoint"].toString().toStdString();
 
+    if (obj.contains("dock_mode") && obj["dock_mode"].isString()) {
+        const std::string mode = obj["dock_mode"].toString().toStdString();
+        if (mode == "studio" || mode == "irl") {
+            dock_mode = mode;
+        }
+    }
+
+    if (obj.contains("auto_scene_switch") && obj["auto_scene_switch"].isBool())
+        auto_scene_switch = obj["auto_scene_switch"].toBool(false);
+
+    if (obj.contains("low_quality_fallback") && obj["low_quality_fallback"].isBool())
+        low_quality_fallback = obj["low_quality_fallback"].toBool(false);
+
+    if (obj.contains("manual_override") && obj["manual_override"].isBool())
+        manual_override = obj["manual_override"].toBool(false);
+
+    if (obj.contains("chat_bot") && obj["chat_bot"].isBool())
+        chat_bot = obj["chat_bot"].toBool(false);
+
+    if (obj.contains("alerts") && obj["alerts"].isBool())
+        alerts = obj["alerts"].toBool(false);
+
     blog(LOG_INFO, "config: loaded from %s", path.c_str());
     return true;
 }
@@ -450,6 +472,12 @@ bool PluginConfig::SaveToDisk()
     obj["grafana_enabled"]              = grafana_enabled;
     obj["grafana_otlp_endpoint"] =
         QString::fromStdString(grafana_otlp_endpoint);
+    obj["dock_mode"] = QString::fromStdString(dock_mode);
+    obj["auto_scene_switch"] = auto_scene_switch;
+    obj["low_quality_fallback"] = low_quality_fallback;
+    obj["manual_override"] = manual_override;
+    obj["chat_bot"] = chat_bot;
+    obj["alerts"] = alerts;
 
     QJsonDocument doc(obj);
     QByteArray json = doc.toJson(QJsonDocument::Indented);
