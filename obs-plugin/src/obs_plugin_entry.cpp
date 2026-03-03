@@ -420,20 +420,40 @@ std::string MaybeAugmentStatusSnapshotEnvelopeWithObsTheme(const std::string& en
     return QJsonDocument(envelope).toJson(QJsonDocument::Compact).toStdString();
 }
 
+std::string AugmentSnapshotJsonWithTheme(const std::string& snapshot_json) {
+    const ObsDockThemeSlots cached_theme = GetCachedObsDockTheme();
+    if (!cached_theme.valid || snapshot_json.empty()) {
+        return snapshot_json;
+    }
+    QJsonDocument doc = QJsonDocument::fromJson(
+        QByteArray::fromStdString(snapshot_json));
+    if (!doc.isObject()) {
+        return snapshot_json;
+    }
+    QJsonObject obj = doc.object();
+    obj.insert(QStringLiteral("theme"), QtThemeToJsonObject(cached_theme));
+    return QJsonDocument(obj).toJson(QJsonDocument::Compact).toStdString();
+}
+
 void ReemitDockStatusSnapshotWithCurrentTheme(const char* reason) {
-    std::string snapshot_envelope_json;
+    // v0.0.4: Re-emit the cached v0.0.4 status snapshot with fresh theme.
+    std::string snapshot_json;
     {
         std::lock_guard<std::mutex> lock(g_dock_replay_cache_mu);
-        snapshot_envelope_json = g_dock_replay_cache.ipc_status_snapshot_envelope_json;
+        snapshot_json = g_dock_replay_cache.status_snapshot_json;
     }
-    if (snapshot_envelope_json.empty()) {
+    if (snapshot_json.empty()) {
         blog(LOG_DEBUG, "[aegis-obs-shim] theme refresh skipped: no cached status_snapshot (reason=%s)",
              reason ? reason : "unknown");
         return;
     }
-    const std::string themed = MaybeAugmentStatusSnapshotEnvelopeWithObsTheme(snapshot_envelope_json);
-    CacheDockIpcEnvelopeForReplay(themed);
-    const bool delivered = EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", themed);
+    const std::string themed = AugmentSnapshotJsonWithTheme(snapshot_json);
+    // Update the cache with the themed version.
+    {
+        std::lock_guard<std::mutex> lock(g_dock_replay_cache_mu);
+        g_dock_replay_cache.status_snapshot_json = themed;
+    }
+    const bool delivered = EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", themed);
     blog(
         delivered ? LOG_INFO : LOG_DEBUG,
         "[aegis-obs-shim] dock theme refresh status_snapshot re-emitted: delivered=%s reason=%s bytes=%d",
@@ -1218,50 +1238,33 @@ void ReplayDockStateToJsSinkIfAvailable() {
     if (snapshot.has_pipe_status) {
         EmitDockNativePipeStatus(snapshot.pipe_status.c_str(), snapshot.pipe_reason.c_str());
     }
-    // v0.0.4: Replay native status snapshot (primary data channel).
+    // v0.0.4: Replay native status snapshot with current Qt theme.
     if (snapshot.has_status_snapshot && !snapshot.status_snapshot_json.empty()) {
+        const std::string themed = AugmentSnapshotJsonWithTheme(snapshot.status_snapshot_json);
         const bool delivered =
-            EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", snapshot.status_snapshot_json);
+            EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", themed);
         blog(
             delivered ? LOG_INFO : LOG_WARNING,
             "[aegis-obs-shim] dock replay status snapshot: delivered=%s bytes=%d",
             delivered ? "true" : "false",
-            static_cast<int>(snapshot.status_snapshot_json.size()));
-    }
-    if (!snapshot.ipc_hello_ack_envelope_json.empty()) {
-        EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", snapshot.ipc_hello_ack_envelope_json);
-    }
-    if (!snapshot.ipc_pong_envelope_json.empty()) {
-        EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", snapshot.ipc_pong_envelope_json);
-    }
-    if (!snapshot.ipc_status_snapshot_envelope_json.empty()) {
-        EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", snapshot.ipc_status_snapshot_envelope_json);
+            static_cast<int>(themed.size()));
     } else {
-        // No status_snapshot from IPC yet — synthesize a minimal one from the cached
-        // Qt theme so the dock picks up the OBS color scheme on page load / refresh.
+        // No status snapshot cached yet — synthesize a minimal one with just the theme
+        // so the dock picks up OBS color scheme on page load / refresh.
         const ObsDockThemeSlots cached_theme = GetCachedObsDockTheme();
         if (cached_theme.valid) {
-            QJsonObject theme_obj = QtThemeToJsonObject(cached_theme);
-            QJsonObject payload;
-            payload.insert(QStringLiteral("theme"), theme_obj);
-            QJsonObject envelope;
-            envelope.insert(QStringLiteral("type"), QStringLiteral("status_snapshot"));
-            envelope.insert(QStringLiteral("payload"), payload);
+            QJsonObject obj;
+            obj.insert(QStringLiteral("theme"), QtThemeToJsonObject(cached_theme));
             const std::string synthetic_json =
-                QJsonDocument(envelope).toJson(QJsonDocument::Compact).toStdString();
+                QJsonDocument(obj).toJson(QJsonDocument::Compact).toStdString();
             const bool delivered =
-                EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", synthetic_json);
+                EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", synthetic_json);
             blog(
                 delivered ? LOG_INFO : LOG_WARNING,
-                "[aegis-obs-shim] dock replay: synthetic theme status_snapshot emitted "
-                "(no IPC snapshot cached) delivered=%s bytes=%d",
+                "[aegis-obs-shim] dock replay: synthetic theme snapshot emitted "
+                "delivered=%s bytes=%d",
                 delivered ? "true" : "false",
                 static_cast<int>(synthetic_json.size()));
-        }
-    }
-    for (const auto& event_envelope_json : snapshot.recent_ipc_event_envelope_jsons) {
-        if (!event_envelope_json.empty()) {
-            EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", event_envelope_json);
         }
     }
     if (snapshot.has_scene_snapshot && !snapshot.scene_snapshot_json.empty()) {
@@ -1873,6 +1876,7 @@ void SwitchScenePumpTick(void*, float seconds) {
         std::string relay_region = "";
 
         std::string json = g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region);
+        json = AugmentSnapshotJsonWithTheme(json);
         EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", json);
 
         // Cache for dock page replay on refresh/reload.
@@ -2132,7 +2136,44 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
 
         std::ifstream in(prefs_path, std::ios::in | std::ios::binary);
         if (!in.is_open()) {
-            // No prefs file yet — return empty object so the dock hydrates cleanly
+            // v0.0.4 migration: try old aegis-obs-shim config path
+            std::string old_prefs_path;
+            {
+                // prefs_path is .../plugin_config/aegis-obs-plugin/dock_scene_prefs.json
+                // We need .../plugin_config/aegis-obs-shim/dock_scene_prefs.json
+                auto pos = prefs_path.rfind("aegis-obs-plugin");
+                if (pos != std::string::npos) {
+                    old_prefs_path = prefs_path.substr(0, pos) + "aegis-obs-shim/dock_scene_prefs.json";
+                }
+            }
+            if (!old_prefs_path.empty()) {
+                std::ifstream old_in(old_prefs_path, std::ios::in | std::ios::binary);
+                if (old_in.is_open()) {
+                    std::ostringstream old_contents;
+                    old_contents << old_in.rdbuf();
+                    old_in.close();
+                    const std::string old_data = old_contents.str();
+                    blog(LOG_INFO,
+                        "[aegis-obs-shim] dock action completed: type=load_scene_prefs request_id=%s "
+                        "migrated_from=aegis-obs-shim bytes=%d",
+                        request_id.c_str(),
+                        static_cast<int>(old_data.size()));
+                    // Save to new path for future loads
+                    auto dir_end = prefs_path.rfind('/');
+                    if (dir_end != std::string::npos) {
+                        QDir().mkpath(QString::fromStdString(prefs_path.substr(0, dir_end)));
+                    }
+                    std::ofstream migrate_out(prefs_path, std::ios::out | std::ios::trunc | std::ios::binary);
+                    if (migrate_out.is_open()) {
+                        migrate_out.write(old_data.data(), static_cast<std::streamsize>(old_data.size()));
+                        migrate_out.close();
+                    }
+                    EmitDockActionResult(action_type, request_id, "completed", true, "", old_data);
+                    return true;
+                }
+            }
+
+            // No prefs file at either path — return empty object so the dock hydrates cleanly
             blog(LOG_INFO,
                 "[aegis-obs-shim] dock action completed: type=load_scene_prefs request_id=%s detail=no_prefs_file",
                 request_id.c_str());

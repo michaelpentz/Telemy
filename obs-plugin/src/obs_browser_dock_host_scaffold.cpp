@@ -12,6 +12,7 @@
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
+#include <QtWidgets/QApplication>
 #include <QtWidgets/QDockWidget>
 #include <QtWidgets/QMainWindow>
 #include <mutex>
@@ -962,6 +963,36 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
         html = QString::fromUtf8(kCefDockValidationHtml);
     }
 
+    // Inject OBS Qt palette CSS overrides so the dock page loads with the correct
+    // theme colors from the very first paint — avoids the "default theme flash".
+    {
+        const QPalette pal = QApplication::palette();
+        const QString bg = pal.color(QPalette::Window).name();
+        const QString surface = pal.color(QPalette::Base).name();
+        const QString text = pal.color(QPalette::WindowText).name();
+        const QString muted = pal.color(QPalette::PlaceholderText).name();
+        const QString accent = pal.color(QPalette::Highlight).name();
+        const QString border = pal.color(QPalette::Dark).name();
+
+        QString theme_css = QStringLiteral(
+            "<style id=\"aegis-initial-theme\">:root{"
+            "--bg:") + bg + QStringLiteral(";"
+            "--bg-elev:") + surface + QStringLiteral(";"
+            "--bg-panel:") + bg + QStringLiteral(";"
+            "--text:") + text + QStringLiteral(";"
+            "--muted:") + muted + QStringLiteral(";"
+            "--accent:") + accent + QStringLiteral(";"
+            "--line:") + border + QStringLiteral(";"
+            "--line-soft:") + border + QStringLiteral(";"
+            "}body{background:") + bg + QStringLiteral(" !important;}</style>");
+
+        const int head_close = html.lastIndexOf(
+            QStringLiteral("</head>"), -1, Qt::CaseInsensitive);
+        if (head_close >= 0) {
+            html.insert(head_close, theme_css);
+        }
+    }
+
     const QByteArray encoded = QUrl::toPercentEncoding(html);
     const std::string data_url =
         std::string("data:text/html;charset=utf-8,") + encoded.constData();
@@ -1019,6 +1050,14 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
         blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold urlChanged bridge connect failed");
     }
     QObject::connect(dock, &QWidget::windowTitleChanged, dock, [dock](const QString& title) {
+        // Intercept data/about URL titles that flash during CEF page initialization.
+        // The urlChanged signal sets the title to the full data URL before the page
+        // has finished loading — suppress it to keep the dock title clean.
+        if (title.startsWith(QStringLiteral("data:"), Qt::CaseInsensitive) ||
+            title.startsWith(QStringLiteral("about:"), Qt::CaseInsensitive)) {
+            dock->setWindowTitle(QString::fromUtf8(kDockTitle));
+            return;
+        }
         if (!title.isEmpty()) {
             const QByteArray sample = title.left(180).toUtf8();
             blog(
