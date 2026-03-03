@@ -965,10 +965,21 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
     const auto& snapshot = g_metrics.Latest();
     const std::string mode = EffectiveDockModeFromConfig();
     const std::string health = DeriveHealthFromSnapshot(snapshot);
-    const std::string relay_status = "inactive";
-    const std::string relay_region;
+    std::string relay_status = "inactive";
+    std::string relay_region;
+    const aegis::RelaySession* relay_session_ptr = nullptr;
+    std::optional<aegis::RelaySession> relay_session_holder;
+    if (g_relay && g_relay->HasActiveSession()) {
+        relay_session_holder = g_relay->CurrentSession();
+        if (relay_session_holder) {
+            relay_status = relay_session_holder->status;
+            relay_region = relay_session_holder->region;
+            relay_session_ptr = &(*relay_session_holder);
+        }
+    }
 
-    std::string json = g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region);
+    std::string json =
+        g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region, relay_session_ptr);
     QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(json));
     if (doc.isObject()) {
         QJsonObject payload = doc.object();
@@ -2268,7 +2279,14 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
                     std::ostringstream detail;
                     detail << "{\"session_id\":\"" << JsonEscape(session->session_id) << "\""
                            << ",\"status\":\"" << JsonEscape(session->status) << "\""
-                           << ",\"region\":\"" << JsonEscape(session->region) << "\"}";
+                           << ",\"region\":\"" << JsonEscape(session->region) << "\""
+                           << ",\"public_ip\":\"" << JsonEscape(session->public_ip) << "\""
+                           << ",\"srt_port\":" << session->srt_port
+                           << ",\"pair_token\":\"" << JsonEscape(session->pair_token) << "\""
+                           << ",\"ws_url\":\"" << JsonEscape(session->ws_url) << "\""
+                           << ",\"grace_window_seconds\":" << session->grace_window_seconds
+                           << ",\"max_session_seconds\":" << session->max_session_seconds
+                           << "}";
                     EmitDockActionResult("relay_start", req_id, "completed", true, "", detail.str());
                 } else {
                     blog(LOG_WARNING,
@@ -2332,10 +2350,11 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
 
     // â”€â”€ load_config: return current plugin config fields to dock â”€â”€
     if (action_type == "load_config") {
+        const std::optional<std::string> relay_shared_key = g_vault.Get("relay_shared_key");
         std::ostringstream detail;
         detail << "{";
         detail << "\"relay_api_host\":" << JsStringLiteral(g_config.relay_api_host) << ",";
-        detail << "\"relay_shared_key\":" << JsStringLiteral(g_config.relay_shared_key) << ",";
+        detail << "\"relay_shared_key\":" << JsStringLiteral(relay_shared_key.value_or("")) << ",";
         detail << "\"relay_heartbeat_interval_sec\":" << g_config.relay_heartbeat_interval_sec << ",";
         detail << "\"metrics_poll_interval_ms\":" << g_config.metrics_poll_interval_ms << ",";
         detail << "\"grafana_enabled\":" << (g_config.grafana_enabled ? "true" : "false") << ",";
@@ -2364,7 +2383,8 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         std::string grafana_otlp_endpoint;
 
         (void)TryExtractJsonStringField(action_json, "relay_api_host", &relay_api_host);
-        (void)TryExtractJsonStringField(action_json, "relay_shared_key", &relay_shared_key);
+        const bool has_relay_shared_key =
+            TryExtractJsonStringField(action_json, "relay_shared_key", &relay_shared_key);
         (void)TryExtractJsonStringField(action_json, "relay_heartbeat_interval_sec",
                                          &relay_heartbeat_interval_sec_str);
         (void)TryExtractJsonStringField(action_json, "metrics_poll_interval_ms",
@@ -2378,8 +2398,21 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         if (!relay_api_host.empty()) {
             g_config.relay_api_host = relay_api_host;
         }
-        if (!relay_shared_key.empty()) {
-            g_config.relay_shared_key = relay_shared_key;
+        if (has_relay_shared_key) {
+            bool vault_saved = true;
+            if (relay_shared_key.empty()) {
+                // Clearing is idempotent: Remove() returns false when absent.
+                (void)g_vault.Remove("relay_shared_key");
+            } else {
+                vault_saved = g_vault.Set("relay_shared_key", relay_shared_key);
+            }
+            if (!vault_saved) {
+                blog(LOG_WARNING,
+                    "[aegis-obs-plugin] dock action failed: type=save_config request_id=%s error=relay_shared_key_vault_failed",
+                    request_id.c_str());
+                EmitDockActionResult(action_type, request_id, "failed", false, "relay_shared_key_vault_failed", "");
+                return false;
+            }
         }
         if (!relay_heartbeat_interval_sec_str.empty()) {
             try {
@@ -2513,15 +2546,16 @@ bool obs_module_load(void) {
     // Load persisted vault and config from %APPDATA%/Telemy/ on startup.
     g_vault.Load();
     g_config.LoadFromDisk();
+    const std::optional<std::string> relay_shared_key = g_vault.Get("relay_shared_key");
 
     // Initialize relay client if a relay API host is configured.
     if (!g_config.relay_api_host.empty()) {
         g_relay = std::make_unique<aegis::RelayClient>(
-            g_http, g_config.relay_api_host, g_config.relay_shared_key);
+            g_http, g_config.relay_api_host, relay_shared_key.value_or(""));
         blog(LOG_INFO,
             "[aegis-obs-plugin] relay client initialized: host=%s shared_key=%s",
             g_config.relay_api_host.c_str(),
-            g_config.relay_shared_key.empty() ? "missing" : "configured");
+            relay_shared_key.has_value() ? "configured" : "missing");
     } else {
         blog(LOG_INFO, "[aegis-obs-plugin] relay client skipped: relay_api_host not configured");
     }

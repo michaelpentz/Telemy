@@ -58,7 +58,6 @@ private:
 // ---------------------------------------------------------------------------
 struct PluginConfig {
     std::string relay_api_host;                   // e.g. "api.aegis.example.com"
-    std::string relay_shared_key;
     int relay_heartbeat_interval_sec = 30;
     int metrics_poll_interval_ms     = 500;
     bool grafana_enabled             = false;     // future, default off

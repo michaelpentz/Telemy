@@ -13,6 +13,12 @@ struct RelaySession {
     std::string session_id;
     std::string status;    // "provisioning", "active", "grace", "stopped"
     std::string region;
+    std::string public_ip;
+    int         srt_port = 9000;
+    std::string ws_url;
+    std::string pair_token;
+    int         grace_window_seconds = 0;
+    int         max_session_seconds = 0;
 };
 
 class RelayClient {
