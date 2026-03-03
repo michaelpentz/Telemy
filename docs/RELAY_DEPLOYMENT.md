@@ -25,54 +25,45 @@ srtla-receiver provides:
 
 | Port | Protocol | Purpose | Security Group |
 |------|----------|---------|----------------|
-| 5000 | UDP | SRTLA bonded ingest (IRL Pro connects here) | 0.0.0.0/0 |
-| 4000 | UDP | SRT player output (OBS connects here) | 0.0.0.0/0 |
-| 4001 | UDP | SRT direct sender (non-bonded fallback) | 0.0.0.0/0 |
-| 3000 | TCP | Management UI | Control plane IP only |
-| 8090 | TCP | Backend API | Control plane IP only |
-| 9000 | UDP | Legacy SRT ingest (deprecated, kept for transition) | 0.0.0.0/0 |
-| 7443 | TCP | Legacy WebSocket/TLS (kept for transition) | 0.0.0.0/0 |
+| 5000 | UDP | SRTLA bonded ingest (IRL Pro srtla://) | 0.0.0.0/0 |
+| 4001 | UDP | SRT publisher (SLS ingest) | 0.0.0.0/0 |
+| 4000 | UDP | SRT player (SLS output for OBS) | 0.0.0.0/0 |
+| 22   | TCP | SSH Access (Diagnostics) | 0.0.0.0/0 (or admin IP) |
+| 3000 | TCP | SLS Management UI | Control plane IP only |
+| 8090 | TCP | srtla-receiver Backend API | Control plane IP only |
 
-**Note:** Backend API remapped from default 8080 to 8090 to avoid conflict with the control plane listener.
+**Note:** `srtla_rec` acts as a raw UDP proxy on port 5000, forwarding bonded traffic to `localhost:4001` where SLS handles the SRT session.
 
 ## Security Group
 
 Security group: `aegis-relay-sg` (`sg-0da8cf50c2fd72518`)
 
-Management ports (TCP 3000, 8090) are restricted to the control plane IP (`52.13.2.122/32`). UDP ports are open to all sources since IRL Pro connections come from dynamic cellular IPs.
+- **UDP 4000-5000**: Open to all (`0.0.0.0/0`) for dynamic cellular ingest.
+- **TCP 22**: Open for SSH diagnostics using `aegis-relay-key.pem`.
+- **TCP 3000, 8090**: Restricted to control plane IP (`52.13.2.122/32`).
+
+## SSH Access
+
+To diagnose a relay instance:
+```bash
+ssh -i aegis-relay-key.pem ec2-user@{relay_ip}
+```
 
 ## Automatic Provisioning
 
-The control plane passes a user-data script to each EC2 instance at launch. The script:
+The control plane provisions the relay and auto-creates stream IDs:
+- **Publisher ID**: `live_aegis`
+- **Player ID**: `play_aegis`
 
-1. Installs Docker and Docker Compose plugin
-2. Downloads `docker-compose.prod.yml` from OpenIRL
-3. Configures ports via `.env` file
-4. Starts srtla-receiver containers
-5. Writes `/tmp/srtla-ready` marker when complete
-
-Boot time: ~2-3 minutes from instance launch to srtla-receiver ready.
-
-Source: `aegis-control-plane/scripts/relay-user-data.sh` (canonical reference)
-Inline: `internal/relay/aws.go` (compiled into provisioner binary)
+The API key for the backend is auto-generated on first boot and stored at:
+`/opt/srtla-receiver/data/.apikey`
 
 ## Manual Install (Ad-Hoc Testing)
 
 SSH into a running relay instance and run:
 
 ```bash
-# Install Docker
-sudo dnf update -y
-sudo dnf install -y docker
-sudo systemctl enable docker
-sudo systemctl start docker
-
-# Install Docker Compose
-ARCH=$(uname -m)
-sudo mkdir -p /usr/local/lib/docker/cli-plugins
-sudo curl -SL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-${ARCH}" \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+# ... (Docker/Compose install steps unchanged)
 
 # Setup srtla-receiver
 sudo mkdir -p /opt/srtla-receiver/data
@@ -83,37 +74,36 @@ sudo curl -sL https://raw.githubusercontent.com/OpenIRL/srtla-receiver/main/dock
 
 sudo tee .env << 'EOF'
 SRTLA_PORT=5000
-SRT_PORT=4001
+SRT_SENDER_PORT=4001
 SRT_PLAYER_PORT=4000
-MANAGEMENT_PORT=3000
-BACKEND_PORT=8090
-URL=http://localhost
+SLS_MGNT_PORT=3000
+SLS_STATS_PORT=8090
+APP_URL=http://localhost
 EOF
 
 sudo chown -R 3001:3001 /opt/srtla-receiver/data
 sudo docker compose up -d
 ```
 
-## IRL Pro Connection Guide
+## IRL Pro Connection Guide (Bonded)
 
-1. Provision a relay via the control plane API or dock UI
-2. Open the management UI at `http://{relay_ip}:3000`
-3. Create a new stream (note the stream ID)
-4. In IRL Pro, set the SRTLA server URL:
-   ```
-   srtla://{relay_ip}:5000?streamid={stream_id}
-   ```
-5. Start streaming in IRL Pro
+1. **Bonding Mode**: Use **SRTLA** (not SRT with bonding toggle).
+2. **Settings**: Go to **Settings > Bonding > Own Bonding Server (SRTLA)**.
+3. **URL**: `srtla://{relay_ip}:5000`
+4. **SRT Settings**:
+   - **Stream ID**: `live_aegis`
+   - **Latency**: `2500` ms (recommended)
+5. **Validation**: Confirm bonding works by checking both WiFi and Cellular icons in the SRTLA group.
+
+*Note: Enabling the built-in "Connection Bonding Service" routes through IRL Toolkit proxies and will fail with our private relay.*
 
 ## OBS SRT Input Setup
 
-1. Add a **Media Source** in OBS
-2. Uncheck "Local File"
-3. Set Input to:
-   ```
-   srt://{relay_ip}:4000?streamid={stream_id}&mode=caller
-   ```
-4. The stream should appear within a few seconds
+1. Add a **Media Source** in OBS.
+2. Uncheck **Local File**.
+3. **Input**: `srt://{relay_ip}:4000?streamid=play_aegis`
+4. **Input Format**: `mpegts`
+5. The stream should appear with ~5s end-to-end latency (typical for bonded relay).
 
 ## Troubleshooting
 

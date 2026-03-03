@@ -100,6 +100,38 @@ while true; do
   sleep 3
 done
 
+# Read the auto-generated API key
+APIKEY=""
+for attempt in $(seq 1 10); do
+  if [ -f /opt/srtla-receiver/data/.apikey ]; then
+    APIKEY=$(cat /opt/srtla-receiver/data/.apikey)
+    break
+  fi
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') waiting for .apikey (attempt ${attempt})"
+  sleep 3
+done
+
+if [ -z "${APIKEY}" ]; then
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') WARNING: .apikey not found, stream auto-creation skipped"
+else
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') API key found, creating default stream"
+  # Create a default publisher stream via the backend API
+  STREAM_RESP=$(curl -s -X POST http://localhost:8090/api/stream-ids \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${APIKEY}" \
+    -d '{"publisher":"live_aegis","player":"play_aegis","description":"aegis-relay"}')
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create response: ${STREAM_RESP}"
+
+  # Fetch the created stream to get publish/play keys
+  STREAMS=$(curl -s http://localhost:8090/api/stream-ids \
+    -H "Authorization: Bearer ${APIKEY}")
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') streams: ${STREAMS}"
+
+  # Write stream info for control plane health checks
+  echo "${STREAMS}" > /tmp/srtla-streams.json
+  echo "${APIKEY}" > /tmp/srtla-apikey
+fi
+
 # Signal ready (marker file for health check polling)
 touch /tmp/srtla-ready
 

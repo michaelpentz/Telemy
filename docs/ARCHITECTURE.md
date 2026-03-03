@@ -52,12 +52,13 @@ Output: a JSON telemetry snapshot containing `health`, OBS stats, system stats, 
 Two files at `%APPDATA%/Telemy/`:
 
 - **`config.json`** — non-sensitive settings (relay API host, preferences). Read/write via `QJsonDocument`.
-- **`vault.json`** — secrets (JWT tokens, API keys). Encrypted with Windows DPAPI (`CryptProtectData`/`CryptUnprotectData`), stored as base64 blobs.
+- **`vault.json`** — secrets (JWT tokens, API keys). Must be a **flat JSON format** (not nested). Encrypted with Windows DPAPI (`CryptProtectData`/`CryptUnprotectData`), stored as base64 blobs.
 
 ### HttpsClient (`src/https_client.cpp`)
 
 Windows-only WinHTTP wrapper:
 - RAII session/connection/request handles
+- **HTTP/HTTPS support**: Uses `parse_host_port()` helper. If port != 443, it defaults to non-TLS HTTP.
 - Synchronous calls on worker threads (no blocking OBS main thread)
 - Bearer token auth from ConfigVault
 - TLS via Windows certificate store (no bundled CA certs)
@@ -137,15 +138,21 @@ switch_scene action ──> OBS API (obs_frontend_set_current_scene)
 
 ## Relay Stack (AWS)
 
-EC2 relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) via Docker Compose:
+EC2 relay instances run a dual-process stack via Docker Compose for bonded SRT:
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 5000 | UDP | SRTLA bonded ingest (encoder connects here) |
-| 4000 | UDP | SRT player output (OBS pulls from here) |
-| 4001 | UDP | SRT direct ingest (non-bonded fallback) |
-| 3000 | TCP | Management UI (restricted to control plane IP) |
-| 8090 | TCP | Backend API (restricted to control plane IP) |
+| Component | Port | Protocol | Purpose |
+|-----------|------|----------|---------|
+| `srtla_rec` | 5000 | UDP | **SRTLA proxy**: Raw UDP proxy (no libsrt). Groups bonded packets from multiple IPs (e.g. WiFi + Cellular) and forwards verbatim to `localhost:4001`. |
+| `SLS` (v1.5.0) | 4001 | UDP | **SRT Live Server**: Handles actual SRT sessions. Ingests from `srtla_rec`. |
+| `SLS` (v1.5.0) | 4000 | UDP | **SRT Player**: OBS pulls the bonded stream from here. |
+| Management | 3000 | TCP | SLS Web UI (restricted). |
+| Backend API | 8090 | TCP | srtla-receiver control API (restricted). |
+
+### Connection Schemes
+- **Encoder (IRL Pro)**: `srtla://{relay_ip}:5000` with `streamid=live_aegis`.
+- **Player (OBS)**: `srt://{relay_ip}:4000?streamid=play_aegis`.
+
+The stack handles packet reordering and bonding overhead, resulting in ~5s E2E latency with high reliability over unstable cellular links.
 
 Provisioned via Go control plane (`aegis-control-plane/`):
 - `internal/relay/aws.go` — EC2 RunInstances with user-data bootstrap

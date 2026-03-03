@@ -80,7 +80,7 @@ func HashJSON(v any) (string, error) {
 func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
-       coalesce(ri.public_ip::text, ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
@@ -185,7 +185,7 @@ values
 func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
-       coalesce(ri.public_ip::text, ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
@@ -259,7 +259,7 @@ where user_id = $1 and id = $2 and status = 'provisioning'`
 func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, sessionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
-       coalesce(ri.public_ip::text, ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
