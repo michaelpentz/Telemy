@@ -48,11 +48,11 @@ curl -sL https://raw.githubusercontent.com/OpenIRL/srtla-receiver/main/docker-co
 
 cat > .env << 'ENVEOF'
 SRTLA_PORT=5000
-SRT_PORT=4001
+SRT_SENDER_PORT=4001
 SRT_PLAYER_PORT=4000
-MANAGEMENT_PORT=3000
-BACKEND_PORT=8090
-URL=http://localhost
+SLS_MGNT_PORT=3000
+SLS_STATS_PORT=8090
+APP_URL=http://localhost
 ENVEOF
 
 chown -R 3001:3001 /opt/srtla-receiver/data
