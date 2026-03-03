@@ -1,0 +1,31 @@
+# Build artifacts
+obs-plugin/build-obs-cef/
+obs-plugin/build*/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.dll
+*.lib
+
+# IDE
+.vs/
+.vscode/
+*.user
+CMakeSettings.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Go
+aegis-control-plane/bin/
+aegis-control-plane/tmp/
+
+# Coordination docs (outside repo)
+HANDOFF_STATUS.md
+CURRENT_STATUS.md
+HANDOFF_HISTORY.md
+HANDOFF_STATUS_ARCHIVE.md
+AGENT_RELAY.md
+GEMINI_RELAY.md
