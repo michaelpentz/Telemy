@@ -2,7 +2,7 @@
 
 All notable changes to telemy-v0.0.4 will be documented in this file.
 
-## [0.0.4] — In Progress
+## [0.0.4] — 2026-03-03
 
 ### Architecture
 

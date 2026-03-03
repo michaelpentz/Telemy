@@ -1,4 +1,4 @@
-# Release Notes — v0.0.4 (In Progress)
+# Release Notes — v0.0.4
 
 ## Overview
 
