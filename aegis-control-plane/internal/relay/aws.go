@@ -27,7 +27,7 @@ exec > /var/log/srtla-setup.log 2>&1
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup starting"
 
 dnf update -y
-dnf install -y docker
+dnf install -y docker jq
 systemctl enable docker
 systemctl start docker
 
@@ -60,6 +60,64 @@ chown -R 3001:3001 /opt/srtla-receiver/data
 docker compose up -d
 
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver containers started"
+
+# Wait for containers to become ready
+deadline=$((SECONDS + 120))
+while true; do
+  all_ready=true
+  has_containers=false
+  while IFS= read -r cid; do
+    [ -z "${cid}" ] && continue
+    has_containers=true
+    health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${cid}")
+    status=$(docker inspect --format '{{.State.Status}}' "${cid}")
+    if [ "${health}" = "none" ]; then
+      [ "${status}" != "running" ] && all_ready=false && break
+    elif [ "${health}" != "healthy" ]; then
+      all_ready=false && break
+    fi
+  done < <(docker compose ps -q)
+  [ "${has_containers}" = true ] && [ "${all_ready}" = true ] && break
+  if [ ${SECONDS} -ge ${deadline} ]; then
+    echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') timeout waiting for containers"
+    docker compose ps
+    exit 1
+  fi
+  sleep 3
+done
+
+echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') containers ready, extracting API key"
+
+# Extract API key from container logs (generated on first boot)
+APIKEY=""
+for attempt in $(seq 1 30); do
+  APIKEY=$(docker compose logs receiver 2>/dev/null \
+    | grep "\[CSLSDatabase\] Generated default admin API key:" \
+    | sed 's/.*Generated default admin API key: \([A-Za-z0-9]*\).*/\1/' \
+    | tail -1)
+  [ -n "${APIKEY}" ] && break
+  sleep 3
+done
+
+if [ -z "${APIKEY}" ]; then
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') WARNING: API key not found, stream auto-creation skipped"
+else
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') API key found, creating default stream"
+  STREAM_RESP=$(curl -s -X POST http://localhost:8090/api/stream-ids \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${APIKEY}" \
+    -d '{"publisher":"live_aegis","player":"play_aegis","description":"aegis-relay"}')
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create: ${STREAM_RESP}"
+
+  STREAMS=$(curl -s http://localhost:8090/api/stream-ids \
+    -H "Authorization: Bearer ${APIKEY}")
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') streams: ${STREAMS}"
+
+  # Write stream keys to well-known files for health-check polling
+  echo "${STREAMS}" > /tmp/srtla-streams.json
+  echo "${APIKEY}" > /tmp/srtla-apikey
+fi
+
 touch /tmp/srtla-ready
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup complete"
 `

@@ -28,6 +28,36 @@ namespace {
     throw std::runtime_error(msg);
 }
 
+// Helper: parse a host string that may include ":port" suffix.
+// Returns the bare hostname and resolved port.  When no port is present
+// the caller-supplied default_port is used.
+struct HostPort {
+    std::wstring host;
+    INTERNET_PORT port;
+    bool use_tls;
+};
+
+static HostPort parse_host_port(const std::wstring& raw) {
+    HostPort hp;
+    auto colon = raw.rfind(L':');
+    if (colon != std::wstring::npos && colon > 0) {
+        std::wstring port_str = raw.substr(colon + 1);
+        int port_val = 0;
+        try { port_val = std::stoi(port_str); } catch (...) { port_val = 0; }
+        if (port_val > 0 && port_val <= 65535) {
+            hp.host = raw.substr(0, colon);
+            hp.port = static_cast<INTERNET_PORT>(port_val);
+            hp.use_tls = (hp.port == 443);
+            return hp;
+        }
+    }
+    // No port suffix — default to HTTPS on 443.
+    hp.host = raw;
+    hp.port = INTERNET_DEFAULT_HTTPS_PORT;
+    hp.use_tls = true;
+    return hp;
+}
+
 }  // namespace
 
 namespace aegis {
@@ -131,19 +161,21 @@ HttpResponse HttpsClient::Get(const std::wstring& host,
                                const std::wstring& path,
                                const std::wstring& bearer_token)
 {
-    // 1. Open a connection to the host on port 443.
+    auto hp = parse_host_port(host);
+
+    // 1. Open a connection to the host.
     WinHttpHandle connect;
     connect.h = reinterpret_cast<void*>(
         WinHttpConnect(
             reinterpret_cast<HINTERNET>(session_),
-            host.c_str(),
-            INTERNET_DEFAULT_HTTPS_PORT,
+            hp.host.c_str(),
+            hp.port,
             0));
     if (!connect.valid()) {
         throw_winhttp_error("WinHttpConnect", GetLastError());
     }
 
-    // 2. Open a GET request with TLS.
+    // 2. Open a GET request (TLS only when port is 443).
     WinHttpHandle request;
     request.h = reinterpret_cast<void*>(
         WinHttpOpenRequest(
@@ -153,7 +185,7 @@ HttpResponse HttpsClient::Get(const std::wstring& host,
             nullptr,
             WINHTTP_NO_REFERER,
             WINHTTP_DEFAULT_ACCEPT_TYPES,
-            WINHTTP_FLAG_SECURE));
+            hp.use_tls ? WINHTTP_FLAG_SECURE : 0));
     if (!request.valid()) {
         throw_winhttp_error("WinHttpOpenRequest(GET)", GetLastError());
     }
@@ -200,19 +232,32 @@ HttpResponse HttpsClient::Post(const std::wstring& host,
                                  const std::wstring& bearer_token,
                                  const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers)
 {
-    // 1. Open a connection to the host on port 443.
+    auto hp = parse_host_port(host);
+
+#ifndef AEGIS_NO_OBS_LOG
+    {
+        // Convert wide host to narrow for logging.
+        int n = WideCharToMultiByte(CP_UTF8, 0, hp.host.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string narrow(n > 0 ? n : 1, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, hp.host.c_str(), -1, narrow.data(), n, nullptr, nullptr);
+        blog(LOG_INFO, "https: POST connect host=%s port=%d tls=%d body_len=%d",
+             narrow.c_str(), (int)hp.port, (int)hp.use_tls, (int)json_body.size());
+    }
+#endif
+
+    // 1. Open a connection to the host.
     WinHttpHandle connect;
     connect.h = reinterpret_cast<void*>(
         WinHttpConnect(
             reinterpret_cast<HINTERNET>(session_),
-            host.c_str(),
-            INTERNET_DEFAULT_HTTPS_PORT,
+            hp.host.c_str(),
+            hp.port,
             0));
     if (!connect.valid()) {
         throw_winhttp_error("WinHttpConnect", GetLastError());
     }
 
-    // 2. Open a POST request with TLS.
+    // 2. Open a POST request (TLS only when port is 443).
     WinHttpHandle request;
     request.h = reinterpret_cast<void*>(
         WinHttpOpenRequest(
@@ -222,7 +267,7 @@ HttpResponse HttpsClient::Post(const std::wstring& host,
             nullptr,
             WINHTTP_NO_REFERER,
             WINHTTP_DEFAULT_ACCEPT_TYPES,
-            WINHTTP_FLAG_SECURE));
+            hp.use_tls ? WINHTTP_FLAG_SECURE : 0));
     if (!request.valid()) {
         throw_winhttp_error("WinHttpOpenRequest(POST)", GetLastError());
     }
