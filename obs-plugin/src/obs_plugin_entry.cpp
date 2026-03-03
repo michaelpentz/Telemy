@@ -93,11 +93,13 @@ DockBrowserJsExecuteFn g_dock_browser_js_execute;
 struct DockJsDeliveryValidationState {
     bool page_ready = false;
     bool js_sink_registered = false;
+    bool logged_receive_status_snapshot_json = false;
     bool logged_receive_ipc_envelope_json = false;
     bool logged_receive_scene_snapshot_json = false;
     bool logged_receive_scene_switch_completed_json = false;
     bool logged_receive_dock_action_result_json = false;
     std::uint32_t fallback_pipe_status_count = 0;
+    std::uint32_t fallback_status_snapshot_count = 0;
     std::uint32_t fallback_ipc_envelope_count = 0;
     std::uint32_t fallback_scene_snapshot_count = 0;
     std::uint32_t fallback_scene_switch_completed_count = 0;
@@ -111,6 +113,9 @@ struct DockReplayCache {
     std::string ipc_pong_envelope_json;
     std::string ipc_status_snapshot_envelope_json;
     std::vector<std::string> recent_ipc_event_envelope_jsons;
+    // v0.0.4: native status snapshot (from BuildStatusSnapshotJson)
+    bool has_status_snapshot = false;
+    std::string status_snapshot_json;
     bool has_scene_snapshot = false;
     std::string scene_snapshot_json;
     bool has_pipe_status = false;
@@ -539,6 +544,7 @@ void SetDockBrowserJsExecuteSink(DockBrowserJsExecuteFn execute_fn) {
         if (!has_sink) {
             g_dock_js_delivery_validation.page_ready = false;
             g_dock_js_delivery_validation.fallback_pipe_status_count = 0;
+            g_dock_js_delivery_validation.fallback_status_snapshot_count = 0;
             g_dock_js_delivery_validation.fallback_ipc_envelope_count = 0;
             g_dock_js_delivery_validation.fallback_scene_snapshot_count = 0;
             g_dock_js_delivery_validation.fallback_scene_switch_completed_count = 0;
@@ -574,6 +580,7 @@ bool IsRecognizedDockSettingKey(const std::string& key);
 
 enum class DockFallbackLogKind {
     PipeStatus,
+    StatusSnapshotJson,
     IpcEnvelopeJson,
     SceneSnapshotJson,
     SceneSwitchCompletedJson,
@@ -596,6 +603,9 @@ bool ShouldLogDockFallbackPayload(
     switch (kind) {
     case DockFallbackLogKind::PipeStatus:
         count = &g_dock_js_delivery_validation.fallback_pipe_status_count;
+        break;
+    case DockFallbackLogKind::StatusSnapshotJson:
+        count = &g_dock_js_delivery_validation.fallback_status_snapshot_count;
         break;
     case DockFallbackLogKind::IpcEnvelopeJson:
         count = &g_dock_js_delivery_validation.fallback_ipc_envelope_count;
@@ -654,7 +664,9 @@ bool EmitDockNativeJsonArgCall(const char* method_name, const std::string& paylo
         if (g_dock_js_delivery_validation.page_ready &&
             g_dock_js_delivery_validation.js_sink_registered) {
             bool* already_logged = nullptr;
-            if (std::string(method_name) == "receiveIpcEnvelopeJson") {
+            if (std::string(method_name) == "receiveStatusSnapshotJson") {
+                already_logged = &g_dock_js_delivery_validation.logged_receive_status_snapshot_json;
+            } else if (std::string(method_name) == "receiveIpcEnvelopeJson") {
                 already_logged = &g_dock_js_delivery_validation.logged_receive_ipc_envelope_json;
             } else if (std::string(method_name) == "receiveSceneSnapshotJson") {
                 already_logged = &g_dock_js_delivery_validation.logged_receive_scene_snapshot_json;
@@ -1205,6 +1217,16 @@ void ReplayDockStateToJsSinkIfAvailable() {
 
     if (snapshot.has_pipe_status) {
         EmitDockNativePipeStatus(snapshot.pipe_status.c_str(), snapshot.pipe_reason.c_str());
+    }
+    // v0.0.4: Replay native status snapshot (primary data channel).
+    if (snapshot.has_status_snapshot && !snapshot.status_snapshot_json.empty()) {
+        const bool delivered =
+            EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", snapshot.status_snapshot_json);
+        blog(
+            delivered ? LOG_INFO : LOG_WARNING,
+            "[aegis-obs-shim] dock replay status snapshot: delivered=%s bytes=%d",
+            delivered ? "true" : "false",
+            static_cast<int>(snapshot.status_snapshot_json.size()));
     }
     if (!snapshot.ipc_hello_ack_envelope_json.empty()) {
         EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", snapshot.ipc_hello_ack_envelope_json);
@@ -1852,6 +1874,13 @@ void SwitchScenePumpTick(void*, float seconds) {
 
         std::string json = g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region);
         EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", json);
+
+        // Cache for dock page replay on refresh/reload.
+        {
+            std::lock_guard<std::mutex> lock(g_dock_replay_cache_mu);
+            g_dock_replay_cache.has_status_snapshot = true;
+            g_dock_replay_cache.status_snapshot_json = json;
+        }
     }
     if (g_switch_pump_accum_seconds < 0.05f) {
         return;
@@ -1897,6 +1926,7 @@ extern "C" void aegis_obs_shim_notify_dock_page_ready(void) {
     {
         std::lock_guard<std::mutex> lock(g_dock_js_delivery_validation_mu);
         g_dock_js_delivery_validation.page_ready = true;
+        g_dock_js_delivery_validation.logged_receive_status_snapshot_json = false;
         g_dock_js_delivery_validation.logged_receive_ipc_envelope_json = false;
         g_dock_js_delivery_validation.logged_receive_scene_snapshot_json = false;
         g_dock_js_delivery_validation.logged_receive_scene_switch_completed_json = false;

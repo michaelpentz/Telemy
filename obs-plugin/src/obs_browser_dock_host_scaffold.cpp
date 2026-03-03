@@ -93,6 +93,7 @@ constexpr const char* kDockValidationBootstrapHtml = R"HTML(
         return true;
       }
       window.aegisDockNative = {
+        receiveStatusSnapshotJson(jsonText) { return ok("receiveStatusSnapshotJson", jsonText); },
         receiveSceneSnapshotJson(jsonText) { return ok("receiveSceneSnapshotJson", jsonText); },
         receiveIpcEnvelopeJson(jsonText) { return ok("receiveIpcEnvelopeJson", jsonText); },
         receivePipeStatus(status, reason) { return ok("receivePipeStatus", JSON.stringify({ status, reason })); },
@@ -701,7 +702,7 @@ void ProbeDockNativeReadyAsync() {
     page->runJavaScript(
         QStringLiteral(
             "(function(){ return !!(window.aegisDockNative && "
-            "typeof window.aegisDockNative.receiveIpcEnvelopeJson === 'function' && "
+            "typeof window.aegisDockNative.receiveStatusSnapshotJson === 'function' && "
             "typeof window.aegisDockNative.receiveSceneSnapshotJson === 'function' && "
             "typeof window.aegisDockNative.receivePipeStatus === 'function' && "
             "typeof window.aegisDockNative.receiveCurrentScene === 'function' && "
@@ -827,6 +828,7 @@ constexpr const char* kCefDockValidationHtml = R"HTML(
       }
       function ok(name, payload) { log(name + ": " + payload); return true; }
       window.aegisDockNative = {
+        receiveStatusSnapshotJson(jsonText) { return ok("receiveStatusSnapshotJson", jsonText); },
         receiveSceneSnapshotJson(jsonText) { return ok("receiveSceneSnapshotJson", jsonText); },
         receiveIpcEnvelopeJson(jsonText) { return ok("receiveIpcEnvelopeJson", jsonText); },
         receivePipeStatus(status, reason) { return ok("receivePipeStatus", JSON.stringify({ status, reason })); },
