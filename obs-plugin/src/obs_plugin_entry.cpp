@@ -2023,11 +2023,23 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         }
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action queued: type=set_mode request_id=%s mode=%s detail=queued_core_ipc",
+            "[aegis-obs-plugin] dock action set_mode: request_id=%s mode=%s",
             request_id.c_str(),
             mode.c_str());
-        TrackPendingDockSetModeAction(request_id, mode);
-        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        g_config.dock_mode = mode;
+        const bool saved = g_config.SaveToDisk();
+        if (!saved) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "save_failed", "config_write_failed");
+            return false;
+        }
+        const bool delivered = EmitCurrentStatusSnapshotToDock("dock_set_mode", false);
+        EmitDockActionResult(
+            action_type,
+            request_id,
+            "completed",
+            true,
+            "",
+            delivered ? "mode_applied_snapshot_emitted" : "mode_applied_snapshot_cached");
         return true;
     }
 
