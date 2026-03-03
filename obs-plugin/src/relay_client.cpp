@@ -72,6 +72,21 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     session.status     = obj["status"].toString().toStdString();
     session.region     = obj["region"].toString().toStdString();
 
+    // Relay connection info (nested under "relay" key in Go response).
+    QJsonObject relayObj = obj["relay"].toObject();
+    session.public_ip = relayObj["public_ip"].toString().toStdString();
+    session.srt_port = relayObj["srt_port"].toInt(9000);
+    session.ws_url = relayObj["ws_url"].toString().toStdString();
+
+    // Credentials.
+    QJsonObject creds = obj["credentials"].toObject();
+    session.pair_token = creds["pair_token"].toString().toStdString();
+
+    // Timers.
+    QJsonObject timers = obj["timers"].toObject();
+    session.grace_window_seconds = timers["grace_window_seconds"].toInt(0);
+    session.max_session_seconds = timers["max_session_seconds"].toInt(0);
+
     // Reject if session_id is empty — indicates a malformed response.
     if (session.session_id.empty()) {
         return std::nullopt;
@@ -178,6 +193,9 @@ bool RelayClient::SendHeartbeat(const std::string& jwt, const std::string& sessi
     std::string body = "{\"session_id\":\"" + session_id + "\"}";
     std::wstring wide_jwt(jwt.begin(), jwt.end());
     std::vector<std::pair<std::wstring, std::wstring>> extra_headers;
+    // Control-plane auth split (telemy-v0.0.3):
+    // - /relay/start and /relay/stop use JWT auth middleware.
+    // - /relay/health additionally requires X-Relay-Auth (shared key).
     if (!relay_shared_key_w_.empty()) {
         extra_headers.push_back({L"X-Relay-Auth", relay_shared_key_w_});
     } else if (!logged_missing_health_shared_key_.exchange(true)) {

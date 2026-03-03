@@ -1,4 +1,5 @@
 #include "metrics_collector.h"
+#include "relay_client.h"
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
 #include <obs-module.h>
@@ -407,7 +408,8 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     const std::string& mode,
     const std::string& health,
     const std::string& relay_status,
-    const std::string& relay_region) const
+    const std::string& relay_region,
+    const aegis::RelaySession* relay_session) const
 {
     const auto& snap = current_;
 
@@ -448,6 +450,14 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << "\"region\":\"" << JsonEscape(relay_region) << "\",";
     }
     os << "\"grace_remaining_seconds\":0";
+    if (relay_session) {
+        os << ",\"public_ip\":\"" << JsonEscape(relay_session->public_ip) << "\"";
+        os << ",\"srt_port\":" << relay_session->srt_port;
+        os << ",\"pair_token\":\"" << JsonEscape(relay_session->pair_token) << "\"";
+        os << ",\"ws_url\":\"" << JsonEscape(relay_session->ws_url) << "\"";
+        os << ",\"grace_window_seconds\":" << relay_session->grace_window_seconds;
+        os << ",\"max_session_seconds\":" << relay_session->max_session_seconds;
+    }
     os << "},";
 
     // ── Multistream outputs ──────────────────────────────────────────────
