@@ -165,22 +165,22 @@ bool RelayClient::SendHeartbeat(const std::string& jwt, const std::string& sessi
 
     HttpResponse resp;
     try {
-        resp = http_.Post(api_host_w_, L"/api/v1/relay/heartbeat", body, wide_jwt);
+        resp = http_.Post(api_host_w_, L"/api/v1/relay/health", body, wide_jwt);
     } catch (const std::exception& e) {
-        blog(LOG_WARNING, "relay: heartbeat network error: %s", e.what());
+        blog(LOG_WARNING, "relay: health ping network error: %s", e.what());
         return false;
     }
 
     if (resp.status_code == 404) {
         // Session expired by server TTL — clean up local state.
-        blog(LOG_WARNING, "relay: heartbeat 404 — session expired by server");
+        blog(LOG_WARNING, "relay: health ping 404 — session expired by server");
         std::lock_guard<std::mutex> lock(session_mutex_);
         current_session_ = std::nullopt;
         return false;
     }
 
     if (!resp.ok()) {
-        blog(LOG_WARNING, "relay: heartbeat failed, HTTP %lu", resp.status_code);
+        blog(LOG_WARNING, "relay: health ping failed, HTTP %lu", resp.status_code);
     }
     return resp.ok();
 }
