@@ -27,7 +27,10 @@ if (AEGIS_BUILD_OBS_PLUGIN)
     target_link_directories(aegis-obs-plugin PRIVATE ${OBS_LIBRARY_DIRS})
   endif()
   target_link_libraries(aegis-obs-plugin PRIVATE ${OBS_LIBRARIES})
-  target_compile_definitions(aegis-obs-plugin PRIVATE AEGIS_OBS_PLUGIN_BUILD=1 WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_definitions(aegis-obs-plugin PRIVATE AEGIS_OBS_PLUGIN_BUILD=1)
+  if (WIN32)
+    target_compile_definitions(aegis-obs-plugin PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  endif()
 
   # Qt6::Core is required for config_vault.cpp (QJsonDocument, QFile, QDir).
   find_package(Qt6 COMPONENTS Core REQUIRED)
@@ -114,7 +117,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
         set(_obs_browser_panel_include "${CMAKE_CURRENT_LIST_DIR}/third_party/obs-studio/plugins/obs-browser/panel")
       endif()
 
-      if (Qt6_FOUND AND _obs_browser_panel_include)
+      if (Qt6Widgets_FOUND AND _obs_browser_panel_include)
         target_compile_definitions(aegis-obs-plugin PRIVATE AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF=1)
         target_include_directories(aegis-obs-plugin PRIVATE "${_obs_browser_panel_include}")
         target_link_libraries(aegis-obs-plugin PRIVATE
@@ -127,7 +130,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
     endif()
     if (AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
       find_package(Qt6 COMPONENTS Core Widgets WebEngineCore WebEngineWidgets QUIET)
-      if (Qt6_FOUND)
+      if (Qt6WebEngineCore_FOUND AND Qt6WebEngineWidgets_FOUND)
         target_compile_definitions(aegis-obs-plugin PRIVATE AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE=1)
         target_link_libraries(aegis-obs-plugin PRIVATE
           Qt6::Core
