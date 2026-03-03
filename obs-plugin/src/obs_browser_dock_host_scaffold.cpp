@@ -1,4 +1,4 @@
-#include "obs_browser_dock_host_scaffold.h"
+﻿#include "obs_browser_dock_host_scaffold.h"
 #include "dock_js_bridge_api.h"
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD) && defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
@@ -345,7 +345,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
     if (encoded.isEmpty()) {
         blog(
             LOG_DEBUG,
-            "[aegis-obs-shim] browser dock scaffold action %s parse skipped: empty encoded payload",
+            "[aegis-obs-plugin] browser dock scaffold action %s parse skipped: empty encoded payload",
             source_tag ? source_tag : "unknown");
         return false;
     }
@@ -355,7 +355,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
         const QByteArray encoded_bytes = encoded.left(160).toUtf8();
         blog(
             LOG_DEBUG,
-            "[aegis-obs-shim] browser dock scaffold action %s parse skipped: unexpected prefix sample=%s",
+            "[aegis-obs-plugin] browser dock scaffold action %s parse skipped: unexpected prefix sample=%s",
             source_tag ? source_tag : "unknown",
             encoded_bytes.constData());
         return false;
@@ -377,7 +377,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
     if (decoded_bytes.isEmpty()) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-shim] browser dock scaffold action %s decode failed",
+            "[aegis-obs-plugin] browser dock scaffold action %s decode failed",
             source_tag ? source_tag : "unknown");
         return true;
     }
@@ -390,7 +390,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
     }
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold action %s decode: type=%s request_id=%s bytes=%d",
+        "[aegis-obs-plugin] browser dock scaffold action %s decode: type=%s request_id=%s bytes=%d",
         source_tag ? source_tag : "unknown",
         action_type.isEmpty() ? "" : action_type.toUtf8().constData(),
         request_id.isEmpty() ? "" : request_id.toUtf8().constData(),
@@ -399,7 +399,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
     const bool ok = aegis_obs_shim_receive_dock_action_json(decoded_bytes.constData());
     blog(
         ok ? LOG_INFO : LOG_DEBUG,
-        "[aegis-obs-shim] browser dock scaffold dock action %s forwarded ok=%s type=%s request_id=%s bytes=%d",
+        "[aegis-obs-plugin] browser dock scaffold dock action %s forwarded ok=%s type=%s request_id=%s bytes=%d",
         source_tag ? source_tag : "unknown",
         ok ? "true" : "false",
         action_type.isEmpty() ? "" : action_type.toUtf8().constData(),
@@ -712,14 +712,14 @@ void ProbeDockNativeReadyAsync() {
         [page](const QVariant& result) {
             const bool ready = result.toBool();
             if (!ready) {
-                blog(LOG_DEBUG, "[aegis-obs-shim] browser dock scaffold native-ready probe=false");
+                blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold native-ready probe=false");
                 return;
             }
             if (g_qt_dock_state.page_ready_notified) {
                 return;
             }
             g_qt_dock_state.page_ready_notified = true;
-            blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold bootstrap/native-ready");
+            blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold bootstrap/native-ready");
             aegis_obs_browser_dock_host_scaffold_on_page_ready();
             (void)page;
         });
@@ -728,7 +728,7 @@ void ProbeDockNativeReadyAsync() {
 QDockWidget* CreateDockWidgetForObsMainWindow() {
     auto* main_window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
     if (!main_window) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold missing OBS main window");
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold missing OBS main window");
         return nullptr;
     }
 
@@ -743,12 +743,12 @@ QDockWidget* CreateDockWidgetForObsMainWindow() {
 
     QObject::connect(view, &QWebEngineView::loadFinished, dock, [](bool ok) {
         if (!ok) {
-            blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold page load failed");
+            blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold page load failed");
             g_qt_dock_state.page_ready_notified = false;
             aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
             return;
         }
-        blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold page load finished");
+        blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold page load finished");
         ProbeDockNativeReadyAsync();
     });
 
@@ -782,14 +782,14 @@ void LoadBootstrapPage() {
     if (assets.complete) {
         blog(
             assets.uses_scaffold_fallback ? LOG_WARNING : LOG_INFO,
-            "[aegis-obs-shim] browser dock scaffold %s",
+            "[aegis-obs-plugin] browser dock scaffold %s",
             assets.resolution_note.toUtf8().constData());
         const QString html = BuildRealDockPageHtml(assets);
         g_qt_dock_state.web_view->setHtml(html, QUrl(QStringLiteral("about:blank")));
         return;
     }
 
-    blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
+    blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
     const QString html = QString::fromUtf8(kDockValidationBootstrapHtml);
     g_qt_dock_state.web_view->setHtml(html, QUrl(QStringLiteral("about:blank")));
 }
@@ -895,11 +895,11 @@ void ClearCefExecutorWidget() {
 
 void MarkCefPageReadyOnce(const char* reason) {
     if (g_cef_dock_state.page_ready_notified) {
-        blog(LOG_DEBUG, "[aegis-obs-shim] browser dock scaffold CEF page ready already notified; skipping (%s)", reason ? reason : "unknown");
+        blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold CEF page ready already notified; skipping (%s)", reason ? reason : "unknown");
         return;
     }
     g_cef_dock_state.page_ready_notified = true;
-    blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold CEF page ready (%s)", reason ? reason : "unknown");
+    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold CEF page ready (%s)", reason ? reason : "unknown");
     aegis_obs_browser_dock_host_scaffold_on_page_ready();
 }
 
@@ -923,14 +923,14 @@ void StopCefInitRetryTimer() {
 QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     auto* main_window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
     if (!main_window) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold missing OBS main window");
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold missing OBS main window");
         return nullptr;
     }
 
     if (!g_obs_cef) {
         g_obs_cef = obs_browser_init_panel();
         if (!g_obs_cef) {
-            blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold CEF panel init unavailable (obs-browser missing?)");
+            blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF panel init unavailable (obs-browser missing?)");
             return nullptr;
         }
     }
@@ -940,7 +940,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
         (void)g_obs_cef->wait_for_browser_init();
     }
     if (!g_obs_cef->initialized()) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold CEF init failed");
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF init failed");
         return nullptr;
     }
 
@@ -955,16 +955,16 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     if (assets.complete) {
         blog(
             assets.uses_scaffold_fallback ? LOG_WARNING : LOG_INFO,
-            "[aegis-obs-shim] browser dock scaffold %s",
+            "[aegis-obs-plugin] browser dock scaffold %s",
             assets.resolution_note.toUtf8().constData());
         html = BuildRealDockPageHtml(assets);
     } else {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
         html = QString::fromUtf8(kCefDockValidationHtml);
     }
 
     // Inject OBS Qt palette CSS overrides so the dock page loads with the correct
-    // theme colors from the very first paint — avoids the "default theme flash".
+    // theme colors from the very first paint â€” avoids the "default theme flash".
     {
         const QPalette pal = QApplication::palette();
         const QString bg = pal.color(QPalette::Window).name();
@@ -999,7 +999,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     const QByteArray html_utf8 = html.toUtf8();
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold CEF bootstrap html prepared mode=%s html_bytes=%d data_url_bytes=%d app_inline=%s",
+        "[aegis-obs-plugin] browser dock scaffold CEF bootstrap html prepared mode=%s html_bytes=%d data_url_bytes=%d app_inline=%s",
         assets.complete ? "real_bridge_assets" : "validation_fallback",
         static_cast<int>(html_utf8.size()),
         static_cast<int>(data_url.size()),
@@ -1007,7 +1007,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
 
     QCefWidget* view = g_obs_cef->create_widget(dock, data_url, nullptr);
     if (!view) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold CEF create_widget failed");
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF create_widget failed");
         dock->deleteLater();
         return nullptr;
     }
@@ -1017,7 +1017,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     const int sig_url_idx = view_meta ? view_meta->indexOfSignal("urlChanged(QString)") : -1;
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold CEF signal introspection: class=%s titleChanged_idx=%d urlChanged_idx=%d",
+        "[aegis-obs-plugin] browser dock scaffold CEF signal introspection: class=%s titleChanged_idx=%d urlChanged_idx=%d",
         view_meta ? view_meta->className() : "null",
         sig_title_idx,
         sig_url_idx);
@@ -1044,15 +1044,15 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     const auto url_bridge_conn =
         QObject::connect(view, SIGNAL(urlChanged(QString)), dock, SLOT(setWindowTitle(QString)));
     if (!title_bridge_conn) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold titleChanged bridge connect failed");
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold titleChanged bridge connect failed");
     }
     if (!url_bridge_conn) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold urlChanged bridge connect failed");
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold urlChanged bridge connect failed");
     }
     QObject::connect(dock, &QWidget::windowTitleChanged, dock, [dock](const QString& title) {
         // Intercept data/about URL titles that flash during CEF page initialization.
         // The urlChanged signal sets the title to the full data URL before the page
-        // has finished loading — suppress it to keep the dock title clean.
+        // has finished loading â€” suppress it to keep the dock title clean.
         if (title.startsWith(QStringLiteral("data:"), Qt::CaseInsensitive) ||
             title.startsWith(QStringLiteral("about:"), Qt::CaseInsensitive)) {
             dock->setWindowTitle(QString::fromUtf8(kDockTitle));
@@ -1062,14 +1062,14 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
             const QByteArray sample = title.left(180).toUtf8();
             blog(
                 LOG_DEBUG,
-                "[aegis-obs-shim] browser dock scaffold windowTitleChanged bytes=%d sample=%s",
+                "[aegis-obs-plugin] browser dock scaffold windowTitleChanged bytes=%d sample=%s",
                 static_cast<int>(title.toUtf8().size()),
                 sample.constData());
         }
         if (title.contains(QStringLiteral("#__AEGIS_DOCK_ACTION__:"), Qt::CaseInsensitive)) {
             blog(
                 LOG_INFO,
-                "[aegis-obs-shim] browser dock scaffold observed window title transport payload bytes=%d",
+                "[aegis-obs-plugin] browser dock scaffold observed window title transport payload bytes=%d",
                 static_cast<int>(title.toUtf8().size()));
         }
         if (ContainsDockReadySignal(title)) {
@@ -1088,7 +1088,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     auto* ready_timer = new QTimer(dock);
     ready_timer->setSingleShot(true);
     QObject::connect(ready_timer, &QTimer::timeout, dock, []() {
-        blog(LOG_DEBUG, "[aegis-obs-shim] browser dock scaffold CEF ready probe timer fired");
+        blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold CEF ready probe timer fired");
         if (!g_cef_dock_state.page_ready_notified) {
             // Timer-based page ready probe avoids direct linkage to QCefWidget Qt signal symbols,
             // which are not exported for plugin linking.
@@ -1102,7 +1102,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     g_cef_dock_state.ready_probe_timer = ready_timer;
     SetCefExecutorWidget(view);
 
-    blog(LOG_DEBUG, "[aegis-obs-shim] browser dock scaffold CEF ready probe timer start delay_ms=500");
+    blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold CEF ready probe timer start delay_ms=500");
     ready_timer->start(500);
     return dock;
 }
@@ -1121,7 +1121,7 @@ bool TryRegisterCefDockHost() {
     if (!added) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-shim] browser dock scaffold failed to register dock id=%s (already exists?)",
+            "[aegis-obs-plugin] browser dock scaffold failed to register dock id=%s (already exists?)",
             kDockId);
         StopCefReadyProbeTimer();
         ClearCefExecutorWidget();
@@ -1140,13 +1140,13 @@ bool TryRegisterCefDockHost() {
     QObject::connect(show_timer, &QTimer::timeout, dock, [dock, show_timer]() {
         show_timer->deleteLater();
         if (dock->isVisible()) {
-            // OBS restored saved layout — dock is already where it should be.
+            // OBS restored saved layout â€” dock is already where it should be.
             blog(LOG_INFO,
-                 "[aegis-obs-shim] browser dock scaffold deferred show: "
+                 "[aegis-obs-plugin] browser dock scaffold deferred show: "
                  "already visible (saved layout restored)");
             return;
         }
-        // No saved state for this dock (first install) — float it so the
+        // No saved state for this dock (first install) â€” float it so the
         // user can discover and position it.
         dock->setFloating(true);
         dock->resize(420, 720);
@@ -1154,13 +1154,13 @@ bool TryRegisterCefDockHost() {
         dock->raise();
         dock->activateWindow();
         blog(LOG_INFO,
-             "[aegis-obs-shim] browser dock scaffold deferred show: "
+             "[aegis-obs-plugin] browser dock scaffold deferred show: "
              "floating (no saved layout)");
     });
     show_timer->start(1500);
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold initialize id=%s title=%s (OBS/CEF host active)",
+        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s (OBS/CEF host active)",
         kDockId,
         kDockTitle);
     return true;
@@ -1174,7 +1174,7 @@ void EnsureCefInitRetryTimerStarted() {
 
     auto* main_window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
     if (!main_window) {
-        blog(LOG_WARNING, "[aegis-obs-shim] browser dock scaffold CEF retry unavailable (no OBS main window)");
+        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF retry unavailable (no OBS main window)");
         return;
     }
 
@@ -1197,7 +1197,7 @@ void EnsureCefInitRetryTimerStarted() {
         g_cef_dock_state.init_retry_attempts += 1;
         blog(
             LOG_DEBUG,
-            "[aegis-obs-shim] browser dock scaffold CEF init retry attempt=%d",
+            "[aegis-obs-plugin] browser dock scaffold CEF init retry attempt=%d",
             g_cef_dock_state.init_retry_attempts);
         if (TryRegisterCefDockHost()) {
             StopCefInitRetryTimer();
@@ -1207,7 +1207,7 @@ void EnsureCefInitRetryTimerStarted() {
         if (g_cef_dock_state.init_retry_attempts >= 10) {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-shim] browser dock scaffold CEF retry exhausted after %d attempts",
+                "[aegis-obs-plugin] browser dock scaffold CEF retry exhausted after %d attempts",
                 g_cef_dock_state.init_retry_attempts);
             StopCefInitRetryTimer();
         }
@@ -1216,7 +1216,7 @@ void EnsureCefInitRetryTimerStarted() {
 
     g_cef_dock_state.init_retry_timer = timer;
     g_cef_dock_state.init_retry_attempts = 0;
-    blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold scheduling OBS/CEF init retry");
+    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold scheduling OBS/CEF init retry");
     timer->start();
 }
 
@@ -1227,21 +1227,21 @@ void EnsureCefInitRetryTimerStarted() {
 void aegis_obs_browser_dock_host_scaffold_initialize() {
 #if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
     if (g_cef_dock_state.dock_registered && g_cef_dock_state.dock_widget) {
-        blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold initialize skipped (CEF host already active)");
+        blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold initialize skipped (CEF host already active)");
         return;
     }
 
     if (!TryRegisterCefDockHost()) {
         blog(
             LOG_INFO,
-            "[aegis-obs-shim] browser dock scaffold initialize deferred (OBS/CEF host not ready yet)");
+            "[aegis-obs-plugin] browser dock scaffold initialize deferred (OBS/CEF host not ready yet)");
         EnsureCefInitRetryTimerStarted();
         aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
         return;
     }
 #elif defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
     if (g_qt_dock_state.dock_registered && g_qt_dock_state.dock_widget) {
-        blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold initialize skipped (already active)");
+        blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold initialize skipped (already active)");
         return;
     }
 
@@ -1249,7 +1249,7 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
     if (!dock) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-shim] browser dock scaffold initialize fallback (Qt/WebEngine host create failed)");
+            "[aegis-obs-plugin] browser dock scaffold initialize fallback (Qt/WebEngine host create failed)");
         aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
         return;
     }
@@ -1258,7 +1258,7 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
     if (!added) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-shim] browser dock scaffold failed to register dock id=%s (already exists?)",
+            "[aegis-obs-plugin] browser dock scaffold failed to register dock id=%s (already exists?)",
             kDockId);
         ClearQtExecutorPage();
         dock->deleteLater();
@@ -1270,7 +1270,7 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
     aegis_obs_browser_dock_host_scaffold_set_js_executor(&QtDockExecuteJs, &g_qt_executor_state);
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold initialize id=%s title=%s (Qt/WebEngine host active)",
+        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s (Qt/WebEngine host active)",
         kDockId,
         kDockTitle);
 
@@ -1278,7 +1278,7 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
 #else
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold initialize id=%s title=%s (Qt/CEF embedding TODO)",
+        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s (Qt/CEF embedding TODO)",
         kDockId,
         kDockTitle);
 
@@ -1293,7 +1293,7 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
 
 void aegis_obs_browser_dock_host_scaffold_shutdown() {
 #if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
-    blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold shutdown (OBS/CEF host)");
+    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold shutdown (OBS/CEF host)");
 
     aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
     StopCefInitRetryTimer();
@@ -1303,7 +1303,7 @@ void aegis_obs_browser_dock_host_scaffold_shutdown() {
     if (g_cef_dock_state.cef_widget) {
         const int panel_version = obs_browser_qcef_version();
         if (panel_version >= 2) {
-            blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold CEF closeBrowser (panel_version=%d)", panel_version);
+            blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold CEF closeBrowser (panel_version=%d)", panel_version);
             g_cef_dock_state.cef_widget->closeBrowser();
         }
     }
@@ -1316,7 +1316,7 @@ void aegis_obs_browser_dock_host_scaffold_shutdown() {
     g_cef_dock_state.dock_widget = nullptr;
     g_cef_dock_state.page_ready_notified = false;
 #elif defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
-    blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold shutdown (Qt/WebEngine host)");
+    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold shutdown (Qt/WebEngine host)");
 
     aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
 
@@ -1337,7 +1337,7 @@ void aegis_obs_browser_dock_host_scaffold_shutdown() {
     }
     g_qt_dock_state.page_ready_notified = false;
 #else
-    blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold shutdown");
+    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold shutdown");
     aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
 #endif
 }
@@ -1347,18 +1347,18 @@ void aegis_obs_browser_dock_host_scaffold_set_js_executor(
     void* user_data) {
     blog(
         LOG_INFO,
-        "[aegis-obs-shim] browser dock scaffold set_js_executor: %s",
+        "[aegis-obs-plugin] browser dock scaffold set_js_executor: %s",
         fn ? "registered" : "cleared");
     aegis_obs_shim_register_dock_js_executor(fn, user_data);
 }
 
 void aegis_obs_browser_dock_host_scaffold_on_page_ready() {
-    blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold page ready");
+    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold page ready");
     aegis_obs_shim_notify_dock_page_ready();
 }
 
 void aegis_obs_browser_dock_host_scaffold_on_page_unloaded() {
-    blog(LOG_INFO, "[aegis-obs-shim] browser dock scaffold page unloaded");
+    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold page unloaded");
     aegis_obs_shim_notify_dock_page_unloaded();
 }
 
@@ -1385,3 +1385,4 @@ bool aegis_obs_browser_dock_host_scaffold_show_dock() {
 }
 
 #endif
+
