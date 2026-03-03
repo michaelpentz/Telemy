@@ -12,10 +12,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# aegis_shim_core static library REMOVED — IPC layer eliminated in v0.0.4
-# aegis_plugin_shim_harness executable REMOVED — depended on IPC/shim_core
-# harness_main.cpp kept as reference but not built by any target
-
 if (AEGIS_BUILD_OBS_PLUGIN)
   if (NOT OBS_INCLUDE_DIRS)
     message(FATAL_ERROR "AEGIS_BUILD_OBS_PLUGIN=ON requires OBS_INCLUDE_DIRS (path(s) containing obs-module.h / obs-frontend-api.h).")
@@ -43,53 +39,34 @@ if (AEGIS_BUILD_OBS_PLUGIN)
   endif()
 
   if (AEGIS_STAGE_DOCK_BRIDGE_ASSETS)
+    # Locate the directory containing aegis-dock-bridge.js and its companions.
     set(_aegis_dock_asset_root "")
-    set(_aegis_dock_bridge_core_name "")
     if (AEGIS_DOCK_BRIDGE_ASSET_SOURCE_ROOT)
       set(_aegis_dock_asset_root "${AEGIS_DOCK_BRIDGE_ASSET_SOURCE_ROOT}")
-      if (EXISTS "${_aegis_dock_asset_root}/aegis-dock-bridge.js")
-        set(_aegis_dock_bridge_core_name "aegis-dock-bridge.js")
-      elseif (EXISTS "${_aegis_dock_asset_root}/aegis-dock-bridge.global.js")
-        set(_aegis_dock_bridge_core_name "aegis-dock-bridge.global.js")
-      endif()
     else()
       foreach(_candidate
           "${CMAKE_CURRENT_LIST_DIR}/.."
           "${CMAKE_CURRENT_LIST_DIR}/../..")
-        if ((EXISTS "${_candidate}/aegis-dock-bridge.global.js"
-             OR EXISTS "${_candidate}/aegis-dock-bridge.js")
+        if (EXISTS "${_candidate}/aegis-dock-bridge.js"
             AND EXISTS "${_candidate}/aegis-dock-bridge-host.js"
             AND EXISTS "${_candidate}/aegis-dock-browser-host-bootstrap.js")
           set(_aegis_dock_asset_root "${_candidate}")
-          if (EXISTS "${_candidate}/aegis-dock-bridge.js")
-            set(_aegis_dock_bridge_core_name "aegis-dock-bridge.js")
-          else()
-            set(_aegis_dock_bridge_core_name "aegis-dock-bridge.global.js")
-          endif()
           break()
         endif()
       endforeach()
     endif()
 
-    if (_aegis_dock_asset_root AND _aegis_dock_bridge_core_name)
+    if (_aegis_dock_asset_root)
       file(TO_CMAKE_PATH "${_aegis_dock_asset_root}" _aegis_dock_asset_root_norm)
-      set(_aegis_dock_html_source "")
-      foreach(_dock_html_candidate
-          "${_aegis_dock_asset_root}/aegis-dock.html"
-          "${CMAKE_CURRENT_LIST_DIR}/../aegis-dock.html"
-          "${CMAKE_CURRENT_LIST_DIR}/../../aegis-dock.html")
-        if (EXISTS "${_dock_html_candidate}")
-          set(_aegis_dock_html_source "${_dock_html_candidate}")
-          break()
-        endif()
-      endforeach()
       set(_aegis_dock_stage_dir "$<TARGET_FILE_DIR:aegis-obs-plugin>/data/obs-plugins/aegis-obs-plugin")
+
       add_custom_command(
         TARGET aegis-obs-plugin POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_aegis_dock_stage_dir}"
         VERBATIM)
+
       foreach(_asset_name
-          "${_aegis_dock_bridge_core_name}"
+          "aegis-dock-bridge.js"
           "aegis-dock-bridge-host.js"
           "aegis-dock-browser-host-bootstrap.js")
         add_custom_command(
@@ -99,29 +76,27 @@ if (AEGIS_BUILD_OBS_PLUGIN)
             "${_aegis_dock_stage_dir}/${_asset_name}"
           VERBATIM)
       endforeach()
-      if (_aegis_dock_bridge_core_name STREQUAL "aegis-dock-bridge.js")
-        add_custom_command(
-          TARGET aegis-obs-plugin POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E rm -f "${_aegis_dock_stage_dir}/aegis-dock-bridge.global.js"
-          VERBATIM)
-      elseif (_aegis_dock_bridge_core_name STREQUAL "aegis-dock-bridge.global.js")
-        add_custom_command(
-          TARGET aegis-obs-plugin POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E rm -f "${_aegis_dock_stage_dir}/aegis-dock-bridge.js"
-          VERBATIM)
-      endif()
-      if (_aegis_dock_html_source)
-        file(TO_CMAKE_PATH "${_aegis_dock_html_source}" _aegis_dock_html_source_norm)
-        add_custom_command(
-          TARGET aegis-obs-plugin POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${_aegis_dock_html_source_norm}"
-            "${_aegis_dock_stage_dir}/aegis-dock.html"
-          VERBATIM)
-      endif()
-      message(STATUS "Aegis OBS shim dock assets will be staged from: ${_aegis_dock_asset_root_norm}")
+
+      # Copy aegis-dock.html if present alongside the bridge assets.
+      foreach(_html_candidate
+          "${_aegis_dock_asset_root}/aegis-dock.html"
+          "${CMAKE_CURRENT_LIST_DIR}/../aegis-dock.html"
+          "${CMAKE_CURRENT_LIST_DIR}/../../aegis-dock.html")
+        if (EXISTS "${_html_candidate}")
+          file(TO_CMAKE_PATH "${_html_candidate}" _aegis_dock_html_norm)
+          add_custom_command(
+            TARGET aegis-obs-plugin POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${_aegis_dock_html_norm}"
+              "${_aegis_dock_stage_dir}/aegis-dock.html"
+            VERBATIM)
+          break()
+        endif()
+      endforeach()
+
+      message(STATUS "Aegis OBS dock assets will be staged from: ${_aegis_dock_asset_root_norm}")
     else()
-      message(WARNING "AEGIS_STAGE_DOCK_BRIDGE_ASSETS=ON but dock bridge JS assets were not found; set AEGIS_DOCK_BRIDGE_ASSET_SOURCE_ROOT or rely on AEGIS_DOCK_BRIDGE_ROOT at runtime.")
+      message(WARNING "AEGIS_STAGE_DOCK_BRIDGE_ASSETS=ON but aegis-dock-bridge.js was not found; set AEGIS_DOCK_BRIDGE_ASSET_SOURCE_ROOT or rely on AEGIS_DOCK_BRIDGE_ROOT at runtime.")
     endif()
   endif()
 

@@ -94,13 +94,11 @@ struct DockJsDeliveryValidationState {
     bool page_ready = false;
     bool js_sink_registered = false;
     bool logged_receive_status_snapshot_json = false;
-    bool logged_receive_ipc_envelope_json = false;
     bool logged_receive_scene_snapshot_json = false;
     bool logged_receive_scene_switch_completed_json = false;
     bool logged_receive_dock_action_result_json = false;
     std::uint32_t fallback_pipe_status_count = 0;
     std::uint32_t fallback_status_snapshot_count = 0;
-    std::uint32_t fallback_ipc_envelope_count = 0;
     std::uint32_t fallback_scene_snapshot_count = 0;
     std::uint32_t fallback_scene_switch_completed_count = 0;
     std::uint32_t fallback_dock_action_result_count = 0;
@@ -108,11 +106,6 @@ struct DockJsDeliveryValidationState {
 std::mutex g_dock_js_delivery_validation_mu;
 DockJsDeliveryValidationState g_dock_js_delivery_validation;
 struct DockReplayCache {
-    static constexpr size_t kRecentIpcEventEnvelopeLimit = 8;
-    std::string ipc_hello_ack_envelope_json;
-    std::string ipc_pong_envelope_json;
-    std::string ipc_status_snapshot_envelope_json;
-    std::vector<std::string> recent_ipc_event_envelope_jsons;
     // v0.0.4: native status snapshot (from BuildStatusSnapshotJson)
     bool has_status_snapshot = false;
     std::string status_snapshot_json;
@@ -148,7 +141,6 @@ struct DockJsSinkProbeState {
 
 std::string TryExtractEnvelopeTypeFromJson(const std::string& envelope_json);
 bool EmitDockNativeJsonArgCall(const char* method_name, const std::string& payload_json);
-void CacheDockIpcEnvelopeForReplay(const std::string& envelope_json);
 void ReemitDockStatusSnapshotWithCurrentTheme(const char* reason);
 void EmitDockActionResult(const std::string& action_type,
                           const std::string& request_id,
@@ -399,27 +391,6 @@ void PollObsThemeChangesOnObsThread() {
     }
 }
 
-std::string MaybeAugmentStatusSnapshotEnvelopeWithObsTheme(const std::string& envelope_json) {
-    if (TryExtractEnvelopeTypeFromJson(envelope_json) != "status_snapshot") {
-        return envelope_json;
-    }
-
-    const ObsDockThemeSlots theme = GetCachedObsDockTheme();
-    if (!theme.valid) {
-        return envelope_json;
-    }
-
-    const QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(envelope_json));
-    if (!doc.isObject()) {
-        return envelope_json;
-    }
-    QJsonObject envelope = doc.object();
-    QJsonObject payload = envelope.value(QStringLiteral("payload")).toObject();
-    payload.insert(QStringLiteral("theme"), QtThemeToJsonObject(theme));
-    envelope.insert(QStringLiteral("payload"), payload);
-    return QJsonDocument(envelope).toJson(QJsonDocument::Compact).toStdString();
-}
-
 std::string AugmentSnapshotJsonWithTheme(const std::string& snapshot_json) {
     const ObsDockThemeSlots cached_theme = GetCachedObsDockTheme();
     if (!cached_theme.valid || snapshot_json.empty()) {
@@ -565,7 +536,6 @@ void SetDockBrowserJsExecuteSink(DockBrowserJsExecuteFn execute_fn) {
             g_dock_js_delivery_validation.page_ready = false;
             g_dock_js_delivery_validation.fallback_pipe_status_count = 0;
             g_dock_js_delivery_validation.fallback_status_snapshot_count = 0;
-            g_dock_js_delivery_validation.fallback_ipc_envelope_count = 0;
             g_dock_js_delivery_validation.fallback_scene_snapshot_count = 0;
             g_dock_js_delivery_validation.fallback_scene_switch_completed_count = 0;
             g_dock_js_delivery_validation.fallback_dock_action_result_count = 0;
@@ -585,7 +555,6 @@ bool TryExecuteDockBrowserJs(const std::string& js_code) {
     return exec_copy(js_code);
 }
 
-std::string TryExtractEnvelopeTypeFromJson(const std::string& envelope_json);
 bool TryExtractJsonStringField(
     const std::string& json_text,
     const char* field_name,
@@ -601,7 +570,6 @@ bool IsRecognizedDockSettingKey(const std::string& key);
 enum class DockFallbackLogKind {
     PipeStatus,
     StatusSnapshotJson,
-    IpcEnvelopeJson,
     SceneSnapshotJson,
     SceneSwitchCompletedJson,
     DockActionResultJson,
@@ -626,9 +594,6 @@ bool ShouldLogDockFallbackPayload(
         break;
     case DockFallbackLogKind::StatusSnapshotJson:
         count = &g_dock_js_delivery_validation.fallback_status_snapshot_count;
-        break;
-    case DockFallbackLogKind::IpcEnvelopeJson:
-        count = &g_dock_js_delivery_validation.fallback_ipc_envelope_count;
         break;
     case DockFallbackLogKind::SceneSnapshotJson:
         count = &g_dock_js_delivery_validation.fallback_scene_snapshot_count;
@@ -686,8 +651,6 @@ bool EmitDockNativeJsonArgCall(const char* method_name, const std::string& paylo
             bool* already_logged = nullptr;
             if (std::string(method_name) == "receiveStatusSnapshotJson") {
                 already_logged = &g_dock_js_delivery_validation.logged_receive_status_snapshot_json;
-            } else if (std::string(method_name) == "receiveIpcEnvelopeJson") {
-                already_logged = &g_dock_js_delivery_validation.logged_receive_ipc_envelope_json;
             } else if (std::string(method_name) == "receiveSceneSnapshotJson") {
                 already_logged = &g_dock_js_delivery_validation.logged_receive_scene_snapshot_json;
             } else if (std::string(method_name) == "receiveSceneSwitchCompletedJson") {
@@ -699,24 +662,11 @@ bool EmitDockNativeJsonArgCall(const char* method_name, const std::string& paylo
             }
             if (already_logged && !*already_logged) {
                 *already_logged = true;
-                const std::string envelope_type =
-                    (std::string(method_name) == "receiveIpcEnvelopeJson")
-                        ? TryExtractEnvelopeTypeFromJson(payload_json)
-                        : std::string();
-                if (!envelope_type.empty()) {
-                    blog(
-                        LOG_INFO,
-                        "[aegis-obs-shim] dock js sink delivery validated post-page-ready: method=%s payload_bytes=%d envelope_type=%s",
-                        method_name,
-                        static_cast<int>(payload_json.size()),
-                        envelope_type.c_str());
-                } else {
-                    blog(
-                        LOG_INFO,
-                        "[aegis-obs-shim] dock js sink delivery validated post-page-ready: method=%s payload_bytes=%d",
-                        method_name,
-                        static_cast<int>(payload_json.size()));
-                }
+                blog(
+                    LOG_INFO,
+                    "[aegis-obs-shim] dock js sink delivery validated post-page-ready: method=%s payload_bytes=%d",
+                    method_name,
+                    static_cast<int>(payload_json.size()));
             }
         }
     }
@@ -1196,32 +1146,6 @@ void DrainExpiredPendingDockActions() {
     }
 }
 
-void CacheDockIpcEnvelopeForReplay(const std::string& envelope_json) {
-    if (envelope_json.empty()) {
-        return;
-    }
-    const std::string type = TryExtractEnvelopeTypeFromJson(envelope_json);
-    if (type.empty()) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(g_dock_replay_cache_mu);
-    if (type == "hello_ack") {
-        g_dock_replay_cache.ipc_hello_ack_envelope_json = envelope_json;
-    } else if (type == "pong") {
-        g_dock_replay_cache.ipc_pong_envelope_json = envelope_json;
-    } else if (type == "status_snapshot") {
-        g_dock_replay_cache.ipc_status_snapshot_envelope_json = envelope_json;
-    } else if (type == "user_notice" || type == "protocol_error" || type == "switch_scene") {
-        auto& items = g_dock_replay_cache.recent_ipc_event_envelope_jsons;
-        items.push_back(envelope_json);
-        if (items.size() > DockReplayCache::kRecentIpcEventEnvelopeLimit) {
-            items.erase(items.begin(), items.begin() + static_cast<std::ptrdiff_t>(
-                items.size() - DockReplayCache::kRecentIpcEventEnvelopeLimit));
-        }
-    }
-}
-
 void ClearDockReplayCache() {
     std::lock_guard<std::mutex> lock(g_dock_replay_cache_mu);
     g_dock_replay_cache = DockReplayCache{};
@@ -1574,37 +1498,6 @@ void HandleRelayActionResultIfPresent(const std::string& envelope_json) {
     }
 }
 
-void EmitDockIpcEnvelopeJson(const std::string& envelope_json) {
-    const std::string themed_envelope_json = MaybeAugmentStatusSnapshotEnvelopeWithObsTheme(envelope_json);
-    const std::string envelope_type = TryExtractEnvelopeTypeFromJson(themed_envelope_json);
-    CacheDockIpcEnvelopeForReplay(themed_envelope_json);
-    if (!EmitDockNativeJsonArgCall("receiveIpcEnvelopeJson", themed_envelope_json)) {
-        const char* phase = nullptr;
-        std::uint32_t attempt = 0;
-        if (ShouldLogDockFallbackPayload(DockFallbackLogKind::IpcEnvelopeJson, &phase, &attempt)) {
-            blog(
-                LOG_DEBUG,
-                "[aegis-obs-shim] dock bridge fallback payload phase=%s attempt=%u receiveIpcEnvelopeJson=%s",
-                phase ? phase : "unknown",
-                attempt,
-                themed_envelope_json.c_str());
-        }
-    }
-    if (envelope_type == "status_snapshot") {
-        ResolvePendingDockActionCompletionsFromStatusSnapshot(themed_envelope_json);
-        const std::string request_id = ConsumePendingDockRequestStatusActionId();
-        if (!request_id.empty()) {
-            EmitDockActionResult(
-                "request_status",
-                request_id,
-                "completed",
-                true,
-                "",
-                "status_snapshot_received");
-        }
-    }
-}
-
 #if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
 void InitializeBrowserDockHostBridge() {
     // Delegate to a dedicated scaffold module so future Qt/CEF embedding can evolve
@@ -1931,12 +1824,10 @@ extern "C" void aegis_obs_shim_notify_dock_page_ready(void) {
         std::lock_guard<std::mutex> lock(g_dock_js_delivery_validation_mu);
         g_dock_js_delivery_validation.page_ready = true;
         g_dock_js_delivery_validation.logged_receive_status_snapshot_json = false;
-        g_dock_js_delivery_validation.logged_receive_ipc_envelope_json = false;
         g_dock_js_delivery_validation.logged_receive_scene_snapshot_json = false;
         g_dock_js_delivery_validation.logged_receive_scene_switch_completed_json = false;
         g_dock_js_delivery_validation.logged_receive_dock_action_result_json = false;
         g_dock_js_delivery_validation.fallback_pipe_status_count = 0;
-        g_dock_js_delivery_validation.fallback_ipc_envelope_count = 0;
         g_dock_js_delivery_validation.fallback_scene_snapshot_count = 0;
         g_dock_js_delivery_validation.fallback_scene_switch_completed_count = 0;
         g_dock_js_delivery_validation.fallback_dock_action_result_count = 0;
