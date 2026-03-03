@@ -2077,12 +2077,27 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         }
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action queued: type=set_setting request_id=%s key=%s value=%s detail=queued_core_ipc",
+            "[aegis-obs-plugin] dock action set_setting: request_id=%s key=%s value=%s",
             request_id.c_str(),
             key.c_str(),
             value ? "true" : "false");
-        TrackPendingDockSetSettingAction(request_id, key, value);
-        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        if (!SetDockSettingValueByKey(key, value)) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "unsupported_setting_key", key);
+            return false;
+        }
+        const bool saved = g_config.SaveToDisk();
+        if (!saved) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "save_failed", "config_write_failed");
+            return false;
+        }
+        const bool delivered = EmitCurrentStatusSnapshotToDock("dock_set_setting", false);
+        EmitDockActionResult(
+            action_type,
+            request_id,
+            "completed",
+            true,
+            "",
+            delivered ? "setting_applied_snapshot_emitted" : "setting_applied_snapshot_cached");
         return true;
     }
 
