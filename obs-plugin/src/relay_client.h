@@ -21,6 +21,18 @@ struct RelaySession {
     int         max_session_seconds = 0;
 };
 
+struct RelayStats {
+    bool     available = false;
+    uint32_t bitrate_kbps = 0;
+    double   rtt_ms = 0.0;
+    uint64_t pkt_loss = 0;
+    uint64_t pkt_drop = 0;
+    double   recv_rate_mbps = 0.0;
+    double   bandwidth_mbps = 0.0;
+    uint32_t latency_ms = 0;
+    uint32_t uptime_seconds = 0;
+};
+
 class RelayClient {
 public:
     // api_host is just the hostname, e.g. "api.aegis.example.com"
@@ -52,6 +64,10 @@ public:
     std::optional<RelaySession> CurrentSession() const;
     bool HasActiveSession() const;
 
+    // SLS stats polling
+    void PollRelayStats(const std::string& relay_ip);
+    RelayStats CurrentStats() const;
+
 private:
     HttpsClient& http_;
     std::wstring api_host_w_;  // wide string for WinHTTP
@@ -66,6 +82,9 @@ private:
     std::thread heartbeat_thread_;
     std::mutex heartbeat_cv_mutex_;
     std::condition_variable heartbeat_cv_;
+
+    RelayStats         stats_;
+    mutable std::mutex stats_mutex_;
 
     // UUID v4 generation
     static std::string GenerateUuidV4();
