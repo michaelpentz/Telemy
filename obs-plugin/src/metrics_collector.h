@@ -16,6 +16,7 @@
 namespace aegis {
 
 struct RelaySession;
+struct RelayStats;
 
 // ─── Per-output telemetry ────────────────────────────────────────────────────
 
@@ -90,7 +91,8 @@ public:
         const std::string& health,          // "good", "degraded", "offline"
         const std::string& relay_status,    // "inactive", "provisioning", "active", "grace"
         const std::string& relay_region,    // "" if none
-        const aegis::RelaySession* relay_session = nullptr
+        const aegis::RelaySession* relay_session = nullptr,
+        const aegis::RelayStats* relay_stats = nullptr
     ) const;
 
     /// Read-only access to the most recent snapshot.

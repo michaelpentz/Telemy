@@ -978,8 +978,21 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
         }
     }
 
+    // Poll SLS stats every ~2 seconds (4 ticks at 500ms) when relay is active
+    const aegis::RelayStats* relay_stats_ptr = nullptr;
+    aegis::RelayStats relay_stats;
+    if (g_relay && g_relay->HasActiveSession() && relay_session_ptr) {
+        static int stats_poll_counter = 0;
+        if (++stats_poll_counter >= 4) {
+            stats_poll_counter = 0;
+            g_relay->PollRelayStats(relay_session_ptr->public_ip);
+        }
+        relay_stats = g_relay->CurrentStats();
+        relay_stats_ptr = &relay_stats;
+    }
+
     std::string json =
-        g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region, relay_session_ptr);
+        g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region, relay_session_ptr, relay_stats_ptr);
     QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(json));
     if (doc.isObject()) {
         QJsonObject payload = doc.object();

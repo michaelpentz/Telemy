@@ -329,4 +329,90 @@ bool RelayClient::HasActiveSession() const
         && current_session_->status != "stopped";
 }
 
+// ---------------------------------------------------------------------------
+// SLS stats polling
+// ---------------------------------------------------------------------------
+
+void RelayClient::PollRelayStats(const std::string& relay_ip)
+{
+    if (relay_ip.empty()) {
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        stats_.available = false;
+        return;
+    }
+
+    // Build wide host string with SLS stats port
+    std::string host_port = relay_ip + ":8090";
+    std::wstring host_w(host_port.begin(), host_port.end());
+    std::wstring path_w = L"/stats/play_aegis?legacy=1";
+
+    HttpResponse resp;
+    try {
+        resp = http_.Get(host_w, path_w);
+    } catch (const std::exception& e) {
+        blog(LOG_DEBUG, "[aegis-relay] stats poll http error: %s", e.what());
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        stats_.available = false;
+        return;
+    }
+
+    if (resp.status_code != 200 || resp.body.empty()) {
+        blog(LOG_DEBUG, "[aegis-relay] stats poll failed: status=%lu",
+             resp.status_code);
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        stats_.available = false;
+        return;
+    }
+
+    // Parse legacy JSON: { "status":"ok", "publishers": { "<key>": { ... } } }
+    QJsonParseError err;
+    QJsonDocument doc = QJsonDocument::fromJson(
+        QByteArray(resp.body.c_str(), static_cast<int>(resp.body.size())), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        stats_.available = false;
+        return;
+    }
+
+    QJsonObject root = doc.object();
+    QJsonObject pubs = root.value("publishers").toObject();
+    if (pubs.isEmpty()) {
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        stats_.available = false;
+        return;
+    }
+
+    // Take the first (and typically only) publisher
+    QJsonObject pub = pubs.begin()->toObject();
+
+    RelayStats s;
+    s.available        = true;
+    s.bitrate_kbps     = static_cast<uint32_t>(pub.value("bitrate").toInt(0));
+    s.rtt_ms           = pub.value("rtt").toDouble(0.0);
+    s.pkt_loss         = static_cast<uint64_t>(pub.value("pktRcvLoss").toDouble(0));
+    s.pkt_drop         = static_cast<uint64_t>(pub.value("pktRcvDrop").toDouble(0));
+    s.recv_rate_mbps   = pub.value("mbpsRecvRate").toDouble(0.0);
+    s.bandwidth_mbps   = pub.value("mbpsBandwidth").toDouble(0.0);
+    s.latency_ms       = static_cast<uint32_t>(pub.value("latency").toInt(0));
+    s.uptime_seconds   = static_cast<uint32_t>(pub.value("uptime").toInt(0));
+
+    {
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        stats_ = s;
+    }
+
+    blog(LOG_DEBUG,
+         "[aegis-relay] stats poll ok: bitrate=%u rtt=%.1f loss=%llu drop=%llu latency=%u",
+         s.bitrate_kbps, s.rtt_ms,
+         static_cast<unsigned long long>(s.pkt_loss),
+         static_cast<unsigned long long>(s.pkt_drop),
+         s.latency_ms);
+}
+
+RelayStats RelayClient::CurrentStats() const
+{
+    std::lock_guard<std::mutex> lk(stats_mutex_);
+    return stats_;
+}
+
 }  // namespace aegis

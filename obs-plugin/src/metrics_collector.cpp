@@ -409,7 +409,8 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     const std::string& health,
     const std::string& relay_status,
     const std::string& relay_region,
-    const aegis::RelaySession* relay_session) const
+    const aegis::RelaySession* relay_session,
+    const aegis::RelayStats* relay_stats) const
 {
     const auto& snap = current_;
 
@@ -459,6 +460,21 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << ",\"max_session_seconds\":" << relay_session->max_session_seconds;
     }
     os << "},";
+
+    // ── Relay telemetry (from SLS stats) ─────────────────────────────────
+    if (relay_stats && relay_stats->available) {
+        os << "\"relay_ingest_bitrate_kbps\":" << relay_stats->bitrate_kbps << ",";
+        os << "\"relay_rtt_ms\":" << relay_stats->rtt_ms << ",";
+        os << "\"relay_pkt_loss\":" << relay_stats->pkt_loss << ",";
+        os << "\"relay_pkt_drop\":" << relay_stats->pkt_drop << ",";
+        os << "\"relay_recv_rate_mbps\":" << relay_stats->recv_rate_mbps << ",";
+        os << "\"relay_bandwidth_mbps\":" << relay_stats->bandwidth_mbps << ",";
+        os << "\"relay_latency_ms\":" << relay_stats->latency_ms << ",";
+        os << "\"relay_uptime_seconds\":" << relay_stats->uptime_seconds << ",";
+        os << "\"relay_stats_available\":true,";
+    } else {
+        os << "\"relay_stats_available\":false,";
+    }
 
     // ── Multistream outputs ──────────────────────────────────────────────
     os << "\"multistream_outputs\":[";
