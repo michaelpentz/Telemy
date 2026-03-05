@@ -461,6 +461,12 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     }
     os << "},";
 
+    // ── Relay connection info (top-level for bridge reliability) ─────────
+    if (relay_session) {
+        os << "\"relay_public_ip\":\"" << JsonEscape(relay_session->public_ip) << "\",";
+        os << "\"relay_srt_port\":" << relay_session->srt_port << ",";
+    }
+
     // ── Relay telemetry (from SLS stats) ─────────────────────────────────
     if (relay_stats && relay_stats->available) {
         os << "\"relay_ingest_bitrate_kbps\":" << relay_stats->bitrate_kbps << ",";
