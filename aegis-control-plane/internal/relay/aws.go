@@ -88,14 +88,21 @@ done
 
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') containers ready, extracting API key"
 
-# Extract API key from container logs (generated on first boot)
+# Extract API key (try .apikey file first, then container logs as fallback)
 APIKEY=""
 for attempt in $(seq 1 30); do
+  # Method 1: .apikey file written by srtla-receiver container
+  if [ -f /opt/srtla-receiver/data/.apikey ]; then
+    APIKEY=$(cat /opt/srtla-receiver/data/.apikey)
+    [ -n "${APIKEY}" ] && break
+  fi
+  # Method 2: grep from container logs (|| true prevents pipefail exit)
   APIKEY=$(docker compose logs receiver 2>/dev/null \
     | grep "\[CSLSDatabase\] Generated default admin API key:" \
     | sed 's/.*Generated default admin API key: \([A-Za-z0-9]*\).*/\1/' \
-    | tail -1)
+    | tail -1 || true)
   [ -n "${APIKEY}" ] && break
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') waiting for API key (attempt ${attempt})"
   sleep 3
 done
 
