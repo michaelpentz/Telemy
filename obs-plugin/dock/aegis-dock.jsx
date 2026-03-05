@@ -710,37 +710,7 @@ function useSimulatedState() {
         { platform: "Kick", kbps: Math.max(300, Math.floor((sim1 + sim2) * 0.25)), status: simRelayActive ? "active" : "idle" },
       ],
     },
-    outputs: {
-      groups: [
-        {
-          name: "Horizontal",
-          encoder: "x264",
-          resolution: "1920x1080",
-          totalBitrateKbps: Math.floor((sim1 + sim2) * 0.75),
-          avgLagMs: 2.1,
-          items: [
-            { id: "twitch", name: "Twitch", platform: "Twitch", kbps: Math.max(800, Math.floor((sim1 + sim2) * 0.35)), fps: 60, dropPct: 0.01, active: true },
-            { id: "kick", name: "Kick", platform: "Kick", kbps: Math.max(600, Math.floor((sim1 + sim2) * 0.22)), fps: 60, dropPct: 0.02, active: simRelayActive },
-            { id: "yt_horiz", name: "YT Horizontal", platform: "YouTube", kbps: Math.max(600, Math.floor((sim1 + sim2) * 0.18)), fps: 60, dropPct: 0.01, active: true },
-          ],
-        },
-        {
-          name: "Vertical",
-          encoder: "x264",
-          resolution: "1080x1920",
-          totalBitrateKbps: Math.floor((sim1 + sim2) * 0.25),
-          avgLagMs: 3.0,
-          items: [
-            { id: "tiktok", name: "TikTok", platform: "TikTok", kbps: Math.max(300, Math.floor((sim1 + sim2) * 0.13)), fps: 30, dropPct: 0.03, active: true },
-            { id: "yt_shorts", name: "YT Shorts", platform: "YT Shorts", kbps: Math.max(300, Math.floor((sim1 + sim2) * 0.12)), fps: 30, dropPct: 0.02, active: true },
-          ],
-        },
-      ],
-      hidden: [
-        { id: "virtualcam", name: "Virtual Camera", active: false },
-        { id: "recording", name: "Recording", active: false },
-      ],
-    },
+    outputs: { groups: [], hidden: [] },
     relay: {
       licensed: true,
       active: simRelayActive,
@@ -2691,36 +2661,41 @@ export default function AegisDock() {
         </Section>
 
         {/* ----- ENCODERS & UPLOADS (always visible, per-output health) ----- */}
-        {allEncoderItems.length > 0 && (
-          <Section title="Encoders & Uploads" icon="&#x229e;" defaultOpen={true} compact={isCompact}
-            badge={String(activeOutputCount)}
-            badgeColor={activeOutputCount > 0 ? "#2ea043" : "var(--theme-border, #3a3d45)"}>
-            {encoderOutputs.groups.map((group, gi) => (
-              <div key={group.name || gi}>
-                <EncoderGroupHeader
-                  name={group.name}
-                  resolution={group.resolution}
-                  totalBitrateKbps={group.totalBitrateKbps}
-                  avgLagMs={group.avgLagMs}
+        <Section title="Encoders & Uploads" icon="&#x229e;" defaultOpen={true} compact={isCompact}
+          badge={allEncoderItems.length > 0 ? String(activeOutputCount) : "0"}
+          badgeColor={activeOutputCount > 0 ? "#2ea043" : "var(--theme-border, #3a3d45)"}>
+          {allEncoderItems.length === 0 && (
+            <div style={{ color: "var(--theme-text-muted, #8b8f98)", fontSize: 11, padding: "8px 0", textAlign: "center" }}>
+              No encoder outputs detected
+            </div>
+          )}
+          {encoderOutputs.groups.map((group, gi) => (
+            <div key={group.name || gi}>
+              <EncoderGroupHeader
+                name={group.name}
+                resolution={group.resolution}
+                totalBitrateKbps={group.totalBitrateKbps}
+                avgLagMs={group.avgLagMs}
+                compact={isCompact}
+              />
+              {group.items.map((item, ii) => (
+                <OutputBar
+                  key={item.id || `${gi}-${ii}`}
+                  name={item.name || item.platform}
+                  bitrateKbps={item.kbps}
+                  fps={item.fps}
+                  dropPct={item.dropPct}
+                  active={item.active !== false}
+                  maxBitrate={outputMaxMap[item.id || item.name || item.platform] || outputSectionMax}
                   compact={isCompact}
                 />
-                {group.items.map((item, ii) => (
-                  <OutputBar
-                    key={item.id || `${gi}-${ii}`}
-                    name={item.name || item.platform}
-                    bitrateKbps={item.kbps}
-                    fps={item.fps}
-                    dropPct={item.dropPct}
-                    active={item.active !== false}
-                    maxBitrate={outputMaxMap[item.id || item.name || item.platform] || outputSectionMax}
-                    compact={isCompact}
-                  />
-                ))}
-              </div>
-            ))}
+              ))}
+            </div>
+          ))}
+          {encoderOutputs.hidden?.length > 0 && (
             <HiddenOutputsToggle items={encoderOutputs.hidden} compact={isCompact} />
-          </Section>
-        )}
+          )}
+        </Section>
 
         {/* ----- RELAY (always visible, state-machine driven) ----- */}
         <Section title="Relay" icon="☁"

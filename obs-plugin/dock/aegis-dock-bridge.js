@@ -216,10 +216,10 @@
       var pipeStatus = plugin.pipeForcedStatus || (statusSnapshot ? "ok" : "down");
       var pipeLabel = pipeStatus === "ok" ? "PIPE OK" : (pipeStatus === "degraded" ? "PIPE DEGRADED" : "PIPE DOWN");
 
-      // Settings — prefer plugin-provided settings, fall back to defaults
+      // Settings — prefer plugin-provided settings, fall back to defaults (clone to avoid mutation)
       var settingsItems = (Array.isArray(plugin.settings) && plugin.settings.length)
         ? plugin.settings
-        : DEFAULT_SETTINGS;
+        : DEFAULT_SETTINGS.map(function(s) { return Object.assign({}, s); });
 
       // Overlay C++ snapshot settings (flat object) onto the settings array
       // so that persisted config values are reflected even when plugin.settings is null
