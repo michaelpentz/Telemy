@@ -12,8 +12,15 @@ All notable changes to telemy-v0.0.4 will be documented in this file.
 
 - **Telemetry Snapshot** — Added `relay_public_ip` and `relay_srt_port` to status snapshot.
 
+### Added
+
+- **sync-dock.sh** — script for syncing dock sources between repo and root-level runtime copies.
+
 ### Changed
 
+- **Encoders & Uploads section** — now wired to real bridge data (removed simulated outputs).
+- **Encoders section visibility** — always visible with empty state when no outputs detected.
+- **DEFAULT_SETTINGS array** — cloned before snap.settings overlay to prevent mutation.
 - **Dock Source Management** — Dock source files are now tracked in `obs-plugin/dock/`.
 - **Relay API Key Extraction** — Improved extraction logic using `apikey` file with a `grep` fallback.
 
