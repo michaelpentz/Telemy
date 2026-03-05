@@ -159,6 +159,15 @@ Provisioned via Go control plane (`aegis-control-plane/`):
 - `scripts/relay-user-data.sh` — Docker + srtla-receiver install (~2-3 min boot)
 - Security group `aegis-relay-sg` — public UDP ports + restricted TCP management
 
+## Dock Source Management
+
+- **Source of truth**: `telemy-v0.0.4/obs-plugin/dock/`
+- **Runtime copies**: Root-level `E:/Code/telemyapp/` (OBS reads from here)
+- **Build command**:
+  ```bash
+  cd E:/Code/telemyapp && NODE_PATH=dock-preview/node_modules npx esbuild aegis-dock-entry.jsx --bundle --format=iife --jsx=automatic --outfile=aegis-dock-app.js --target=es2020 --minify
+  ```
+
 ## Build System
 
 CMake 3.20+, C++17:
