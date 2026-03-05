@@ -2,6 +2,25 @@
 
 All notable changes to telemy-v0.0.4 will be documented in this file.
 
+## [0.0.4] — 2026-03-04
+
+### Fixed
+
+- **Auto scene switch toggle** — Fixed issue where bridge was not reading C++ snapshot settings and toggle was routing to the wrong setting key.
+
+### Added — C++ Plugin (`obs-plugin/src/`)
+
+- **Telemetry Snapshot** — Added `relay_public_ip` and `relay_srt_port` to status snapshot.
+
+### Changed
+
+- **Dock Source Management** — Dock source files are now tracked in `obs-plugin/dock/`.
+- **Relay API Key Extraction** — Improved extraction logic using `apikey` file with a `grep` fallback.
+
+### Removed
+
+- **Dead Components** — Removed `CopyRow`, `RelayUrlsInline`, `RelayUrlCard`, and `ConnectionInfoCard`.
+
 ## [0.0.4] — 2026-03-03
 
 ### Architecture
