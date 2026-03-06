@@ -36,9 +36,24 @@ This checklist verifies the flow of per-link SRT stats from the Aegis Relay to t
     - [ ] Verify the bonded bitrate matches the sum of all link bitrates.
     - [ ] Verify the "Bonded" status matches the relay's reported `bonded.health`.
 
-## 7. Validation Status (v0.0.3)
+## 7. Validation Status (v0.0.4)
+- [x] **Relay E2E Telemetry:** PASSED (2026-03-05). Validated via IRL Pro bonded stream to AWS relay.
 - [x] **Relay IPC Round-Trip:** Confirmed (Start → Provisioning → Active → Stop → Stopped).
-- [x] **API Connectivity:** Confirmed (Rust Core → Aegis API via JWT).
-- [x] **Bridge Action Handling:** Confirmed (`relay_start` and `relay_stop` forwarded to native).
-- [x] **Self-Test Bypass:** Confirmed (`SelfTestDirectPluginIntake` functional).
-- [ ] **In-Process HTTP Stability:** (Pending Codex optimization for OBS startup timing).
+- [x] **API Connectivity:** Confirmed (C++ RelayClient → Go Control Plane via HTTPS).
+- [x] **Dock Telemetry Path:** Confirmed (SLS stats API → C++ → JSON Snapshot → CEF Injection → React UI).
+- [ ] **Per-link Relay Telemetry:** PENDING (requires `srtla_rec` fork to expose per-link metadata).
+
+## 8. Test Cases (v0.0.4)
+
+### TC-RELAY-001: IRL Pro Bonded Stream
+- **Description**: Verify aggregate stats for a bonded multi-link stream.
+- **Setup**: IRL Pro connected via `srtla://` using both WiFi and Cellular links.
+- **Steps**:
+    1. Start relay via Dock UI.
+    2. Start IRL Pro stream.
+    3. Monitor "Relay Ingest" card in OBS Dock.
+- **Expected Results**:
+    - [x] Bitrate bar shows aggregate throughput (e.g., 4.6 Mbps).
+    - [x] RTT, Latency, and Loss pills show real-time values from the relay.
+    - [x] Stats update every 2 seconds.
+- **Notes**: Per-link stats (WiFi vs Cellular) are currently unavailable due to `srtla_rec` limitations.

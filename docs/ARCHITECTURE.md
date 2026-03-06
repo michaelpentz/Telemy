@@ -94,6 +94,18 @@ NVML ───────┘                                       │         
                                               RelayClient ──> HTTPS ──> AWS Go Control Plane
 ```
 
+### Relay Telemetry Data Flow
+
+When a relay session is active, the plugin polls the relay's stats API for aggregate stream health:
+
+1. **Polling** — `PollRelayStats()` in `relay_client.cpp` executes every 2 seconds via a `WinHTTP` GET request to `:8090/stats/play_aegis?legacy=1`.
+2. **Parsing** — The SLS legacy JSON format is parsed, specifically targeting the nested `publishers` object for the active stream.
+3. **Snapshot Injection** — Nine relay-prefixed fields (bitrate, RTT, loss, latency, drop, etc.) are injected into the top-level telemetry snapshot by `BuildStatusSnapshotJson`.
+4. **Bridge Delivery** — The JS bridge passes the snapshot to `getState().relay` in the Dock state.
+5. **UI Rendering** — The Dock UI renders the data as a dedicated "Relay Ingest" card with a bitrate bar and stat pills for RTT, Loss, and Latency.
+
+**Network Requirement**: Port 8090 on the relay instance must be accessible from the OBS machine (Security Group rule required).
+
 ### UI Actions (Upstream)
 
 ```
