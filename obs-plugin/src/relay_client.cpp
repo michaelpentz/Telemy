@@ -2,6 +2,7 @@
 
 #include <obs-module.h>
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QByteArray>
@@ -414,6 +415,90 @@ RelayStats RelayClient::CurrentStats() const
 {
     std::lock_guard<std::mutex> lk(stats_mutex_);
     return stats_;
+}
+
+// ---------------------------------------------------------------------------
+// Per-link (srtla_rec) stats polling
+// ---------------------------------------------------------------------------
+
+void RelayClient::PollPerLinkStats(const std::string& relay_ip)
+{
+    if (relay_ip.empty()) {
+        std::lock_guard<std::mutex> lk(per_link_mutex_);
+        per_link_.available = false;
+        per_link_.links.clear();
+        return;
+    }
+
+    std::string host_port = relay_ip + ":5080";
+    std::wstring host_w(host_port.begin(), host_port.end());
+    std::wstring path_w = L"/stats";
+
+    HttpResponse resp;
+    try {
+        resp = http_.Get(host_w, path_w);
+    } catch (const std::exception& e) {
+        blog(LOG_DEBUG, "[aegis-relay] per-link stats http error: %s", e.what());
+        std::lock_guard<std::mutex> lk(per_link_mutex_);
+        per_link_.available = false;
+        return;
+    }
+
+    if (resp.status_code != 200 || resp.body.empty()) {
+        blog(LOG_DEBUG, "[aegis-relay] per-link stats failed: status=%lu",
+             resp.status_code);
+        std::lock_guard<std::mutex> lk(per_link_mutex_);
+        per_link_.available = false;
+        return;
+    }
+
+    QJsonParseError err;
+    QJsonDocument doc = QJsonDocument::fromJson(
+        QByteArray(resp.body.c_str(), static_cast<int>(resp.body.size())), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+        std::lock_guard<std::mutex> lk(per_link_mutex_);
+        per_link_.available = false;
+        return;
+    }
+
+    QJsonObject root = doc.object();
+    QJsonArray groupsArr = root.value("groups").toArray();
+
+    PerLinkSnapshot snap;
+    snap.available = true;
+
+    // We expect one group (single stream). Take the first.
+    if (!groupsArr.isEmpty()) {
+        QJsonObject group = groupsArr[0].toObject();
+        snap.conn_count = group.value("conn_count").toInt(0);
+        QJsonArray connsArr = group.value("connections").toArray();
+
+        for (int i = 0; i < connsArr.size(); ++i) {
+            QJsonObject c = connsArr[i].toObject();
+            PerLinkStats link;
+            link.addr = c.value("addr").toString().toStdString();
+            link.bytes = static_cast<uint64_t>(c.value("bytes").toDouble(0));
+            link.pkts = static_cast<uint64_t>(c.value("pkts").toDouble(0));
+            link.share_pct = c.value("share_pct").toDouble(0.0);
+            link.last_ms_ago = static_cast<uint32_t>(c.value("last_ms_ago").toInt(0));
+            link.uptime_s = static_cast<uint32_t>(c.value("uptime_s").toInt(0));
+            snap.links.push_back(std::move(link));
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(per_link_mutex_);
+        per_link_ = std::move(snap);
+    }
+
+    blog(LOG_DEBUG, "[aegis-relay] per-link stats ok: conn_count=%d links=%zu",
+         per_link_.conn_count, per_link_.links.size());
+}
+
+PerLinkSnapshot RelayClient::CurrentPerLinkStats() const
+{
+    std::lock_guard<std::mutex> lk(per_link_mutex_);
+    return per_link_;
 }
 
 }  // namespace aegis

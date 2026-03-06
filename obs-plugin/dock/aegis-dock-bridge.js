@@ -357,6 +357,19 @@
           relayLatencyMs: snap.relay_latency_ms != null ? snap.relay_latency_ms : null,
           uptimeSeconds: snap.relay_uptime_seconds || 0,
           statsAvailable: !!snap.relay_stats_available,
+          // Per-link telemetry (from srtla_rec fork)
+          perLinkAvailable: !!snap.relay_per_link_available,
+          connCount: snap.relay_conn_count || 0,
+          links: (snap.relay_links || []).map(function(l) {
+            return {
+              addr: l.addr || "",
+              bytes: l.bytes || 0,
+              pkts: l.pkts || 0,
+              sharePct: l.share_pct || 0,
+              lastMsAgo: l.last_ms_ago || 0,
+              uptimeS: l.uptime_s || 0,
+            };
+          }),
         },
         failover: {
           health: health,

@@ -14,7 +14,7 @@ import {
   inferIntentFromName, normalizeSceneName, findBestSceneIdForRule,
   mapRelayStatusForUi, loadSceneIntentLinks, loadSceneIntentLinkNames,
   findSceneIdByName, normalizeLinkMap, loadAutoSceneRules,
-  normalizeAutoSceneRulesValue, cefCopyToClipboard
+  normalizeAutoSceneRulesValue, cefCopyToClipboard, classifyLinkAddr
 } from "./utils.js";
 import { getDockCss } from "./css.js";
 import { useAnimatedValue, useRollingMaxBitrate, useDockCompactMode } from "./hooks.js";
@@ -39,6 +39,8 @@ export default function AegisDock() {
   const dockLayout = useDockCompactMode(dockRootRef);
   const isCompact = dockLayout === "compact" || dockLayout === "ultra";
   const isUltraCompact = dockLayout === "ultra";
+  const prevLinkBytesRef = useRef({});
+  const prevLinkTsRef = useRef(0);
 
   const bridge = useDockState();
   const sim = useSimulatedState();
@@ -465,6 +467,25 @@ export default function AegisDock() {
   // Animated bitrate values
   const bondedKbps = bitrate.bondedKbps || 0;
   const relayBondedKbps = relay.statsAvailable ? relay.ingestBitrateKbps : (bitrate.relayBondedKbps || bondedKbps);
+  // Per-link throughput from cumulative byte deltas
+  const perLinkThroughputs = useMemo(() => {
+    if (!relay.perLinkAvailable || !relay.links || relay.links.length === 0) return [];
+    const now = Date.now();
+    const dt = (now - prevLinkTsRef.current) / 1000;
+    const prev = prevLinkBytesRef.current;
+    const results = relay.links.map(link => {
+      const prevBytes = prev[link.addr] || 0;
+      const kbps = dt > 0.5 && prevBytes > 0
+        ? Math.max(0, ((link.bytes - prevBytes) / dt) * 8 / 1000)
+        : 0;
+      return { ...link, kbps, ...classifyLinkAddr(link.addr) };
+    });
+    const nextPrev = {};
+    relay.links.forEach(l => { nextPrev[l.addr] = l.bytes; });
+    prevLinkBytesRef.current = nextPrev;
+    prevLinkTsRef.current = now;
+    return results;
+  }, [relay.perLinkAvailable, relay.links]);
   // Relay connection URLs (for copy-to-clipboard)
   const relayIngestHost = relay.relayHostname || relay.publicIp;
   const relayIngestUrl = relayIngestHost ? "srtla://" + relayIngestHost + ":" + (relay.srtPort || 5000) : null;
@@ -1262,7 +1283,22 @@ export default function AegisDock() {
         {/* ----- BITRATE ----- */}
         <Section title="Bitrate" icon="▥" defaultOpen={true} compact={isCompact}>
           {/* Per-link bars only when relay active (cellular links available) */}
-          {relayActive && conns.length >= 2 ? (
+          {/* Per-link bars from srtla_rec stats */}
+          {relayActive && perLinkThroughputs.length > 0 ? (
+            <>
+              {perLinkThroughputs.map((link, i) => (
+                <div key={link.addr} style={{ opacity: link.lastMsAgo > 3000 ? 0.4 : 1 }}>
+                  <BitrateBar
+                    value={link.kbps}
+                    max={Math.max(relayBondedKbps, 6000)}
+                    color={i === 0 ? "#2d7aed" : i === 1 ? "#8b5cf6" : "#e05d44"}
+                    label={`${link.label}  ${Math.round(link.sharePct)}%`}
+                  />
+                </div>
+              ))}
+              <BitrateBar value={relayBondedKbps} max={Math.max(relayBondedKbps * 1.5, 10000)} color="#2ea043" label="BONDED" />
+            </>
+          ) : relayActive && conns.length >= 2 ? (
             <>
               <BitrateBar value={animLink1} max={maxPerLink} color="#2d7aed"
                 label={conns[0]?.name?.split(" \u2014 ")[0] || "LINK 1"} />
@@ -1341,7 +1377,7 @@ export default function AegisDock() {
         <Section title="Relay" icon="☁"
           compact={isCompact}
           defaultOpen={true}
-          badge={!relayLicensed ? "PRO" : relayActive ? relayStatusUi.toUpperCase() : "OFF"}
+          badge={!relayLicensed ? "PRO" : relayActive ? (relay.connCount > 0 ? `${relay.connCount} LINK${relay.connCount !== 1 ? "S" : ""}` : relayStatusUi.toUpperCase()) : "OFF"}
           badgeColor={!relayLicensed ? "#d29922" : relayActive ? (relayStatusUi === "active" ? "#2d7aed" : relayStatusUi === "grace" ? "#8b5cf6" : relayStatusUi === "connecting" ? "#d29922" : "var(--theme-border, #3a3d45)") : "var(--theme-border, #3a3d45)"}>
 
           {/* Core Pipe — always visible */}
