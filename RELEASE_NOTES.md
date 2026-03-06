@@ -39,6 +39,13 @@ The JavaScript bridge between C++ and the React dock is now a thin pass-through.
 | System tray icon | No standalone process |
 | Autostart registry | OBS loads the plugin directly |
 
+## Testing Milestones (2026-03-05)
+
+- **E2E Relay Telemetry Validated** — Confirmed the full telemetry path from an IRL Pro bonded stream (WiFi + T-Mobile) through the relay back to the OBS Dock.
+- **Data Flow Confirmed** — C++ native code successfully polls the SLS stats API via WinHTTP, injects fields into the telemetry snapshot, and surfaces them in the React UI via the JS bridge.
+- **Relay Performance** — Observed stable metrics during bonding: 4.6 Mbps aggregate bitrate, 53ms RTT, and 1000ms latency.
+- **Known Gap** — Per-link telemetry (individual cellular/WiFi stats) is currently pending a custom `srtla_rec` fork to expose link-level metadata.
+
 ## Platform Requirements
 
 - **Windows only** (Win32 DPAPI, WinHTTP)
