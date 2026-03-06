@@ -410,7 +410,8 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     const std::string& relay_status,
     const std::string& relay_region,
     const aegis::RelaySession* relay_session,
-    const aegis::RelayStats* relay_stats) const
+    const aegis::RelayStats* relay_stats,
+    const aegis::PerLinkSnapshot* per_link_stats) const
 {
     const auto& snap = current_;
 
@@ -483,6 +484,30 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << "\"relay_stats_available\":true,";
     } else {
         os << "\"relay_stats_available\":false,";
+    }
+
+    // ── Per-link relay telemetry (from srtla_rec fork) ───────────────
+    if (per_link_stats && per_link_stats->available && !per_link_stats->links.empty()) {
+        os << "\"relay_per_link_available\":true,";
+        os << "\"relay_conn_count\":" << per_link_stats->conn_count << ",";
+        os << "\"relay_links\":[";
+        for (size_t i = 0; i < per_link_stats->links.size(); ++i) {
+            if (i > 0) os << ",";
+            const auto& link = per_link_stats->links[i];
+            os << "{";
+            os << "\"addr\":\"" << JsonEscape(link.addr) << "\",";
+            os << "\"bytes\":" << link.bytes << ",";
+            os << "\"pkts\":" << link.pkts << ",";
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%.1f", link.share_pct);
+            os << "\"share_pct\":" << buf << ",";
+            os << "\"last_ms_ago\":" << link.last_ms_ago << ",";
+            os << "\"uptime_s\":" << link.uptime_s;
+            os << "}";
+        }
+        os << "],";
+    } else {
+        os << "\"relay_per_link_available\":false,";
     }
 
     // ── Multistream outputs ──────────────────────────────────────────────

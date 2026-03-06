@@ -211,3 +211,17 @@ export function cefCopyToClipboard(text) {
   document.execCommand("copy");
   document.body.removeChild(ta);
 }
+
+/** Classify a link address as WiFi/LAN or Cellular based on IP range heuristic */
+export function classifyLinkAddr(addr) {
+  if (!addr) return { label: "Link", type: "unknown" };
+  var ip = addr.split(":")[0];
+  if (ip.startsWith("10.") || ip.startsWith("192.168.") ||
+      (ip.startsWith("172.") && (function() {
+        var second = parseInt(ip.split(".")[1], 10);
+        return second >= 16 && second <= 31;
+      })())) {
+    return { label: "WiFi", type: "wifi" };
+  }
+  return { label: "Cell", type: "cellular" };
+}

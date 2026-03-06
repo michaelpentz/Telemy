@@ -991,8 +991,22 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
         relay_stats_ptr = &relay_stats;
     }
 
+    // Poll per-link stats on the same cadence as SLS stats
+    const aegis::PerLinkSnapshot* per_link_ptr = nullptr;
+    aegis::PerLinkSnapshot per_link_stats;
+    if (g_relay && g_relay->HasActiveSession() && relay_session_ptr) {
+        static int per_link_poll_counter = 0;
+        if (++per_link_poll_counter >= 4) {
+            per_link_poll_counter = 0;
+            g_relay->PollPerLinkStats(relay_session_ptr->public_ip);
+        }
+        per_link_stats = g_relay->CurrentPerLinkStats();
+        per_link_ptr = &per_link_stats;
+    }
+
     std::string json =
-        g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region, relay_session_ptr, relay_stats_ptr);
+        g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region,
+                                           relay_session_ptr, relay_stats_ptr, per_link_ptr);
     QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(json));
     if (doc.isObject()) {
         QJsonObject payload = doc.object();
