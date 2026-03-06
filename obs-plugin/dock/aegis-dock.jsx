@@ -468,7 +468,7 @@ export default function AegisDock() {
   // Relay connection URLs (for copy-to-clipboard)
   const relayIngestHost = relay.relayHostname || relay.publicIp;
   const relayIngestUrl = relayIngestHost ? "srtla://" + relayIngestHost + ":" + (relay.srtPort || 5000) : null;
-  const relayObsPlayUrl = relay.publicIp ? "srt://" + relay.publicIp + ":4000?streamid=play_aegis" : null;
+  const relayObsPlayUrl = relayIngestHost ? "srt://" + relayIngestHost + ":4000?streamid=play_aegis" : null;
   // Encoders & Uploads — per-output grouped data
   const encoderOutputs = ds.outputs || { groups: [], hidden: [] };
   const allEncoderItems = encoderOutputs.groups?.flatMap(g => g.items) || [];
