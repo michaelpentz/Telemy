@@ -465,6 +465,9 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     if (relay_session) {
         os << "\"relay_public_ip\":\"" << JsonEscape(relay_session->public_ip) << "\",";
         os << "\"relay_srt_port\":" << relay_session->srt_port << ",";
+        if (!relay_session->relay_hostname.empty()) {
+            os << "\"relay_hostname\":\"" << JsonEscape(relay_session->relay_hostname) << "\",";
+        }
     }
 
     // ── Relay telemetry (from SLS stats) ─────────────────────────────────

@@ -81,20 +81,24 @@ func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Ses
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
-       s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds
+       s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
+       coalesce(u.relay_slug, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
-where user_id = $1 and status in ('provisioning', 'active', 'grace')
+left join users u on u.id = s.user_id
+where s.user_id = $1 and s.status in ('provisioning', 'active', 'grace')
 order by s.created_at desc
 limit 1`
 
 	var out model.Session
 	var relayInstanceID string
+	var relaySlug string
 	var stoppedAt *time.Time
 	if err := s.db.QueryRow(ctx, q, userID).Scan(
 		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.Region, &out.PairToken, &out.RelayWSToken,
 		&out.PublicIP, &out.SRTPort, &out.WSURL,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
+		&relaySlug,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -103,6 +107,9 @@ limit 1`
 	}
 	out.StoppedAt = stoppedAt
 	out.RelayInstanceID = strPtr(relayInstanceID)
+	if relaySlug != "" && out.PublicIP != "" {
+		out.RelayHostname = relaySlug + ".relay.telemyapp.com"
+	}
 	return &out, nil
 }
 
@@ -186,19 +193,23 @@ func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID string
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
-       s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds
+       s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
+       coalesce(u.relay_slug, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
+left join users u on u.id = s.user_id
 where s.user_id = $1 and s.status in ('provisioning', 'active', 'grace')
 order by s.created_at desc
 limit 1`
 	var out model.Session
 	var relayInstanceID string
+	var relaySlug string
 	var stoppedAt *time.Time
 	if err := tx.QueryRow(ctx, q, userID).Scan(
 		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.Region, &out.PairToken, &out.RelayWSToken,
 		&out.PublicIP, &out.SRTPort, &out.WSURL,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
+		&relaySlug,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -207,6 +218,9 @@ limit 1`
 	}
 	out.StoppedAt = stoppedAt
 	out.RelayInstanceID = strPtr(relayInstanceID)
+	if relaySlug != "" && out.PublicIP != "" {
+		out.RelayHostname = relaySlug + ".relay.telemyapp.com"
+	}
 	return &out, nil
 }
 
@@ -260,18 +274,22 @@ func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, session
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
-       s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds
+       s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
+       coalesce(u.relay_slug, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
+left join users u on u.id = s.user_id
 where s.user_id = $1 and s.id = $2
 limit 1`
 	var out model.Session
 	var relayInstanceID string
+	var relaySlug string
 	var stoppedAt *time.Time
 	if err := tx.QueryRow(ctx, q, userID, sessionID).Scan(
 		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.Region, &out.PairToken, &out.RelayWSToken,
 		&out.PublicIP, &out.SRTPort, &out.WSURL,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
+		&relaySlug,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -280,6 +298,9 @@ limit 1`
 	}
 	out.StoppedAt = stoppedAt
 	out.RelayInstanceID = strPtr(relayInstanceID)
+	if relaySlug != "" && out.PublicIP != "" {
+		out.RelayHostname = relaySlug + ".relay.telemyapp.com"
+	}
 	return &out, nil
 }
 
@@ -529,6 +550,18 @@ do update set
   updated_at = now()`
 	_, err := s.db.Exec(ctx, q)
 	return err
+}
+
+func (s *Store) GetUserRelaySlug(ctx context.Context, userID string) (string, error) {
+	var slug string
+	err := s.db.QueryRow(ctx, `SELECT relay_slug FROM users WHERE id = $1`, userID).Scan(&slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	return slug, nil
 }
 
 func strPtr(v string) *string {

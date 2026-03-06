@@ -9,7 +9,8 @@ export function useSimulatedState() {
   const [mode, setMode] = useState("irl");
   const [simRelayActive, setSimRelayActive] = useState(true);
   const [simRelayData, setSimRelayData] = useState({
-    ingestUrl: "srtla://203.0.113.42:5000",
+    relayHostname: "k7mx2p.relay.telemyapp.com",
+    ingestUrl: "srtla://k7mx2p.relay.telemyapp.com:5000",
     pairToken: "ABCD-1234-EFGH",
     region: "us-east-1",
   });
@@ -85,6 +86,7 @@ export function useSimulatedState() {
       latencyMs: simRelayActive ? 42 : null,
       uptimeSec: simRelayActive ? elapsed : 0,
       graceRemainingSeconds: null,
+      relayHostname: simRelayActive ? (simRelayData.relayHostname || null) : null,
       ingestUrl: simRelayActive ? (simRelayData.ingestUrl || null) : null,
       pairToken: simRelayActive ? (simRelayData.pairToken || null) : null,
       wsUrl: null,
@@ -139,7 +141,8 @@ export function useSimulatedState() {
         setTimeout(() => {
           setSimRelayActive(true);
           setSimRelayData({
-            ingestUrl: "srtla://203.0.113.42:5000",
+            relayHostname: "k7mx2p.relay.telemyapp.com",
+            ingestUrl: "srtla://k7mx2p.relay.telemyapp.com:5000",
             pairToken: "ABCD-1234-EFGH",
             region: "us-east-1",
           });

@@ -12,6 +12,7 @@ import (
 
 	"github.com/telemyapp/aegis-control-plane/internal/api"
 	"github.com/telemyapp/aegis-control-plane/internal/config"
+	"github.com/telemyapp/aegis-control-plane/internal/dns"
 	"github.com/telemyapp/aegis-control-plane/internal/model"
 	"github.com/telemyapp/aegis-control-plane/internal/relay"
 	"github.com/telemyapp/aegis-control-plane/internal/store"
@@ -58,7 +59,8 @@ func main() {
 	default:
 		prov = relay.NewFakeProvisioner()
 	}
-	handler := api.NewRouter(cfg, st, prov)
+	dnsClient := dns.NewClient()
+	handler := api.NewRouter(cfg, st, prov, dnsClient)
 
 	srv := &http.Server{
 		Addr:        cfg.ListenAddr,

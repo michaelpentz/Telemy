@@ -16,6 +16,7 @@ struct RelaySession {
     std::string public_ip;
     int         srt_port = 9000;
     std::string ws_url;
+    std::string relay_hostname;  // e.g. "k7mx2p.relay.telemyapp.com"
     std::string pair_token;
     int         grace_window_seconds = 0;
     int         max_session_seconds = 0;

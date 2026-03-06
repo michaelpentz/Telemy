@@ -2296,8 +2296,11 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
                            << ",\"public_ip\":\"" << JsonEscape(session->public_ip) << "\""
                            << ",\"srt_port\":" << session->srt_port
                            << ",\"pair_token\":\"" << JsonEscape(session->pair_token) << "\""
-                           << ",\"ws_url\":\"" << JsonEscape(session->ws_url) << "\""
-                           << ",\"grace_window_seconds\":" << session->grace_window_seconds
+                           << ",\"ws_url\":\"" << JsonEscape(session->ws_url) << "\"";
+                    if (!session->relay_hostname.empty()) {
+                        detail << ",\"relay_hostname\":\"" << JsonEscape(session->relay_hostname) << "\"";
+                    }
+                    detail << ",\"grace_window_seconds\":" << session->grace_window_seconds
                            << ",\"max_session_seconds\":" << session->max_session_seconds
                            << "}";
                     EmitDockActionResult("relay_start", req_id, "completed", true, "", detail.str());

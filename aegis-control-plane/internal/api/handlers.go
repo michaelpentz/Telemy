@@ -158,6 +158,15 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sess = activatedSess
+
+		// Create DNS record for relay subdomain
+		if slug, slugErr := s.store.GetUserRelaySlug(r.Context(), userID); slugErr == nil && slug != "" {
+			if dnsErr := s.dns.CreateOrUpdateRecord(slug, prov.PublicIP); dnsErr != nil {
+				log.Printf("dns: create record failed session_id=%s slug=%s err=%v", sess.ID, slug, dnsErr)
+			} else {
+				sess.RelayHostname = s.dns.FQDN(slug)
+			}
+		}
 	}
 
 	status := http.StatusOK
@@ -250,6 +259,13 @@ func (s *Server) handleRelayStop(w http.ResponseWriter, r *http.Request) {
 		}
 		metrics.Default().IncCounter("aegis_relay_deprovision_total", labels)
 		metrics.Default().ObserveHistogram("aegis_relay_deprovision_latency_ms", durMS, labels)
+
+		// Delete DNS record for relay subdomain
+		if slug, slugErr := s.store.GetUserRelaySlug(r.Context(), userID); slugErr == nil && slug != "" {
+			if dnsErr := s.dns.DeleteRecord(slug); dnsErr != nil {
+				log.Printf("dns: delete record failed session_id=%s slug=%s err=%v", curr.ID, slug, dnsErr)
+			}
+		}
 	}
 
 	sess, err := s.store.StopSession(r.Context(), userID, req.SessionID)
@@ -374,15 +390,19 @@ func (s *Server) resolveRegion(pref string) string {
 }
 
 func toSessionResponse(sess *model.Session) map[string]any {
+	relayMap := map[string]any{
+		"public_ip": sess.PublicIP,
+		"srt_port":  sess.SRTPort,
+		"ws_url":    sess.WSURL,
+	}
+	if sess.RelayHostname != "" {
+		relayMap["relay_hostname"] = sess.RelayHostname
+	}
 	resp := map[string]any{
 		"session_id": sess.ID,
 		"status":     string(sess.Status),
 		"region":     sess.Region,
-		"relay": map[string]any{
-			"public_ip": sess.PublicIP,
-			"srt_port":  sess.SRTPort,
-			"ws_url":    sess.WSURL,
-		},
+		"relay":      relayMap,
 		"credentials": map[string]any{
 			"pair_token":     sess.PairToken,
 			"relay_ws_token": sess.RelayWSToken,
