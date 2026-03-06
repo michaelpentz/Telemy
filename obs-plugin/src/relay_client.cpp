@@ -77,6 +77,7 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     session.public_ip = relayObj["public_ip"].toString().toStdString();
     session.srt_port = relayObj["srt_port"].toInt(9000);
     session.ws_url = relayObj["ws_url"].toString().toStdString();
+    session.relay_hostname = relayObj["relay_hostname"].toString().toStdString();
 
     // Credentials.
     QJsonObject creds = obj["credentials"].toObject();
