@@ -10,6 +10,7 @@
 #   UDP 4000  SRT player output (OBS connects here)
 #   UDP 4001  SRT direct sender (non-bonded fallback)
 #   TCP 3000  Management UI
+#   TCP 5080  Per-link stats API (srtla_rec HTTP)
 #   TCP 8090  Backend API (remapped from default 8080 to avoid control plane conflict)
 
 set -euo pipefail
@@ -39,10 +40,45 @@ echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') Docker installed, setting up srtla-receiv
 mkdir -p /opt/srtla-receiver/data
 cd /opt/srtla-receiver
 
-# Fetch docker-compose from OpenIRL
-SRTLA_RECEIVER_COMMIT_SHA="e2fe790dbb4c286e6506cf996f1de32bbb3764d2"
-curl -sL "https://raw.githubusercontent.com/OpenIRL/srtla-receiver/${SRTLA_RECEIVER_COMMIT_SHA}/docker-compose.prod.yml" \
-  -o docker-compose.yml
+# Write docker-compose with custom srtla-receiver image (per-link stats)
+cat > docker-compose.yml << 'COMPOSEEOF'
+services:
+  sls-management-ui:
+    image: ghcr.io/openirl/sls-management-ui:latest
+    container_name: sls-management-ui
+    restart: unless-stopped
+    environment:
+      REACT_APP_BASE_URL: "${APP_URL}"
+      REACT_APP_SRT_PLAYER_PORT: "${SRT_PLAYER_PORT:-4000}"
+      REACT_APP_SRT_SENDER_PORT: "${SRT_SENDER_PORT:-4001}"
+      REACT_APP_SLS_STATS_PORT: "${SLS_STATS_PORT:-8080}"
+      REACT_APP_SRTLA_PORT: "${SRTLA_PORT:-5000}"
+    ports:
+      - "${SLS_MGNT_PORT}:3000"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  receiver:
+    image: ghcr.io/michaelpentz/srtla-receiver:latest
+    container_name: srtla-receiver
+    restart: unless-stopped
+    ports:
+      - "${SLS_STATS_PORT}:8080/tcp"
+      - "${SRTLA_PORT}:5000/udp"
+      - "${SRT_SENDER_PORT}:4001/udp"
+      - "${SRT_PLAYER_PORT}:4000/udp"
+      - "5080:5080/tcp"
+    volumes:
+      - ./data:/var/lib/sls
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+COMPOSEEOF
 
 # Write .env (non-interactive, using defaults aligned with Aegis)
 cat > .env << 'ENVEOF'
@@ -52,6 +88,7 @@ SRT_PLAYER_PORT=4000
 SLS_MGNT_PORT=3000
 SLS_STATS_PORT=8090
 APP_URL=http://localhost
+# Per-link stats exposed on port 5080 (hardcoded in compose, not variable)
 ENVEOF
 
 # Set ownership for SLS data dir (srtla-receiver expects uid 3001)
