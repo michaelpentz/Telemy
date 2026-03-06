@@ -2,6 +2,14 @@
 
 All notable changes to telemy-v0.0.4 will be documented in this file.
 
+## [0.0.4] — 2026-03-05
+
+### Validated
+
+- **E2E relay telemetry** — Validated live telemetry path: IRL Pro bonded stream → srtla_rec → SLS → C++ PollRelayStats → dock UI.
+- **Live relay stats** — Dock displays live relay stats (bitrate 4.6 Mbps, RTT 53ms, latency 1000ms, loss/drop).
+- **Validation-only session** — No code changes were made during this session.
+
 ## [0.0.4] — 2026-03-04
 
 ### Fixed
