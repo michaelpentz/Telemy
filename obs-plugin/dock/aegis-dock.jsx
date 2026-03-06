@@ -73,6 +73,7 @@ export default function AegisDock() {
 
   // Relay activation UI state
   const [relayActivating, setRelayActivating] = useState(false);
+  const [relayDeactivating, setRelayDeactivating] = useState(false);
   const [relayError, setRelayError] = useState(null);
 
   // Clear activating spinner when relay becomes active
@@ -82,6 +83,13 @@ export default function AegisDock() {
       setRelayError(null);
     }
   }, [relayActive, relayActivating]);
+
+  // Clear deactivating spinner when relay becomes inactive
+  useEffect(() => {
+    if (!relayActive && relayDeactivating) {
+      setRelayDeactivating(false);
+    }
+  }, [relayActive, relayDeactivating]);
 
   // Handle failed relay action results — read from bridge state (relay.lastError)
   // and also listen for DOM events as a backup
@@ -505,14 +513,16 @@ export default function AegisDock() {
 
   // handleModeChange removed — mode is now derived from relay state
   const handleRelayToggle = () => {
-    if (relayActivating) return;
+    if (relayActivating || relayDeactivating) return;
     if (relayActive) {
+      setRelayDeactivating(true);
       sendAction({ type: "relay_stop" });
     } else {
       setRelayActivating(true);
       setRelayError(null);
       sendAction({ type: "relay_start" });
       // Poll bridge state for relay error/success — CEF event delivery is unreliable
+      // Relay provisioning takes ~20s API + ~3 min bootstrap; 90s timeout covers it
       const pollStart = Date.now();
       const pollId = setInterval(() => {
         const native = window.aegisDockNative;
@@ -530,13 +540,12 @@ export default function AegisDock() {
           setRelayError(null);
           return;
         }
-        // Hard timeout after 15s
-        if (Date.now() - pollStart > 15000) {
+        if (Date.now() - pollStart > 90000) {
           clearInterval(pollId);
           setRelayActivating(false);
-          setRelayError("Activation timed out");
+          setRelayError("Activation timed out — check relay status");
         }
-      }, 300);
+      }, 500);
     }
   };
 
@@ -1361,8 +1370,8 @@ export default function AegisDock() {
             </div>
           )}
 
-          {/* --- IDLE state (licensed, not active) --- */}
-          {relayLicensed && !relayActive && !relayActivating && (
+          {/* --- IDLE state (licensed, not active, not provisioning) --- */}
+          {relayLicensed && !relayActive && !relayActivating && !relayError && relay.status !== "provisioning" && (
             <div style={{
               background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
               border: "1px solid var(--theme-border, #2a2d35)",
@@ -1385,14 +1394,14 @@ export default function AegisDock() {
             </div>
           )}
 
-          {/* --- ACTIVATING state --- */}
-          {relayLicensed && relayActivating && !relayActive && (
+          {/* --- ACTIVATING state (explicit activating OR bridge reports provisioning) --- */}
+          {relayLicensed && (relayActivating || relay.status === "provisioning") && !relayActive && (
             <div style={{
               background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "10px 10px",
               border: "1px solid #d2992240", textAlign: "center",
             }}>
               <div style={{ fontSize: 10, color: "#d29922", fontWeight: 600 }}>
-                Starting relay&hellip;
+                Provisioning relay&hellip; this may take a few minutes
               </div>
             </div>
           )}
@@ -1514,15 +1523,28 @@ export default function AegisDock() {
               {relayObsPlayUrl && <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px", cursor: "pointer", fontFamily: "monospace", background: "var(--theme-surface, #13151a)", borderBottom: "1px solid var(--theme-border, #2a2d35)", borderLeft: "1px solid var(--theme-border, #2a2d35)", borderRight: "1px solid var(--theme-border, #2a2d35)", borderRadius: "0 0 4px 4px", marginBottom: 6 }} onClick={function() { cefCopyToClipboard(relayObsPlayUrl); }}>{"Play     " + relayObsPlayUrl + "  \u29C9"}</div>}
 
               {/* Deactivate button */}
-              <button onClick={handleRelayToggle} style={{
-                width: "100%", padding: "5px 0", border: "1px solid var(--theme-border, #2a2d35)",
-                borderRadius: 3, background: "var(--theme-panel, #20232b)", cursor: "pointer",
-                color: "var(--theme-text-muted, #5a5f6d)", fontSize: 9, fontWeight: 500,
-                fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
-                marginBottom: 6,
-              }}>
-                Deactivate Relay
-              </button>
+              {relayDeactivating ? (
+                <div style={{
+                  width: "100%", padding: "5px 0", textAlign: "center",
+                  borderRadius: 3, background: "var(--theme-panel, #20232b)",
+                  border: "1px solid #d2992240",
+                  color: "#d29922", fontSize: 9, fontWeight: 600,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                  marginBottom: 6,
+                }}>
+                  Deactivating relay&hellip;
+                </div>
+              ) : (
+                <button onClick={handleRelayToggle} style={{
+                  width: "100%", padding: "5px 0", border: "1px solid var(--theme-border, #2a2d35)",
+                  borderRadius: 3, background: "var(--theme-panel, #20232b)", cursor: "pointer",
+                  color: "var(--theme-text-muted, #5a5f6d)", fontSize: 9, fontWeight: 500,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                  marginBottom: 6,
+                }}>
+                  Deactivate Relay
+                </button>
+              )}
 
               {/* Time Bank — [PLACEHOLDER] not in IPC v1, needs control-plane quota */}
               <div style={{

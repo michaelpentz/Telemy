@@ -195,11 +195,14 @@
       var relay = snap.relay || {};
 
       // Merge cached relay session data (from relay_start action result)
-      // into relay object — snapshot fields take precedence when present
+      // Cache wins for status when snapshot says "inactive" but cache says otherwise
+      // (covers the provisioning gap before heartbeat confirms active)
       if (plugin.relayCache) {
         for (var rk in plugin.relayCache) {
-          if (plugin.relayCache[rk] != null && !relay[rk]) {
-            relay[rk] = plugin.relayCache[rk];
+          if (plugin.relayCache[rk] != null) {
+            if (!relay[rk] || (rk === "status" && relay[rk] === "inactive" && plugin.relayCache[rk] !== "inactive")) {
+              relay[rk] = plugin.relayCache[rk];
+            }
           }
         }
       }
@@ -311,7 +314,7 @@
         outputs: buildEncoderOutputs(snap.multistream_outputs || []),
         relay: {
           enabled: (mode === "irl") || !!(relay.status && relay.status !== "inactive"),
-          active: !!(relay.status && relay.status !== "inactive" && relay.status !== "stopped"),
+          active: !!(relay.status && relay.status !== "inactive" && relay.status !== "stopped" && relay.status !== "provisioning"),
           status: relay.status || "inactive",
           region: relay.region || null,
           latencyMs: snap.relay_rtt_ms != null ? snap.relay_rtt_ms : (snap.rtt_ms != null ? snap.rtt_ms : null),
