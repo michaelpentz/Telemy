@@ -12,14 +12,15 @@ Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/sr
 |-----------|---------|
 | Amazon Linux 2023 | Base OS (x86_64 or aarch64) |
 | Docker + Compose | Container runtime |
-| srtla-receiver | SRTLA bonded SRT relay (Docker containers) |
+| srtla-receiver | Bonded SRT relay (Custom fork: `ghcr.io/michaelpentz/srtla-receiver:latest`) |
 
 srtla-receiver provides:
 - **SRTLA bonded ingest** — accepts bonded connections from IRL Pro
 - **SRT player output** — single SRT stream for OBS consumption
 - **SRT direct sender** — non-bonded SRT fallback
 - **Management UI** — web UI for stream creation and monitoring
-- **Backend API** — REST API for programmatic control
+- **Backend API** — REST API for aggregate stats (port 8090)
+- **Per-Link API** — REST API for individual connection stats (port 5080)
 
 ## Port Map
 
@@ -30,7 +31,8 @@ srtla-receiver provides:
 | 4000 | UDP | SRT player (SLS output for OBS) | 0.0.0.0/0 |
 | 22   | TCP | SSH Access (Diagnostics) | 0.0.0.0/0 (or admin IP) |
 | 3000 | TCP | SLS Management UI | Control plane IP only |
-| 8090 | TCP | srtla-receiver Backend API | Control plane IP only |
+| 8090 | TCP | SLS Backend API (Aggregate stats) | Control plane IP only |
+| 5080 | TCP | Per-link Stats API (srtla_rec) | Control plane IP only |
 
 **Note:** `srtla_rec` acts as a raw UDP proxy on port 5000, forwarding bonded traffic to `localhost:4001` where SLS handles the SRT session.
 
@@ -40,7 +42,7 @@ Security group: `aegis-relay-sg` (`sg-0da8cf50c2fd72518`)
 
 - **UDP 4000-5000**: Open to all (`0.0.0.0/0`) for dynamic cellular ingest.
 - **TCP 22**: Open for SSH diagnostics using `aegis-relay-key.pem`.
-- **TCP 3000, 8090**: Restricted to control plane IP (`<redacted-ec2-ip>/32`).
+- **TCP 3000, 8090, 5080**: Restricted to control plane IP (`<redacted-ec2-ip>/32`).
 
 ## SSH Access
 
