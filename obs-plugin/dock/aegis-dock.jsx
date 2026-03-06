@@ -466,7 +466,8 @@ export default function AegisDock() {
   const bondedKbps = bitrate.bondedKbps || 0;
   const relayBondedKbps = relay.statsAvailable ? relay.ingestBitrateKbps : (bitrate.relayBondedKbps || bondedKbps);
   // Relay connection URLs (for copy-to-clipboard)
-  const relayIngestUrl = relay.publicIp ? "srtla://" + relay.publicIp + ":" + (relay.srtPort || 5000) : null;
+  const relayIngestHost = relay.relayHostname || relay.publicIp;
+  const relayIngestUrl = relayIngestHost ? "srtla://" + relayIngestHost + ":" + (relay.srtPort || 5000) : null;
   const relayObsPlayUrl = relay.publicIp ? "srt://" + relay.publicIp + ":4000?streamid=play_aegis" : null;
   // Encoders & Uploads — per-output grouped data
   const encoderOutputs = ds.outputs || { groups: [], hidden: [] };

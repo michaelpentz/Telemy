@@ -23,6 +23,7 @@ type Session struct {
 	PublicIP           string
 	SRTPort            int
 	WSURL              string
+	RelayHostname      string
 	StartedAt          time.Time
 	StoppedAt          *time.Time
 	DurationSeconds    int

@@ -12,6 +12,7 @@ import (
 
 	"github.com/telemyapp/aegis-control-plane/internal/auth"
 	"github.com/telemyapp/aegis-control-plane/internal/config"
+	"github.com/telemyapp/aegis-control-plane/internal/dns"
 	"github.com/telemyapp/aegis-control-plane/internal/metrics"
 	"github.com/telemyapp/aegis-control-plane/internal/model"
 	"github.com/telemyapp/aegis-control-plane/internal/relay"
@@ -27,16 +28,18 @@ type Store interface {
 	GetUsageCurrent(rctx context.Context, userID string) (*model.UsageCurrent, error)
 	RecordRelayHealth(rctx context.Context, in store.RelayHealthInput) error
 	ListRelayManifest(rctx context.Context) ([]model.RelayManifestEntry, error)
+	GetUserRelaySlug(ctx context.Context, userID string) (string, error)
 }
 
 type Server struct {
 	cfg         config.Config
 	store       Store
 	provisioner relay.Provisioner
+	dns         *dns.Client
 }
 
-func NewRouter(cfg config.Config, st Store, prov relay.Provisioner) http.Handler {
-	s := &Server{cfg: cfg, store: st, provisioner: prov}
+func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *dns.Client) http.Handler {
+	s := &Server{cfg: cfg, store: st, provisioner: prov, dns: dnsClient}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
