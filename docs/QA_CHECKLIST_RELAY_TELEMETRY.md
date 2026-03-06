@@ -45,7 +45,7 @@ This checklist verifies the flow of per-link SRT stats from the Aegis Relay to t
 
 ## 8. Test Cases (v0.0.4)
 
-### TC-RELAY-001: IRL Pro Bonded Stream
+### TC-RELAY-001: IRL Pro Bonded Stream (Aggregate)
 - **Description**: Verify aggregate stats for a bonded multi-link stream.
 - **Setup**: IRL Pro connected via `srtla://` using both WiFi and Cellular links.
 - **Steps**:
@@ -56,4 +56,23 @@ This checklist verifies the flow of per-link SRT stats from the Aegis Relay to t
     - [x] Bitrate bar shows aggregate throughput (e.g., 4.6 Mbps).
     - [x] RTT, Latency, and Loss pills show real-time values from the relay.
     - [x] Stats update every 2 seconds.
-- **Notes**: Per-link stats (WiFi vs Cellular) are currently unavailable due to `srtla_rec` limitations.
+- **Status**: PASSED (2026-03-05)
+
+### TC-RELAY-002: Per-Link Telemetry (Bonded)
+- **Description**: Verify individual link contributions and health indicators.
+- **Setup**: IRL Pro connected via `srtla://` using at least two active links (e.g., WiFi + 5G).
+- **Steps**:
+    1. Start relay via Dock UI.
+    2. Start IRL Pro stream with two links active.
+    3. Monitor "Relay Ingest" card in OBS Dock.
+    4. Disconnect one link (e.g., disable WiFi on phone).
+    5. Re-enable the link.
+- **Expected Results**:
+    - [ ] `/stats` (port 5080) returns valid JSON with `groups[]` and `connections[]`.
+    - [ ] Individual `BitrateBar` elements appear for each active link in the Dock.
+    - [ ] `share_pct` for all links adds to ~100%.
+    - [ ] Link count badge (e.g., "2 LINKS") matches physical connections.
+    - [ ] Disconnected link fades in UI (`opacity` drop) after 3 seconds (`last_ms_ago > 3000`).
+    - [ ] Link disappears from UI if it remains stale for extended duration.
+    - [ ] Re-enabled link reappears with correct stats.
+

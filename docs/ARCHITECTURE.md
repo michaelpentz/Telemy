@@ -106,6 +106,24 @@ When a relay session is active, the plugin polls the relay's stats API for aggre
 
 **Network Requirement**: Port 8090 on the relay instance must be accessible from the OBS machine (Security Group rule required).
 
+### Per-Link Relay Telemetry
+
+v0.0.4 introduces deep visibility into the individual cellular/WiFi links contributing to a bonded stream:
+
+1. **Custom `srtla_rec` Fork** — The relay uses a custom fork (`michaelpentz/srtla`, forked from `OpenIRL/srtla`) which adds atomic per-connection byte and packet counters (`std::atomic<uint64_t>`, relaxed ordering) to the core SRTLA proxy logic.
+2. **HTTP Stats Server** — The fork includes a lightweight HTTP server listening on `--stats_port` (relay uses port 5080).
+3. **Stats Schema** — `GET /stats` returns a JSON object containing a `groups[]` array. Each group contains a `connections[]` list with:
+   - `addr`: Remote IP of the link.
+   - `bytes` / `pkts`: Total throughput counters.
+   - `share_pct`: Real-time percentage of total traffic carried by this link.
+   - `last_ms_ago`: Milliseconds since the last packet was received on this link (stale detection).
+   - `uptime_s`: Duration the link has been active.
+4. **Relay Stack Integration** — The `ghcr.io/michaelpentz/srtla-receiver:latest` Docker image (forked from `OpenIRL/srtla-receiver`) runs this modified binary, with `supervisord` passing `--stats_port=5080`.
+5. **Plugin Polling** — `PollPerLinkStats()` in the C++ plugin polls the relay's port 5080 every ~2s.
+6. **UI Visualization** — The Dock UI renders a dynamic `BitrateBar` for each link, showing its relative share %. Links with `last_ms_ago > 3000` are rendered with reduced opacity to indicate staleness.
+
+**Data Flow Summary**: `srtla_rec` counters -> HTTP `/stats` -> C++ `PollPerLinkStats` -> JSON snapshot -> CEF JS -> Dock BitrateBar.
+
 ### UI Actions (Upstream)
 
 ```
