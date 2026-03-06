@@ -9,8 +9,8 @@ export function useSimulatedState() {
   const [mode, setMode] = useState("irl");
   const [simRelayActive, setSimRelayActive] = useState(true);
   const [simRelayData, setSimRelayData] = useState({
-    relayHostname: "k7mx2p.relay.telemyapp.com",
-    ingestUrl: "srtla://k7mx2p.relay.telemyapp.com:5000",
+    relayHostname: "k7mx2p.telemyapp.com",
+    ingestUrl: "srtla://k7mx2p.telemyapp.com:5000",
     pairToken: "ABCD-1234-EFGH",
     region: "us-east-1",
   });
@@ -92,6 +92,24 @@ export function useSimulatedState() {
       wsUrl: null,
       graceWindowSeconds: null,
       maxSessionSeconds: null,
+      // SLS aggregate stats (simulated)
+      statsAvailable: simRelayActive,
+      ingestBitrateKbps: simRelayActive ? sim1 + sim2 : 0,
+      rttMs: simRelayActive ? 42 : null,
+      relayLatencyMs: simRelayActive ? 120 : null,
+      pktLoss: simRelayActive ? 234 : 0,
+      pktDrop: simRelayActive ? 3 : 0,
+      lossRate: simRelayActive ? 2 : 0,
+      recvRateMbps: simRelayActive ? (sim1 + sim2) / 1000 : null,
+      bandwidthMbps: simRelayActive ? 12.0 : null,
+      uptimeSeconds: simRelayActive ? elapsed : 0,
+      // Per-link simulated data
+      perLinkAvailable: simRelayActive,
+      connCount: simRelayActive ? 2 : 0,
+      links: simRelayActive ? [
+        { addr: "192.168.1.105:45032", bytes: Math.floor(sim1 * elapsed * 0.125), pkts: Math.floor(sim1 * elapsed * 0.125 / 1350), sharePct: sim1 / (sim1 + sim2) * 100, lastMsAgo: 12, uptimeS: elapsed },
+        { addr: "172.58.12.99:38201", bytes: Math.floor(sim2 * elapsed * 0.125), pkts: Math.floor(sim2 * elapsed * 0.125 / 1350), sharePct: sim2 / (sim1 + sim2) * 100, lastMsAgo: 8, uptimeS: elapsed },
+      ] : [],
     },
     failover: {
       health: "healthy",
@@ -141,8 +159,8 @@ export function useSimulatedState() {
         setTimeout(() => {
           setSimRelayActive(true);
           setSimRelayData({
-            relayHostname: "k7mx2p.relay.telemyapp.com",
-            ingestUrl: "srtla://k7mx2p.relay.telemyapp.com:5000",
+            relayHostname: "k7mx2p.telemyapp.com",
+            ingestUrl: "srtla://k7mx2p.telemyapp.com:5000",
             pairToken: "ABCD-1234-EFGH",
             region: "us-east-1",
           });

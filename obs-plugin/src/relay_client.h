@@ -2,6 +2,7 @@
 #include "https_client.h"
 #include <string>
 #include <optional>
+#include <vector>
 #include <atomic>
 #include <thread>
 #include <mutex>
@@ -16,7 +17,7 @@ struct RelaySession {
     std::string public_ip;
     int         srt_port = 9000;
     std::string ws_url;
-    std::string relay_hostname;  // e.g. "k7mx2p.relay.telemyapp.com"
+    std::string relay_hostname;  // e.g. "k7mx2p.telemyapp.com"
     std::string pair_token;
     int         grace_window_seconds = 0;
     int         max_session_seconds = 0;
@@ -32,6 +33,21 @@ struct RelayStats {
     double   bandwidth_mbps = 0.0;
     uint32_t latency_ms = 0;
     uint32_t uptime_seconds = 0;
+};
+
+struct PerLinkStats {
+    std::string addr;
+    uint64_t bytes = 0;
+    uint64_t pkts = 0;
+    double share_pct = 0.0;
+    uint32_t last_ms_ago = 0;
+    uint32_t uptime_s = 0;
+};
+
+struct PerLinkSnapshot {
+    bool available = false;
+    int conn_count = 0;
+    std::vector<PerLinkStats> links;
 };
 
 class RelayClient {
@@ -69,6 +85,10 @@ public:
     void PollRelayStats(const std::string& relay_ip);
     RelayStats CurrentStats() const;
 
+    // Per-link stats polling (srtla_rec fork)
+    void PollPerLinkStats(const std::string& relay_ip);
+    PerLinkSnapshot CurrentPerLinkStats() const;
+
 private:
     HttpsClient& http_;
     std::wstring api_host_w_;  // wide string for WinHTTP
@@ -86,6 +106,9 @@ private:
 
     RelayStats         stats_;
     mutable std::mutex stats_mutex_;
+
+    PerLinkSnapshot    per_link_;
+    mutable std::mutex per_link_mutex_;
 
     // UUID v4 generation
     static std::string GenerateUuidV4();
