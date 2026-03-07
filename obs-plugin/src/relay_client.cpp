@@ -88,6 +88,7 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     QJsonObject timers = obj["timers"].toObject();
     session.grace_window_seconds = timers["grace_window_seconds"].toInt(0);
     session.max_session_seconds = timers["max_session_seconds"].toInt(0);
+    session.provision_step = obj["provision_step"].toString().toStdString();
 
     // Reject if session_id is empty — indicates a malformed response.
     if (session.session_id.empty()) {
@@ -477,6 +478,7 @@ void RelayClient::PollPerLinkStats(const std::string& relay_ip)
             QJsonObject c = connsArr[i].toObject();
             PerLinkStats link;
             link.addr = c.value("addr").toString().toStdString();
+            link.asn_org = c.value("asn_org").toString().toStdString();
             link.bytes = static_cast<uint64_t>(c.value("bytes").toDouble(0));
             link.pkts = static_cast<uint64_t>(c.value("pkts").toDouble(0));
             link.share_pct = c.value("share_pct").toDouble(0.0);

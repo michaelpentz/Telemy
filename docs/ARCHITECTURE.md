@@ -121,8 +121,21 @@ v0.0.4 introduces deep visibility into the individual cellular/WiFi links contri
 4. **Relay Stack Integration** — The `ghcr.io/michaelpentz/srtla-receiver:latest` Docker image (forked from `OpenIRL/srtla-receiver`) runs this modified binary, with `supervisord` passing `--stats_port=5080`.
 5. **Plugin Polling** — `PollPerLinkStats()` in the C++ plugin polls the relay's port 5080 every ~2s.
 6. **UI Visualization** — The Dock UI renders a dynamic `BitrateBar` for each link, showing its relative share %. Links with `last_ms_ago > 3000` are rendered with reduced opacity to indicate staleness.
+7. **ASN-Based Carrier Identification** — The custom `srtla_rec` fork optionally links against `libmaxminddb` to resolve each connection's source IP to its ASN organization name (e.g., "T-Mobile USA, Inc.", "AT&T Mobility"). The stats endpoint includes an `asn_org` field per connection when a GeoLite2-ASN database is available. The Dock UI maps ASN org names to short carrier labels (T-Mobile, AT&T, Verizon, etc.) for display. Private IP addresses (RFC 1918) are always labeled "WiFi" regardless of ASN. When ASN data is unavailable, the UI falls back to IP-range heuristics.
 
 **Data Flow Summary**: `srtla_rec` counters -> HTTP `/stats` -> C++ `PollPerLinkStats` -> JSON snapshot -> CEF JS -> Dock BitrateBar.
+
+### Relay Provision Progress
+
+v0.0.4 provides real-time provisioning feedback instead of a static "Provisioning relay..." message:
+
+1. **Async Pipeline** — `handleRelayStart` in the Go control plane returns immediately with `status: "provisioning"`, then launches `runProvisionPipeline()` as a background goroutine.
+2. **Step Tracking** — The pipeline updates a `provision_step` column in the sessions table as it progresses through six steps: `launching_instance` → `waiting_for_instance` → `starting_docker` → `starting_containers` → `creating_stream` → `ready`.
+3. **Step Dwell** — Each step has a minimum 3-second dwell time so clients polling at 2s intervals see each step.
+4. **Plugin Polling** — After `relay_start`, the C++ plugin polls `GET /relay/active` every 2s, reads `provision_step` from the response, and emits `relay_provision_progress` events to the dock.
+5. **Dock UI** — `RelayProvisionProgress` component shows the current step label, step counter (N/6), animated progress bar, and blinking dots. Transitions smoothly from "Ready 6/6" to the active relay display.
+
+**Data Flow**: Go pipeline → DB `provision_step` → API response → C++ polling → dock event → React progress bar.
 
 ### UI Actions (Upstream)
 
@@ -192,10 +205,10 @@ Provisioned via Go control plane (`aegis-control-plane/`):
 ## Dock Source Management
 
 - **Source of truth**: `telemy-v0.0.4/obs-plugin/dock/`
-- **Runtime copies**: Root-level `E:/Code/telemyapp/` (OBS reads from here)
+- **OBS reads from**: `obs-plugin/dock/` via `AEGIS_DOCK_BRIDGE_ROOT` env var
 - **Build command**:
   ```bash
-  cd E:/Code/telemyapp && NODE_PATH=dock-preview/node_modules npx esbuild aegis-dock-entry.jsx --bundle --format=iife --jsx=automatic --outfile=aegis-dock-app.js --target=es2020 --minify
+  cd obs-plugin/dock && NODE_PATH=../../../dock-preview/node_modules npx esbuild aegis-dock-entry.jsx --bundle --format=iife --jsx=automatic --outfile=aegis-dock-app.js --target=es2020 --minify
   ```
 
 ## Build System

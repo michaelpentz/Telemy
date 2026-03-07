@@ -496,6 +496,52 @@ std::string JsStringLiteral(const std::string& input) {
     return std::string("\"") + JsonEscape(input) + "\"";
 }
 
+struct ProvisionStepInfo {
+    int number = 0;
+    const char* label = "";
+};
+
+ProvisionStepInfo stepToInfo(const std::string& step) {
+    if (step == "launching_instance") {
+        return {1, "Launching instance..."};
+    }
+    if (step == "waiting_for_instance") {
+        return {2, "Waiting for instance..."};
+    }
+    if (step == "starting_docker") {
+        return {3, "Starting services..."};
+    }
+    if (step == "starting_containers") {
+        return {4, "Starting containers..."};
+    }
+    if (step == "creating_stream") {
+        return {5, "Creating stream..."};
+    }
+    if (step == "ready") {
+        return {6, "Ready"};
+    }
+    return {};
+}
+
+std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session) {
+    std::ostringstream detail;
+    detail << "{\"session_id\":\"" << JsonEscape(session.session_id) << "\""
+           << ",\"status\":\"" << JsonEscape(session.status) << "\""
+           << ",\"region\":\"" << JsonEscape(session.region) << "\""
+           << ",\"public_ip\":\"" << JsonEscape(session.public_ip) << "\""
+           << ",\"srt_port\":" << session.srt_port
+           << ",\"pair_token\":\"" << JsonEscape(session.pair_token) << "\""
+           << ",\"ws_url\":\"" << JsonEscape(session.ws_url) << "\"";
+    if (!session.relay_hostname.empty()) {
+        detail << ",\"relay_hostname\":\"" << JsonEscape(session.relay_hostname) << "\"";
+    }
+    detail << ",\"grace_window_seconds\":" << session.grace_window_seconds
+           << ",\"max_session_seconds\":" << session.max_session_seconds
+           << ",\"provision_step\":\"" << JsonEscape(session.provision_step) << "\""
+           << "}";
+    return detail.str();
+}
+
 std::string BuildDockSceneSnapshotPayloadJson(
     const char* reason,
     const std::vector<std::string>& scene_names,
@@ -2297,27 +2343,93 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
             try {
                 auto session = g_relay->Start(jwt);
                 if (session) {
-                    g_relay->StartHeartbeatLoop(jwt, session->session_id, heartbeat_interval);
-                    blog(LOG_INFO,
-                        "[aegis-obs-plugin] relay_start completed: request_id=%s session_id=[redacted] region=%s status=%s",
-                        req_id.c_str(),
-                        session->region.c_str(),
-                        session->status.c_str());
-                    std::ostringstream detail;
-                    detail << "{\"session_id\":\"" << JsonEscape(session->session_id) << "\""
-                           << ",\"status\":\"" << JsonEscape(session->status) << "\""
-                           << ",\"region\":\"" << JsonEscape(session->region) << "\""
-                           << ",\"public_ip\":\"" << JsonEscape(session->public_ip) << "\""
-                           << ",\"srt_port\":" << session->srt_port
-                           << ",\"pair_token\":\"" << JsonEscape(session->pair_token) << "\""
-                           << ",\"ws_url\":\"" << JsonEscape(session->ws_url) << "\"";
-                    if (!session->relay_hostname.empty()) {
-                        detail << ",\"relay_hostname\":\"" << JsonEscape(session->relay_hostname) << "\"";
+                    if (session->status == "provisioning") {
+                        EmitDockActionResult("relay_start", req_id, "provisioning", true, "",
+                                             BuildRelaySessionDetailJson(*session));
+
+                        const auto deadline =
+                            std::chrono::steady_clock::now() + std::chrono::seconds(180);
+                        while (std::chrono::steady_clock::now() < deadline) {
+                            auto polled = g_relay->GetActive(jwt);
+                            if (!polled) {
+                                const auto now = std::chrono::steady_clock::now();
+                                if (now >= deadline) {
+                                    break;
+                                }
+                                const auto remaining = deadline - now;
+                                const auto sleep_for = std::min(
+                                    std::chrono::seconds(2),
+                                    std::chrono::duration_cast<std::chrono::seconds>(remaining));
+                                std::this_thread::sleep_for(sleep_for);
+                                continue;
+                            }
+
+                            if (!polled->provision_step.empty()) {
+                                ProvisionStepInfo info = stepToInfo(polled->provision_step);
+                                std::ostringstream progress;
+                                progress << "{\"step\":\"" << JsonEscape(polled->provision_step) << "\""
+                                         << ",\"stepNumber\":" << info.number
+                                         << ",\"totalSteps\":6"
+                                         << ",\"label\":\"" << JsonEscape(info.label) << "\""
+                                         << "}";
+                                EmitDockActionResult("relay_provision_progress", req_id, "progress", true, "",
+                                                     progress.str());
+                            }
+
+                            if (polled->status == "active") {
+                                g_relay->StartHeartbeatLoop(jwt, polled->session_id, heartbeat_interval);
+                                blog(LOG_INFO,
+                                    "[aegis-obs-plugin] relay_start completed: request_id=%s session_id=[redacted] region=%s status=%s",
+                                    req_id.c_str(),
+                                    polled->region.c_str(),
+                                    polled->status.c_str());
+                                EmitDockActionResult("relay_start", req_id, "completed", true, "",
+                                                     BuildRelaySessionDetailJson(*polled));
+                                return;
+                            }
+
+                            if (polled->status == "failed" || polled->status == "stopped") {
+                                blog(LOG_WARNING,
+                                    "[aegis-obs-plugin] relay_start failed: request_id=%s error=relay_start_failed",
+                                    req_id.c_str());
+                                EmitDockActionResult("relay_start", req_id, "failed", false,
+                                                     "relay_start_failed", "");
+                                return;
+                            }
+
+                            const auto now = std::chrono::steady_clock::now();
+                            if (now >= deadline) {
+                                break;
+                            }
+                            const auto remaining = deadline - now;
+                            const auto sleep_for = std::min(
+                                std::chrono::seconds(2),
+                                std::chrono::duration_cast<std::chrono::seconds>(remaining));
+                            std::this_thread::sleep_for(sleep_for);
+                        }
+
+                        blog(LOG_WARNING,
+                            "[aegis-obs-plugin] relay_start failed: request_id=%s error=provision_timeout",
+                            req_id.c_str());
+                        EmitDockActionResult("relay_start", req_id, "failed", false, "provision_timeout", "");
+                        return;
                     }
-                    detail << ",\"grace_window_seconds\":" << session->grace_window_seconds
-                           << ",\"max_session_seconds\":" << session->max_session_seconds
-                           << "}";
-                    EmitDockActionResult("relay_start", req_id, "completed", true, "", detail.str());
+
+                    if (session->status == "active") {
+                        g_relay->StartHeartbeatLoop(jwt, session->session_id, heartbeat_interval);
+                        blog(LOG_INFO,
+                            "[aegis-obs-plugin] relay_start completed: request_id=%s session_id=[redacted] region=%s status=%s",
+                            req_id.c_str(),
+                            session->region.c_str(),
+                            session->status.c_str());
+                        EmitDockActionResult("relay_start", req_id, "completed", true, "",
+                                             BuildRelaySessionDetailJson(*session));
+                    } else {
+                        blog(LOG_WARNING,
+                            "[aegis-obs-plugin] relay_start failed: request_id=%s error=relay_start_failed",
+                            req_id.c_str());
+                        EmitDockActionResult("relay_start", req_id, "failed", false, "relay_start_failed", "");
+                    }
                 } else {
                     blog(LOG_WARNING,
                         "[aegis-obs-plugin] relay_start failed: request_id=%s error=relay_start_failed",

@@ -1,9 +1,7 @@
 #!/bin/bash
-# OpenIRL srtla-receiver auto-setup for Aegis relay instances
-# Passed as EC2 user-data by the control plane provisioner
-#
-# Target: Amazon Linux 2023 (AL2023) on t3.small (x86_64) or t4g.small (aarch64)
-# Installs Docker + Docker Compose, then runs srtla-receiver containers
+# Aegis relay bootstrap for pre-baked AMI (aegis-relay-v1)
+# AMI includes: Docker, Docker Compose, pre-pulled container images
+# This script only writes config, starts containers, and creates the stream.
 #
 # Port map:
 #   UDP 5000  SRTLA bonded ingest (IRL Pro connects here)
@@ -15,29 +13,11 @@
 
 set -euo pipefail
 exec > /var/log/srtla-setup.log 2>&1
-echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup starting"
+echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup starting (pre-baked AMI)"
 
-# Install Docker
-dnf update -y
-dnf install -y docker
-systemctl enable docker
+# Docker + Compose already installed in AMI; just ensure Docker is running
 systemctl start docker
 
-# Install Docker Compose plugin
-DOCKER_COMPOSE_VERSION="v2.27.0"
-ARCH=$(uname -m)
-mkdir -p /usr/local/lib/docker/cli-plugins
-curl -SL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${ARCH}" \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-curl -SL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${ARCH}.sha256" \
-  -o /tmp/docker-compose.sha256
-echo "$(cat /tmp/docker-compose.sha256)  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c -
-chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
-echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') Docker installed, setting up srtla-receiver"
-
-# Setup srtla-receiver
-mkdir -p /opt/srtla-receiver/data
 cd /opt/srtla-receiver
 
 # Write docker-compose with custom srtla-receiver image (per-link stats)
@@ -91,10 +71,7 @@ APP_URL=http://localhost
 # Per-link stats exposed on port 5080 (hardcoded in compose, not variable)
 ENVEOF
 
-# Set ownership for SLS data dir (srtla-receiver expects uid 3001)
-chown -R 3001:3001 /opt/srtla-receiver/data
-
-# Start containers
+# Start containers (images pre-pulled in AMI, no download needed)
 docker compose up -d
 
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver containers started"

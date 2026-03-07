@@ -152,6 +152,7 @@
       relayCache: null, // cached relay session data from relay_start action result
       relayError: null, // last relay_start error (cleared on next relay_start attempt)
       relayErrorTs: 0,  // timestamp of last relay error
+      relayProvisionStep: null, // { step, stepNumber, totalSteps, label }
       prevPktLoss: 0,   // previous pktLoss for delta rate calculation
       prevPktLossTs: 0, // timestamp of previous pktLoss sample
       lossRate: 0,      // packets lost per second (smoothed)
@@ -334,6 +335,7 @@
           licensed: true, // placeholder — future: OAuth gate derives from subscription status
           lastError: plugin.relayError || null,
           lastErrorTs: plugin.relayErrorTs || 0,
+          relayProvisionStep: plugin.relayProvisionStep || null,
           // SLS relay telemetry (aggregate bonded stream)
           // Compute loss rate (pkt/s) from cumulative delta
           lossRate: (function() {
@@ -466,10 +468,28 @@
         if (result.actionType === "relay_start" && !result.ok) {
           plugin.relayError = result.error || result.status || "relay_start_failed";
           plugin.relayErrorTs = nowMs();
+          plugin.relayProvisionStep = null;
         }
         if (result.actionType === "relay_start" && result.ok) {
           plugin.relayError = null;
           plugin.relayErrorTs = 0;
+          // Don't clear relayProvisionStep here — let it persist until relayActive hides the block
+        }
+        // Handle provision progress events embedded in action results
+        if (result.actionType === "relay_provision_progress") {
+          // detail comes as a JSON string from C++ — parse it
+          var pd = result;
+          if (typeof result.detail === "string" && result.detail) {
+            try { pd = JSON.parse(result.detail); } catch (_e) {}
+          } else if (typeof result.detail === "object" && result.detail) {
+            pd = result.detail;
+          }
+          plugin.relayProvisionStep = {
+            step: pd.step || "",
+            stepNumber: pd.stepNumber || 0,
+            totalSteps: pd.totalSteps || 6,
+            label: pd.label || "",
+          };
         }
 
         // Cache relay session data from relay_start result for immediate UI update

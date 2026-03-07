@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"slices"
@@ -95,78 +96,11 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if created {
-		compensateStop := func() {
-			if _, stopErr := s.store.StopSession(r.Context(), userID, sess.ID); stopErr != nil {
-				log.Printf("relay_start_compensation stop_session_failed session_id=%s user_id=%s err=%v", sess.ID, userID, stopErr)
-			}
+		if err := s.store.UpdateProvisionStep(r.Context(), sess.ID, model.StepLaunchingInstance); err != nil {
+			log.Printf("relay_start: failed setting initial provision step session_id=%s err=%v", sess.ID, err)
 		}
-
-		provisionStart := time.Now()
-		prov, err := s.provisioner.Provision(r.Context(), relay.ProvisionRequest{
-			SessionID: sess.ID,
-			UserID:    userID,
-			Region:    sess.Region,
-		})
-		durMS := float64(time.Since(provisionStart).Milliseconds())
-		labels := map[string]string{
-			"provider": s.cfg.RelayProvider,
-			"region":   sess.Region,
-		}
-		if err != nil {
-			log.Printf("metric=relay_provision_latency_ms session_id=%s user_id=%s region=%s value=%d status=error", sess.ID, userID, sess.Region, time.Since(provisionStart).Milliseconds())
-			labels["status"] = "error"
-			metrics.Default().IncCounter("aegis_relay_provision_total", labels)
-			metrics.Default().ObserveHistogram("aegis_relay_provision_latency_ms", durMS, labels)
-			compensateStop()
-			writeAPIError(w, http.StatusInternalServerError, "internal_error", "relay provisioning failed")
-			return
-		}
-		log.Printf("metric=relay_provision_latency_ms session_id=%s user_id=%s region=%s value=%d status=ok", sess.ID, userID, sess.Region, time.Since(provisionStart).Milliseconds())
-		labels["status"] = "ok"
-		metrics.Default().IncCounter("aegis_relay_provision_total", labels)
-		metrics.Default().ObserveHistogram("aegis_relay_provision_latency_ms", durMS, labels)
-
-		pairToken, err := generatePairToken(8)
-		if err != nil {
-			s.compensateRelayStartProvisioned(r.Context(), sess, userID, prov)
-			writeAPIError(w, http.StatusInternalServerError, "internal_error", "token generation failed")
-			return
-		}
-		relayWSToken, err := generateRelayWSToken()
-		if err != nil {
-			s.compensateRelayStartProvisioned(r.Context(), sess, userID, prov)
-			writeAPIError(w, http.StatusInternalServerError, "internal_error", "token generation failed")
-			return
-		}
-
-		activatedSess, err := s.store.ActivateProvisionedSession(r.Context(), store.ActivateProvisionedSessionInput{
-			UserID:        userID,
-			SessionID:     sess.ID,
-			Region:        sess.Region,
-			AWSInstanceID: prov.AWSInstanceID,
-			AMIID:         prov.AMIID,
-			InstanceType:  prov.InstanceType,
-			PublicIP:      prov.PublicIP,
-			SRTPort:       prov.SRTPort,
-			WSURL:         prov.WSURL,
-			PairToken:     pairToken,
-			RelayWSToken:  relayWSToken,
-		})
-		if err != nil {
-			s.compensateRelayStartProvisioned(r.Context(), sess, userID, prov)
-			writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to activate relay session")
-			return
-		}
-		sess = activatedSess
-
-		// Create DNS record for relay subdomain
-		if slug, slugErr := s.store.GetUserRelaySlug(r.Context(), userID); slugErr == nil && slug != "" {
-			if dnsErr := s.dns.CreateOrUpdateRecord(slug, prov.PublicIP); dnsErr != nil {
-				log.Printf("dns: create record failed session_id=%s slug=%s err=%v", sess.ID, slug, dnsErr)
-			} else {
-				sess.RelayHostname = s.dns.FQDN(slug)
-			}
-		}
+		sess.ProvisionStep = model.StepLaunchingInstance
+		go s.runProvisionPipeline(sess.ID, sess.UserID, sess.Region)
 	}
 
 	status := http.StatusOK
@@ -187,6 +121,173 @@ func (s *Server) compensateRelayStartProvisioned(ctx context.Context, sess *mode
 	}
 	if _, stopErr := s.store.StopSession(ctx, userID, sess.ID); stopErr != nil {
 		log.Printf("relay_start_compensation stop_session_failed session_id=%s user_id=%s err=%v", sess.ID, userID, stopErr)
+	}
+}
+
+func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepLaunchingInstance); err != nil {
+		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepLaunchingInstance, err)
+	}
+
+	provisionStart := time.Now()
+	prov, err := s.provisioner.Provision(ctx, relay.ProvisionRequest{
+		SessionID: sessionID,
+		UserID:    userID,
+		Region:    region,
+	})
+	durMS := float64(time.Since(provisionStart).Milliseconds())
+	labels := map[string]string{
+		"provider": s.cfg.RelayProvider,
+		"region":   region,
+	}
+	if err != nil {
+		log.Printf("metric=relay_provision_latency_ms session_id=%s user_id=%s region=%s value=%d status=error", sessionID, userID, region, time.Since(provisionStart).Milliseconds())
+		labels["status"] = "error"
+		metrics.Default().IncCounter("aegis_relay_provision_total", labels)
+		metrics.Default().ObserveHistogram("aegis_relay_provision_latency_ms", durMS, labels)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, "")
+		return
+	}
+	log.Printf("metric=relay_provision_latency_ms session_id=%s user_id=%s region=%s value=%d status=ok", sessionID, userID, region, time.Since(provisionStart).Milliseconds())
+	labels["status"] = "ok"
+	metrics.Default().IncCounter("aegis_relay_provision_total", labels)
+	metrics.Default().ObserveHistogram("aegis_relay_provision_latency_ms", durMS, labels)
+
+	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepWaitingForInstance); err != nil {
+		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepWaitingForInstance, err)
+	}
+	// Minimum dwell so clients polling at 2s can see each step
+	stepDwell(ctx, 3*time.Second)
+
+	pairToken, err := generatePairToken(8)
+	if err != nil {
+		log.Printf("provision_pipeline: pair_token_failed session_id=%s err=%v", sessionID, err)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		return
+	}
+	relayWSToken, err := generateRelayWSToken()
+	if err != nil {
+		log.Printf("provision_pipeline: relay_ws_token_failed session_id=%s err=%v", sessionID, err)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		return
+	}
+
+	if _, err := s.store.ActivateProvisionedSession(ctx, store.ActivateProvisionedSessionInput{
+		UserID:        userID,
+		SessionID:     sessionID,
+		Region:        region,
+		AWSInstanceID: prov.AWSInstanceID,
+		AMIID:         prov.AMIID,
+		InstanceType:  prov.InstanceType,
+		PublicIP:      prov.PublicIP,
+		SRTPort:       prov.SRTPort,
+		WSURL:         prov.WSURL,
+		PairToken:     pairToken,
+		RelayWSToken:  relayWSToken,
+	}); err != nil {
+		log.Printf("provision_pipeline: activate_failed session_id=%s err=%v", sessionID, err)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		return
+	}
+
+	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepStartingDocker); err != nil {
+		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepStartingDocker, err)
+	}
+	stepDwell(ctx, 3*time.Second)
+	healthURL := fmt.Sprintf("http://%s:8090/health", prov.PublicIP)
+	if !s.probeUntilReady(ctx, healthURL) {
+		log.Printf("provision_pipeline: health_probe_timeout session_id=%s", sessionID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		return
+	}
+
+	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepStartingContainers); err != nil {
+		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepStartingContainers, err)
+	}
+	stepDwell(ctx, 3*time.Second)
+
+	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepCreatingStream); err != nil {
+		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepCreatingStream, err)
+	}
+	stepDwell(ctx, 3*time.Second)
+
+	// Stream is auto-created by user-data script shortly after containers start.
+	// Probe /health again to confirm the backend is still responsive (no auth needed).
+	if !s.probeUntilReady(ctx, healthURL) {
+		log.Printf("provision_pipeline: post_stream_health_probe_timeout session_id=%s", sessionID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		return
+	}
+
+	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepReady); err != nil {
+		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepReady, err)
+	}
+	// Let clients see "Ready 6/6" before flipping to active
+	stepDwell(ctx, 3*time.Second)
+
+	if slug, slugErr := s.store.GetUserRelaySlug(ctx, userID); slugErr == nil && slug != "" {
+		if dnsErr := s.dns.CreateOrUpdateRecord(slug, prov.PublicIP); dnsErr != nil {
+			log.Printf("dns: create record failed session_id=%s slug=%s err=%v", sessionID, slug, dnsErr)
+		}
+	}
+
+	const activateQ = `update sessions set status = 'active', provision_step = 'ready', updated_at = now() where id = $1 and status = 'provisioning'`
+	if _, err := s.store.DB().Exec(ctx, activateQ, sessionID); err != nil {
+		log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
+		return
+	}
+	log.Printf("provision_pipeline: completed session_id=%s", sessionID)
+}
+
+// stepDwell pauses so clients polling at 2s intervals can see each provision step.
+func stepDwell(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
+}
+
+func (s *Server) probeUntilReady(ctx context.Context, url string) bool {
+	client := &http.Client{Timeout: 3 * time.Second}
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
+
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return true
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+func (s *Server) deprovisionAndStop(ctx context.Context, sessionID, userID, region, instanceID string) {
+	if instanceID != "" {
+		if err := s.provisioner.Deprovision(ctx, relay.DeprovisionRequest{
+			SessionID:     sessionID,
+			UserID:        userID,
+			Region:        region,
+			AWSInstanceID: instanceID,
+		}); err != nil {
+			log.Printf("provision_pipeline: deprovision_failed session_id=%s err=%v", sessionID, err)
+		}
+	}
+	if _, err := s.store.StopSession(ctx, userID, sessionID); err != nil {
+		log.Printf("provision_pipeline: stop_failed session_id=%s err=%v", sessionID, err)
 	}
 }
 
@@ -411,6 +512,9 @@ func toSessionResponse(sess *model.Session) map[string]any {
 			"grace_window_seconds": sess.GraceWindowSeconds,
 			"max_session_seconds":  sess.MaxSessionSeconds,
 		},
+	}
+	if sess.ProvisionStep != "" {
+		resp["provision_step"] = sess.ProvisionStep
 	}
 	return resp
 }

@@ -34,6 +34,48 @@ import {
 // MAIN DOCK COMPONENT
 // =============================================================================
 
+function ProvisionDots() {
+  return (
+    <span>
+      <span style={{ animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0s" }}>.</span>
+      <span style={{ animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0.2s" }}>.</span>
+      <span style={{ animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0.4s" }}>.</span>
+    </span>
+  );
+}
+
+function RelayProvisionProgress({ step }) {
+  const hasStep = step && step.stepNumber > 0;
+  const pct = hasStep ? Math.round((step.stepNumber / step.totalSteps) * 100) : 0;
+  return (
+    <div style={{
+      background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "10px 10px",
+      border: "1px solid #d2992240",
+    }}>
+      <div style={{ fontSize: 10, color: "#d29922", fontWeight: 600 }}>
+        {hasStep ? step.label : "Provisioning relay"}
+        <ProvisionDots />
+      </div>
+      {hasStep && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 3 }}>
+            <span>Step {step.stepNumber} / {step.totalSteps}</span>
+            <span>{pct}%</span>
+          </div>
+          <div style={{ height: 3, borderRadius: 2, background: "var(--theme-border, #2a2d35)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: pct + "%", borderRadius: 2, background: "#d29922", transition: "width 0.4s ease" }} />
+          </div>
+        </div>
+      )}
+      {!hasStep && (
+        <div style={{ fontSize: 9, color: "var(--theme-text-muted, #8b8f98)", marginTop: 4, textAlign: "center" }}>
+          This may take a few minutes
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AegisDock() {
   const dockRootRef = useRef(null);
   const dockLayout = useDockCompactMode(dockRootRef);
@@ -478,7 +520,7 @@ export default function AegisDock() {
       const kbps = dt > 0.5 && prevBytes > 0
         ? Math.max(0, ((link.bytes - prevBytes) / dt) * 8 / 1000)
         : 0;
-      return { ...link, kbps, ...classifyLinkAddr(link.addr) };
+      return { ...link, kbps, ...classifyLinkAddr(link.addr, link.asn_org) };
     });
     const nextPrev = {};
     relay.links.forEach(l => { nextPrev[l.addr] = l.bytes; });
@@ -1282,33 +1324,6 @@ export default function AegisDock() {
 
         {/* ----- BITRATE ----- */}
         <Section title="Bitrate" icon="▥" defaultOpen={true} compact={isCompact}>
-          {/* Per-link bars only when relay active (cellular links available) */}
-          {/* Per-link bars from srtla_rec stats */}
-          {relayActive && perLinkThroughputs.length > 0 ? (
-            <>
-              {perLinkThroughputs.map((link, i) => (
-                <div key={link.addr} style={{ opacity: link.lastMsAgo > 3000 ? 0.4 : 1 }}>
-                  <BitrateBar
-                    value={link.kbps}
-                    max={Math.max(relayBondedKbps, 6000)}
-                    color={i === 0 ? "#2d7aed" : i === 1 ? "#8b5cf6" : "#e05d44"}
-                    label={`${link.label}  ${Math.round(link.sharePct)}%`}
-                  />
-                </div>
-              ))}
-              <BitrateBar value={relayBondedKbps} max={Math.max(relayBondedKbps * 1.5, 10000)} color="#2ea043" label="BONDED" />
-            </>
-          ) : relayActive && conns.length >= 2 ? (
-            <>
-              <BitrateBar value={animLink1} max={maxPerLink} color="#2d7aed"
-                label={conns[0]?.name?.split(" \u2014 ")[0] || "LINK 1"} />
-              <BitrateBar value={animLink2} max={maxPerLink} color="#8b5cf6"
-                label={conns[1]?.name?.split(" \u2014 ")[0] || "LINK 2"} />
-              <BitrateBar value={animBonded} max={maxBonded} color="#2ea043" label="BONDED" />
-              <BitrateBar value={animRelayBonded} max={maxBonded} color="#5ba3f5" label="AWS RELAY INGEST" />
-            </>
-          ) : null}
-
           {/* Threshold indicators */}
           <div style={{
             marginTop: 8, display: "grid", gridTemplateColumns: isUltraCompact ? "1fr" : "1fr 1fr",
@@ -1433,14 +1448,7 @@ export default function AegisDock() {
 
           {/* --- ACTIVATING state (explicit activating OR bridge reports provisioning) --- */}
           {relayLicensed && (relayActivating || relay.status === "provisioning") && !relayActive && (
-            <div style={{
-              background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "10px 10px",
-              border: "1px solid #d2992240", textAlign: "center",
-            }}>
-              <div style={{ fontSize: 10, color: "#d29922", fontWeight: 600 }}>
-                Provisioning relay&hellip; this may take a few minutes
-              </div>
-            </div>
+            <RelayProvisionProgress step={relay.relayProvisionStep} />
           )}
 
           {/* --- ERROR state --- */}
@@ -1553,6 +1561,22 @@ export default function AegisDock() {
                   </div>
                 </div>
               )}
+
+              {/* Per-link bonding bars (cellular/WiFi from srtla_rec stats) */}
+              {perLinkThroughputs.length > 0 ? (
+                <div style={{ marginBottom: 6 }}>
+                  {perLinkThroughputs.map((link, i) => (
+                    <div key={link.addr} style={{ opacity: link.lastMsAgo > 3000 ? 0.4 : 1 }}>
+                      <BitrateBar
+                        value={link.kbps}
+                        max={Math.max(relayBondedKbps, 6000)}
+                        color={i === 0 ? "#2d7aed" : i === 1 ? "#8b5cf6" : "#e05d44"}
+                        label={`${link.label}  ${Math.round(link.sharePct)}%`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               {/* Connection URLs — flat siblings, click-to-copy */}
               {relayIngestUrl && <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px", cursor: "pointer", fontFamily: "monospace", background: "var(--theme-surface, #13151a)", borderTop: "1px solid var(--theme-border, #2a2d35)", borderLeft: "1px solid var(--theme-border, #2a2d35)", borderRight: "1px solid var(--theme-border, #2a2d35)", borderRadius: "4px 4px 0 0", marginTop: 2 }} onClick={function() { cefCopyToClipboard(relayIngestUrl); }}>{"Ingest  " + relayIngestUrl + "  \u29C9"}</div>}

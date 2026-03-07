@@ -21,6 +21,7 @@ struct RelaySession {
     std::string pair_token;
     int         grace_window_seconds = 0;
     int         max_session_seconds = 0;
+    std::string provision_step;
 };
 
 struct RelayStats {
@@ -37,6 +38,7 @@ struct RelayStats {
 
 struct PerLinkStats {
     std::string addr;
+    std::string asn_org;
     uint64_t bytes = 0;
     uint64_t pkts = 0;
     double share_pct = 0.0;

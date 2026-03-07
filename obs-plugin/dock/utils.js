@@ -212,16 +212,61 @@ export function cefCopyToClipboard(text) {
   document.body.removeChild(ta);
 }
 
-/** Classify a link address as WiFi/LAN or Cellular based on IP range heuristic */
-export function classifyLinkAddr(addr) {
+/** Known ASN org → short label mapping */
+var ASN_SHORT_LABELS = {
+  "t-mobile": "T-Mobile",
+  "at&t": "AT&T",
+  "verizon": "Verizon",
+  "sprint": "Sprint",
+  "comcast": "Comcast",
+  "charter": "Charter",
+  "cox": "Cox",
+  "centurylink": "CenturyLink",
+  "spectrum": "Spectrum",
+  "vodafone": "Vodafone",
+  "ee limited": "EE",
+  "three": "Three",
+  "o2": "O2",
+  "telstra": "Telstra",
+  "optus": "Optus",
+  "rogers": "Rogers",
+  "bell": "Bell",
+  "telus": "TELUS",
+};
+
+/** Parse ASN org name to a short carrier label */
+export function shortCarrierLabel(asnOrg) {
+  if (!asnOrg) return null;
+  var lower = asnOrg.toLowerCase();
+  for (var key in ASN_SHORT_LABELS) {
+    if (lower.includes(key)) return ASN_SHORT_LABELS[key];
+  }
+  // Fallback: take the first word if reasonable length
+  var first = asnOrg.split(/[,\s]+/)[0];
+  if (first && first.length <= 12) return first;
+  return asnOrg.slice(0, 12);
+}
+
+/** Classify a link — uses ASN org from relay when available, falls back to IP heuristic */
+export function classifyLinkAddr(addr, asnOrg) {
   if (!addr) return { label: "Link", type: "unknown" };
   var ip = addr.split(":")[0];
-  if (ip.startsWith("10.") || ip.startsWith("192.168.") ||
-      (ip.startsWith("172.") && (function() {
-        var second = parseInt(ip.split(".")[1], 10);
-        return second >= 16 && second <= 31;
-      })())) {
+  var parts = ip.split(".");
+  var b0 = parseInt(parts[0], 10);
+  var b1 = parseInt(parts[1], 10);
+  // RFC 1918 private ranges → always WiFi regardless of ASN
+  if (b0 === 10 || (b0 === 192 && b1 === 168) ||
+      (b0 === 172 && b1 >= 16 && b1 <= 31)) {
     return { label: "WiFi", type: "wifi" };
   }
-  return { label: "Cell", type: "cellular" };
+  // Use ASN org label if available from relay
+  if (asnOrg) {
+    return { label: shortCarrierLabel(asnOrg), type: "cellular" };
+  }
+  // Fallback: IP heuristics
+  // T-Mobile: 172.56.x.x, 172.58.x.x
+  if (b0 === 172 && (b1 === 56 || b1 === 58)) return { label: "T-Mobile", type: "cellular" };
+  // CGNAT range (100.64-127.x.x) — typically mobile carrier
+  if (b0 === 100 && b1 >= 64 && b1 <= 127) return { label: "Mobile", type: "cellular" };
+  return { label: "Mobile", type: "cellular" };
 }
