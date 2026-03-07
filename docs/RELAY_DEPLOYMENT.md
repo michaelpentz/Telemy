@@ -38,11 +38,11 @@ srtla-receiver provides:
 
 ## Security Group
 
-Security group: `aegis-relay-sg` (`sg-0da8cf50c2fd72518`)
+Security group: `aegis-relay-sg` (`<RELAY_SG_ID>`)
 
 - **UDP 4000-5000**: Open to all (`0.0.0.0/0`) for dynamic cellular ingest.
 - **TCP 22**: Open for SSH diagnostics using `aegis-relay-key.pem`.
-- **TCP 3000, 8090, 5080**: Restricted to control plane IP (`52.13.2.122/32`).
+- **TCP 3000, 8090, 5080**: Restricted to control plane IP (`<CONTROL_PLANE_IP>/32`).
 
 ## SSH Access
 

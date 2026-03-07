@@ -790,13 +790,13 @@ git commit -m "feat: use custom srtla-receiver image with per-link stats port 50
 
 **Step 1: Find the security group ingress rules**
 
-Search for where TCP/UDP ports are added to the relay security group. The SG ID is `sg-0da8cf50c2fd72518`.
+Search for where TCP/UDP ports are added to the relay security group. The SG ID is `<RELAY_SG_ID>`.
 
 **Note:** The current code passes `SecurityGroup` as a pre-existing SG ID from config — ports are configured statically in the SG, not dynamically in Go code. So this is a **manual AWS Console/CLI step**:
 
 ```bash
 aws ec2 authorize-security-group-ingress \
-  --group-id sg-0da8cf50c2fd72518 \
+  --group-id <RELAY_SG_ID> \
   --protocol tcp --port 5080 --cidr 0.0.0.0/0 \
   --region us-west-2
 ```
@@ -1180,7 +1180,7 @@ In `use-simulated-state.js`, in the `relay` object inside the `useMemo` state bu
       connCount: simRelayActive ? 2 : 0,
       links: simRelayActive ? [
         { addr: "192.168.1.105:45032", bytes: Math.floor(sim1 * elapsed * 0.125), pkts: Math.floor(sim1 * elapsed * 0.125 / 1350), sharePct: sim1 / (sim1 + sim2) * 100, lastMsAgo: 12, uptimeS: elapsed },
-        { addr: "172.58.12.99:38201", bytes: Math.floor(sim2 * elapsed * 0.125), pkts: Math.floor(sim2 * elapsed * 0.125 / 1350), sharePct: sim2 / (sim1 + sim2) * 100, lastMsAgo: 8, uptimeS: elapsed },
+        { addr: "198.51.100.99:38201", bytes: Math.floor(sim2 * elapsed * 0.125), pkts: Math.floor(sim2 * elapsed * 0.125 / 1350), sharePct: sim2 / (sim1 + sim2) * 100, lastMsAgo: 8, uptimeS: elapsed },
       ] : [],
 ```
 
@@ -1392,7 +1392,7 @@ git commit -m "build: rebuild dock bundle with per-link telemetry UI"
 After all lanes complete:
 
 1. Deploy updated control plane binary (with updated relay-user-data.sh)
-2. Manually add port 5080 TCP to relay SG (`sg-0da8cf50c2fd72518`)
+2. Manually add port 5080 TCP to relay SG (`<RELAY_SG_ID>`)
 3. Build and deploy `aegis-obs-plugin.dll` to OBS
 4. Copy updated dock assets to OBS data dir
 5. Activate relay from dock UI

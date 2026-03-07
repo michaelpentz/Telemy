@@ -12,12 +12,12 @@
 
 ## Pre-requisite: Open port 8090 on relay security group
 
-**Manual step** — add TCP port 8090 ingress rule to SG `sg-0da8cf50c2fd72518` from `0.0.0.0/0`.
+**Manual step** — add TCP port 8090 ingress rule to SG `<RELAY_SG_ID>` from `0.0.0.0/0`.
 This is the SLS stats API port. Run once via AWS Console or CLI:
 
 ```bash
 aws ec2 authorize-security-group-ingress \
-  --group-id sg-0da8cf50c2fd72518 \
+  --group-id <RELAY_SG_ID> \
   --protocol tcp --port 8090 --cidr 0.0.0.0/0 \
   --region us-west-2
 ```

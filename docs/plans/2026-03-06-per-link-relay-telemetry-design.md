@@ -82,7 +82,7 @@ Response format:
           "uptime_s": 847
         },
         {
-          "addr": "172.58.12.99:38201",
+          "addr": "198.51.100.99:38201",
           "bytes": 71048320,
           "pkts": 52640,
           "share_pct": 45.7,
@@ -210,7 +210,7 @@ Add per-link array to dock state snapshot:
   "relay_conn_count": 2,
   "relay_links": [
     {"addr": "192.168.1.5:45032", "bytes": 84291072, "pkts": 62438, "share_pct": 54.3, "last_ms_ago": 12, "uptime_s": 847},
-    {"addr": "172.58.12.99:38201", "bytes": 71048320, "pkts": 52640, "share_pct": 45.7, "last_ms_ago": 8, "uptime_s": 845}
+    {"addr": "198.51.100.99:38201", "bytes": 71048320, "pkts": 52640, "share_pct": 45.7, "last_ms_ago": 8, "uptime_s": 845}
   ]
 }
 ```
@@ -241,7 +241,7 @@ When `relay.perLinkAvailable && relay.links.length > 0`, render per-link bars in
 
 ```
 WiFi  192.168.1.5     54%  3.2 Mbps  ██████████░░░
-Cell  172.58.12.99    46%  1.4 Mbps  ██████░░░░░░░
+Cell  198.51.100.99    46%  1.4 Mbps  ██████░░░░░░░
 ```
 
 Each bar shows:
