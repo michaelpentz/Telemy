@@ -18,6 +18,14 @@ export function getDockCss(theme) {
     0%, 100% { opacity: 0.7; }
     50% { opacity: 1; }
   }
+  @keyframes provisionPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  @keyframes dotBlink {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 1; }
+  }
   .aegis-dock-scroll::-webkit-scrollbar { width: 3px; }
   .aegis-dock-scroll::-webkit-scrollbar-track { background: transparent; }
   .aegis-dock-scroll::-webkit-scrollbar-thumb { background: ${theme.scrollbar}; border-radius: 2px; }

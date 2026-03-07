@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-This spec defines the Phase 2+ cloud API for `telemy-v0.0.3`.
+This spec defines the cloud API for the Telemy control plane. Originally written for v0.0.3, updated for v0.0.4 (all-native C++ plugin, no Rust).
 
 Implementation status note (workspace snapshot audited 2026-02-22, US/Pacific):
 - This document is the target v1 contract.
@@ -32,7 +32,7 @@ Current implementation note:
 
 Credentials:
 1. `cp_access_jwt`:
-- Used by Rust core for control-plane API calls.
+- Used by the C++ plugin (v0.0.4) or Rust core (v0.0.3) for control-plane API calls.
 - Sent as `Authorization: Bearer <jwt>`.
 
 2. `pair_token`:
@@ -52,7 +52,7 @@ Hard rule:
 
 Required on authenticated endpoints:
 - `Authorization: Bearer <cp_access_jwt>`
-- `X-Aegis-Client-Version: 0.0.3`
+- `X-Aegis-Client-Version: 0.0.4`
 - `X-Aegis-Client-Platform: windows`
 
 Required for relay start:
@@ -76,6 +76,7 @@ Current implementation note:
   "session_id": "ses_01JABCDEF...",
   "user_id": "usr_01JABCDEF...",
   "status": "provisioning|active|grace|stopped",
+  "provision_step": "launching_instance|waiting_for_instance|starting_docker|starting_containers|creating_stream|ready",
   "region": "us-east-1",
   "relay": {
     "instance_id": "i-0abc123...",
@@ -377,315 +378,156 @@ Current implementation note:
 - Breaking changes require `/api/v2`.
 - Additive fields are allowed in v1.
 - Unknown response fields must be ignored by clients.
-- Rust core must send `X-Aegis-Client-Version` for server-side compatibility policy.
+- C++ plugin must send `X-Aegis-Client-Version` for server-side compatibility policy.
 
 ---
 
-## 12. Per-Link Relay Telemetry (Planned)
+## 12. Per-Link Relay Telemetry (Implemented)
 
 ### Purpose
 
-When a streamer bonds multiple cellular/WiFi connections (e.g., T-Mobile 5G + Verizon 5G + venue WiFi) through the aegis relay, OBS currently only sees the bonded output. This feature surfaces per-link ingest health from the relay back to OBS so the streamer can see individual link quality in the dock.
+When a streamer bonds multiple cellular/WiFi connections through the relay, the dock surfaces individual link health so the streamer can identify weak links.
 
-### Data Flow
+### Actual Architecture (v0.0.4)
+
+The v0.0.4 implementation bypasses the control plane entirely for per-link stats, using direct HTTP polling from the C++ plugin to the relay's srtla stats server:
 
 ```
-Phone (T-Mo + VZW + WiFi)
-    │  SRT per-link feeds
+Phone (T-Mo + WiFi)
+    │  SRTLA bonded UDP
     ▼
-Aegis Relay (AWS, ephemeral)
-    │  bonds feeds, tracks per-link health
-    │  pushes per-link stats via ws_url or relay/health
+srtla_rec (relay, port 5000)
+    │  per-connection atomic counters
+    │  HTTP stats server (port 5080)
+    │  optional ASN lookup (GeoLite2-ASN.mmdb)
     ▼
-Control Plane (Go)
-    │  aggregates per-link stats per session
-    │  exposes via API to Rust core
+C++ Plugin (PollPerLinkStats, every ~2s)
+    │  HTTP GET relay_ip:5080/stats
+    │  parses per-connection JSON
     ▼
-Rust Core (obs-telemetry-bridge)
-    │  includes per-link stats in status_snapshot
-    │  pushes via IPC to plugin
+MetricsCollector (BuildStatusSnapshotJson)
+    │  injects relay_links[] into telemetry snapshot
     ▼
-OBS Plugin → Dock JS Bridge → Aegis Dock UI
-    streamer sees per-link + bonded health
+CEF ExecuteJavaScript → Dock UI
+    per-link BitrateBar with carrier labels
 ```
 
-### 12.1 Relay → Control Plane: Per-Link Stats Push
+### 12.1 Stats Endpoint: `GET :5080/stats`
 
-Extend `POST /api/v1/relay/health` (section 9.2) or add a new endpoint for the relay to push per-link SRT telemetry.
+The custom `srtla_rec` fork (`michaelpentz/srtla`) exposes per-connection stats:
 
-Proposed addition to relay health payload:
 ```json
 {
-  "session_id": "ses_01JABCDEF...",
-  "instance_id": "i-0abc123...",
-  "ingest_active": true,
-  "egress_active": true,
-  "session_uptime_seconds": 1820,
-  "observed_at": "2026-02-21T20:30:20Z",
-  "links": [
-    {
-      "link_id": "link_01",
-      "label": "T-Mobile 5G",
-      "source_ip": "100.64.x.x",
-      "protocol": "srt",
-      "status": "active",
-      "bitrate_kbps": 8200,
-      "rtt_ms": 42,
-      "packet_loss_pct": 0.1,
-      "jitter_ms": 3.2,
-      "connected_at": "2026-02-21T20:00:05Z"
-    },
-    {
-      "link_id": "link_02",
-      "label": "Verizon 5G",
-      "source_ip": "100.65.x.x",
-      "protocol": "srt",
-      "status": "active",
-      "bitrate_kbps": 5100,
-      "rtt_ms": 55,
-      "packet_loss_pct": 0.3,
-      "jitter_ms": 5.1,
-      "connected_at": "2026-02-21T20:00:03Z"
-    },
-    {
-      "link_id": "link_03",
-      "label": "Venue WiFi",
-      "source_ip": "192.168.1.x",
-      "protocol": "srt",
-      "status": "degraded",
-      "bitrate_kbps": 1300,
-      "rtt_ms": 120,
-      "packet_loss_pct": 2.4,
-      "jitter_ms": 18.7,
-      "connected_at": "2026-02-21T20:00:08Z"
-    }
-  ],
-  "bonded": {
-    "total_bitrate_kbps": 14600,
-    "active_link_count": 3,
-    "health": "healthy"
-  }
+  "groups": [{
+    "id": "0xaabbccdd...",
+    "total_bytes": 123456789,
+    "connections": [
+      {
+        "addr": "192.168.1.42:49201",
+        "bytes": 98765432,
+        "pkts": 65432,
+        "share_pct": 80.0,
+        "last_ms_ago": 150,
+        "uptime_s": 3600,
+        "asn_org": "T-Mobile USA, Inc."
+      },
+      {
+        "addr": "172.58.34.12:50100",
+        "bytes": 24691357,
+        "pkts": 16432,
+        "share_pct": 20.0,
+        "last_ms_ago": 200,
+        "uptime_s": 3595
+      }
+    ]
+  }]
 }
 ```
 
-Per-link fields:
-- `link_id`: stable identifier for the link within the session
-- `label`: human-readable name (carrier/network name if detectable, otherwise positional)
-- `source_ip`: ingest source IP (for correlation; may be masked in API responses)
-- `protocol`: always `srt` for now
-- `status`: `active` | `degraded` | `disconnected`
-- `bitrate_kbps`: current instantaneous upload bitrate for this link
-- `rtt_ms`: round-trip time
-- `packet_loss_pct`: packet loss percentage (0-100)
-- `jitter_ms`: interarrival jitter
-- `connected_at`: when this link first connected
+Per-connection fields:
+- `addr`: Remote IP:port of the bonded link
+- `bytes` / `pkts`: Cumulative counters (atomic, relaxed ordering)
+- `share_pct`: Percentage of total group traffic carried by this link
+- `last_ms_ago`: Milliseconds since last packet (staleness detection)
+- `uptime_s`: Duration since link registration
+- `asn_org` (optional): ASN organization name from GeoLite2-ASN lookup. Omitted for private IPs or when database is unavailable.
 
-Bonded aggregate:
-- `total_bitrate_kbps`: sum of all active links
-- `active_link_count`: number of links with status != disconnected
-- `health`: `healthy` | `degraded` | `critical` (derived from link statuses)
+### 12.2 ASN-Based Carrier Identification
 
-### 12.2 Control Plane → Rust Core: Per-Link Stats API
+When a GeoLite2-ASN.mmdb database is present, `srtla_rec` resolves each connection's source IP to its ISP/carrier name via `libmaxminddb` (memory-mapped, microsecond lookups). The dock UI maps these to short labels:
 
-New endpoint or extension to `GET /api/v1/relay/active`:
+| ASN Organization | Dock Label |
+|-----------------|------------|
+| T-Mobile USA, Inc. | T-Mobile |
+| AT&T Mobility | AT&T |
+| Verizon Wireless | Verizon |
+| (RFC 1918 private IP) | WiFi |
+| (unknown/no ASN) | Mobile |
 
-Option A — Extend `/relay/active` response with `links[]` and `bonded` fields (additive, v1-compatible).
+Fallback when ASN unavailable: IP-range heuristics (RFC 1918 → WiFi, CGNAT → Mobile, T-Mobile ranges → T-Mobile).
 
-Option B — New `GET /api/v1/relay/telemetry` endpoint polled by Rust core at 1-2s intervals.
+### 12.3 C++ Plugin Integration
 
-Recommended: **Option A** (fewer endpoints, already polled by Rust core for session status).
+- `PerLinkStats` struct: `addr`, `asn_org`, `bytes`, `pkts`, `share_pct`, `last_ms_ago`, `uptime_s`
+- `PollPerLinkStats()` polls every ~2s via `HttpsClient::Get()` to `relay_ip:5080/stats`
+- `BuildStatusSnapshotJson()` emits `relay_per_link_available`, `relay_conn_count`, and `relay_links[]` array
+- Each link in the JSON snapshot includes all fields from the stats endpoint
 
-### 12.3 Rust Core → Dock Bridge: IPC Mapping
+### 12.4 Dock UI Rendering
 
-The `status_snapshot` IPC frame should include per-link data so the bridge can project it into `getState().connections.items[]`:
+- Per-link `BitrateBar` components in the Relay section
+- Bitrate computed client-side from delta bytes / delta time
+- Share percentage label on each bar
+- Links with `last_ms_ago > 3000` rendered with reduced opacity (stale)
+- Carrier label from `asn_org` or IP heuristic fallback
 
-```js
-// Existing dock bridge contract (connections.items[])
-{
-  name: "T-Mobile 5G",       // from link.label
-  type: "srt",               // from link.protocol
-  signal: 4,                 // derived from rtt_ms + packet_loss_pct (0-5 scale)
-  bitrate: 8200,             // from link.bitrate_kbps
-  status: "active"           // from link.status
-}
-```
+### 12.5 Network Requirements
 
-Additional fields to gate on existence (future):
-- `rtt_ms`, `packet_loss_pct`, `jitter_ms` — if bridge exposes them, dock can show detailed per-link metrics
-
-### 12.4 Scaling Considerations
-
-The relay must handle dynamic link count (1 to 14+ simultaneous SRT feeds):
-- `links[]` array is unbounded but practically limited by relay instance capacity
-- Control plane should not assume a fixed link count
-- Dock UI already renders a scrollable connection list — no hard limit on display
-
-### 12.5 Auto-Scaling Relay Capacity
-
-When bonded link count grows (e.g., multi-camera production at a convention), the relay instance type may need to scale:
-- Control plane should track `active_link_count` from health reports
-- Future: trigger instance resize or migration when link count exceeds instance capacity threshold
-- Current v1 scope: single instance per session, instance type selected at provisioning time
+- **TCP 5080** on relay security group must be accessible from the OBS machine
+- Stats server binds to `0.0.0.0:5080` (configurable via `--stats_port`)
+- No authentication on the stats endpoint (internal relay port)
 
 ---
 
-## 13. Multi-Encode / Multi-Upload Per-Output Telemetry (Planned)
+## 13. Multi-Encode / Multi-Upload Per-Output Telemetry (Implemented in v0.0.4)
 
 ### Purpose
 
-Streamers running multi-encode setups (e.g., horizontal 1920x1080 for Twitch/Kick/YouTube + vertical 1080x1920 for TikTok/YT Shorts) need per-encoder and per-upload health visible in the dock. Today, the Rust core collects full per-output metrics (bitrate, FPS, drop%, lag) via OBS WebSocket, and Grafana gets per-output histograms — but IPC v1 reduces everything to a single aggregate bitrate. The dock never sees per-output detail.
+Streamers running multi-encode setups (e.g., horizontal 1920x1080 for Twitch/Kick/YouTube + vertical 1080x1920 for TikTok/YT Shorts) need per-encoder and per-upload health visible in the dock.
 
-### Current State (v0.0.3)
+### Current State (v0.0.4)
 
-**What works:**
-- `MetricsHub` collects per-output stats every 500ms via `client.outputs().list()` + `client.outputs().status(name)`
-- `StreamOutput` struct: `{ name, bitrate_kbps, drop_pct, fps, encoding_lag_ms }`
-- `GrafanaExporter` pushes per-output histograms tagged by output name
-- `output_names` config HashMap allows renaming OBS output IDs to display names
-- v0.0.1 HTML dashboard renders per-output cards with bitrate bars
+v0.0.4 collects per-output metrics directly via OBS C API (`obs_enum_outputs`):
+- `MetricsCollector` polls per-output stats every 500ms
+- Per-output struct: `id`, `name`, `active`, `bitrate_kbps`, `drop_pct`, `fps`, `encoding_lag_ms`, `encoder`, `group`, `resolution`, `hidden`
+- JSON snapshot includes `multistream_outputs[]` array
+- Dock UI renders per-output bitrate bars with encoder groups
 
-**What's lost in IPC:**
-```rust
-// ipc/mod.rs line 475-479 — all per-output detail crushed to one number
-let bitrate_kbps = frame.streams.iter()
-    .map(|s| s.bitrate_kbps)
-    .fold(0u32, |acc, v| acc.saturating_add(v));
-```
+### 13.1 Per-Output Data Model
 
-**Bridge is ready but unfed:**
-- `aegis-dock-bridge.js` has `normalizeOutputBitrates()` expecting per-output arrays
-- Projects to `getState().bitrate.outputs[]` with `{ platform, kbps, status }`
-- Currently receives empty array
+The C++ `MetricsCollector` enumerates OBS outputs via `obs_enum_outputs` and collects per-output stats. Each output in the `multistream_outputs[]` JSON array contains:
 
-### 13.1 StreamOutput Expansion
-
-Extend `StreamOutput` (model/mod.rs) with encoder and visibility metadata:
-
-```rust
-pub struct StreamOutput {
-    pub name: String,              // OBS output ID (e.g., "adv_stream")
-    pub display_name: String,      // User-configured name (e.g., "Twitch")
-    pub active: bool,              // Whether this output is currently streaming
-    pub bitrate_kbps: u32,
-    pub drop_pct: f32,
-    pub fps: f32,
-    pub encoding_lag_ms: f32,
-    // New fields:
-    pub encoder_name: Option<String>,    // e.g., "x264", "nvenc", "obs_x264"
-    pub encoder_group: Option<String>,   // User-assigned group (e.g., "Horizontal", "Vertical")
-    pub resolution: Option<String>,      // e.g., "1920x1080", "1080x1920" (from output settings)
-    pub hidden: bool,                    // User toggle to hide from dock display
+```json
+{
+  "id": "adv_stream",
+  "name": "Twitch",
+  "active": true,
+  "bitrate_kbps": 6200,
+  "drop_pct": 0.01,
+  "fps": 60.0,
+  "encoding_lag_ms": 2.1,
+  "encoder": "nvenc",
+  "group": "Horizontal",
+  "resolution": "1920x1080",
+  "hidden": false
 }
 ```
 
-**Encoder detection strategy:**
-- OBS WebSocket v5 `GetOutputSettings` may expose encoder ID per output
-- If not available, fall back to config-based mapping in `config.toml`
-- Resolution can be inferred from output settings or encoder config
+Encoder name is detected via OBS C API (`obs_output_get_video_encoder` → `obs_encoder_get_name`). Resolution from encoder settings.
 
-### 13.2 Config Schema for Output Metadata
+### 13.2 Bridge Contract: `getState().outputs`
 
-Extend `config.toml` to support per-output display config:
-
-```toml
-# Existing: simple name mapping
-# [output_names]
-# adv_stream = "Twitch"
-
-# New: rich per-output config
-[[outputs]]
-obs_id = "adv_stream"
-display_name = "Twitch"
-encoder_group = "Horizontal"
-hidden = false
-
-[[outputs]]
-obs_id = "adv_stream_2"
-display_name = "Kick"
-encoder_group = "Horizontal"
-hidden = false
-
-[[outputs]]
-obs_id = "adv_stream_3"
-display_name = "YT Horizontal"
-encoder_group = "Horizontal"
-hidden = false
-
-[[outputs]]
-obs_id = "adv_stream_4"
-display_name = "TikTok"
-encoder_group = "Vertical"
-hidden = false
-
-[[outputs]]
-obs_id = "adv_stream_5"
-display_name = "YT Shorts"
-encoder_group = "Vertical"
-hidden = false
-
-[[outputs]]
-obs_id = "virtualcam_output"
-display_name = "Virtual Camera"
-hidden = true
-
-[[outputs]]
-obs_id = "adv_file_output"
-display_name = "Recording"
-hidden = true
-```
-
-**StreamElements output ID notes:**
-- Twitch: typically `main` or `adv_stream`
-- Kick: typically `kick`
-- TikTok, YT Horizontal, YT Vertical: random/opaque IDs assigned by StreamElements
-- Users must manually map these IDs to display names in config (or via settings UI)
-- Future: auto-detect via StreamElements API integration if available
-
-### 13.3 IPC v1 Expansion: Per-Output Array in StatusSnapshot
-
-Add `outputs` array to `StatusSnapshotPayload`:
-
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct StatusSnapshotPayload {
-    mode: SnapshotMode,
-    state_mode: StateModeV1,
-    health: SnapshotHealth,
-    bitrate_kbps: u32,                     // Keep aggregate for backward compat
-    rtt_ms: u32,
-    override_enabled: bool,
-    relay: RelaySnapshot,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    settings: Option<StatusSnapshotSettingsPayload>,
-    // NEW: per-output detail
-    #[serde(skip_serializing_if = "Option::is_none")]
-    outputs: Option<Vec<SnapshotOutput>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SnapshotOutput {
-    id: String,                            // OBS output ID
-    name: String,                          // Display name from config
-    active: bool,
-    bitrate_kbps: u32,
-    drop_pct: f32,
-    fps: f32,
-    encoding_lag_ms: f32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    encoder: Option<String>,               // Encoder name if detected
-    #[serde(skip_serializing_if = "Option::is_none")]
-    group: Option<String>,                 // Encoder group from config
-    #[serde(skip_serializing_if = "Option::is_none")]
-    resolution: Option<String>,            // Output resolution if detected
-    hidden: bool,
-}
-```
-
-This is additive — existing bridge code reading `bitrate_kbps` still works. The `outputs` array is optional so older plugins that don't parse it are unaffected.
-
-### 13.4 Bridge Contract: `getState().outputs`
-
-New top-level section in the bridge projection:
+Top-level section in the bridge projection:
 
 ```js
 {
@@ -781,7 +623,7 @@ New top-level section in the bridge projection:
   - `active && drop_pct >= 0.05` → `"critical"`
   - `!active` → `"offline"`
 
-### 13.5 Dock UI Layout
+### 13.3 Dock UI Layout
 
 Target dock rendering for multi-encode/multi-upload:
 
@@ -807,9 +649,9 @@ Encoders & Uploads
 **Hidden section:** collapsed by default, expandable, shows count + names
 **Inactive outputs within active groups:** dimmed row, "--" for metrics
 
-### 13.6 Settings UI for Output Config
+### 13.4 Settings UI for Output Config
 
-The dock settings or Rust core settings page should allow:
+The dock settings page should allow:
 1. **Rename outputs** — map OBS output ID to display name
 2. **Assign encoder group** — dropdown or text field per output
 3. **Toggle visibility** — show/hide per output
@@ -817,14 +659,13 @@ The dock settings or Rust core settings page should allow:
 
 This replaces the v0.0.1 rename modal with a richer config experience.
 
-### 13.7 Implementation Priority
+### 13.5 Implementation Status
 
-1. **IPC expansion** (Codex) — Add `outputs: Vec<SnapshotOutput>` to `StatusSnapshotPayload`, populate from `frame.streams` + config metadata. Backward-compatible (field is optional).
-2. **Config schema** (Codex) — Extend `config.toml` with `[[outputs]]` table array. Migration: convert existing `output_names` HashMap to new format.
-3. **Bridge projection** (Codex) — Add grouping/normalization logic to `aegis-dock-bridge.js` for `getState().outputs`.
-4. **Dock UI** (Claude Code) — New `EncodersUploads` section in `aegis-dock.jsx` rendering grouped outputs with hide/show toggle.
-5. **Settings UI** (Claude Code) — Output rename/group/visibility config in dock settings.
-6. **Encoder detection** (Codex, stretch) — Attempt `GetOutputSettings` via OBS WebSocket to auto-detect encoder name and resolution per output.
+- Per-output data collection via OBS C API: **Implemented**
+- JSON snapshot includes `multistream_outputs[]`: **Implemented**
+- Dock UI renders per-output bitrate bars grouped by encoder: **Implemented**
+- Output rename/group/visibility settings UI: **Planned**
+- Auto-detect encoder group from resolution: **Planned**
 
 ---
 
@@ -835,5 +676,5 @@ API v1 is ready when:
 2. Idempotency and transition rules are verified by tests.
 3. Error contract and rate limits are enforced consistently.
 4. Relay health reconciliation data is persisted and queryable.
-5. Per-link relay telemetry (section 12) flows from relay to dock.
-6. Per-output multi-encode telemetry (section 13) flows from Rust core to dock via IPC.
+5. ~~Per-link relay telemetry (section 12) flows from relay to dock.~~ **Done** — direct HTTP polling from C++ plugin.
+6. ~~Per-output multi-encode telemetry (section 13) flows to dock.~~ **Done** — C++ collects via OBS C API, renders in dock.

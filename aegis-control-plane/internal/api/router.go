@@ -25,10 +25,12 @@ type Store interface {
 	GetActiveSession(rctx context.Context, userID string) (*model.Session, error)
 	GetSessionByID(rctx context.Context, userID, sessionID string) (*model.Session, error)
 	StopSession(rctx context.Context, userID, sessionID string) (*model.Session, error)
+	UpdateProvisionStep(rctx context.Context, sessionID, step string) error
 	GetUsageCurrent(rctx context.Context, userID string) (*model.UsageCurrent, error)
 	RecordRelayHealth(rctx context.Context, in store.RelayHealthInput) error
 	ListRelayManifest(rctx context.Context) ([]model.RelayManifestEntry, error)
 	GetUserRelaySlug(ctx context.Context, userID string) (string, error)
+	DB() store.DB
 }
 
 type Server struct {

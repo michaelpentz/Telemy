@@ -68,6 +68,10 @@ func New(db DB) *Store {
 	return &Store{db: db}
 }
 
+func (s *Store) DB() DB {
+	return s.db
+}
+
 func HashJSON(v any) (string, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -79,7 +83,7 @@ func HashJSON(v any) (string, error) {
 
 func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -95,7 +99,7 @@ limit 1`
 	var relaySlug string
 	var stoppedAt *time.Time
 	if err := s.db.QueryRow(ctx, q, userID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.Region, &out.PairToken, &out.RelayWSToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
 		&out.PublicIP, &out.SRTPort, &out.WSURL,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -191,7 +195,7 @@ values
 
 func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -206,7 +210,7 @@ limit 1`
 	var relaySlug string
 	var stoppedAt *time.Time
 	if err := tx.QueryRow(ctx, q, userID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.Region, &out.PairToken, &out.RelayWSToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
 		&out.PublicIP, &out.SRTPort, &out.WSURL,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -247,7 +251,6 @@ values
 	const updateSession = `
 update sessions
 set relay_instance_id = $3,
-    status = 'active',
     pair_token = $4,
     relay_ws_token = $5,
     updated_at = now()
@@ -272,7 +275,7 @@ where user_id = $1 and id = $2 and status = 'provisioning'`
 
 func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, sessionID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, s.region, s.pair_token, s.relay_ws_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -286,7 +289,7 @@ limit 1`
 	var relaySlug string
 	var stoppedAt *time.Time
 	if err := tx.QueryRow(ctx, q, userID, sessionID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.Region, &out.PairToken, &out.RelayWSToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
 		&out.PublicIP, &out.SRTPort, &out.WSURL,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -562,6 +565,12 @@ func (s *Store) GetUserRelaySlug(ctx context.Context, userID string) (string, er
 		return "", err
 	}
 	return slug, nil
+}
+
+func (s *Store) UpdateProvisionStep(ctx context.Context, sessionID, step string) error {
+	const q = `update sessions set provision_step = $2, updated_at = now() where id = $1 and status = 'provisioning'`
+	_, err := s.db.Exec(ctx, q, sessionID, step)
+	return err
 }
 
 func strPtr(v string) *string {

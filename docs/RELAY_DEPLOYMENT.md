@@ -13,6 +13,7 @@ Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/sr
 | Amazon Linux 2023 | Base OS (x86_64 or aarch64) |
 | Docker + Compose | Container runtime |
 | srtla-receiver | Bonded SRT relay (Custom fork: `ghcr.io/michaelpentz/srtla-receiver:latest`) |
+| GeoLite2-ASN | MaxMind ASN database for carrier identification (~7MB) |
 
 srtla-receiver provides:
 - **SRTLA bonded ingest** — accepts bonded connections from IRL Pro
@@ -21,6 +22,7 @@ srtla-receiver provides:
 - **Management UI** — web UI for stream creation and monitoring
 - **Backend API** — REST API for aggregate stats (port 8090)
 - **Per-Link API** — REST API for individual connection stats (port 5080)
+- **ASN Carrier Identification** — When a GeoLite2-ASN.mmdb database is present at `/usr/share/GeoIP/`, the per-link stats API includes an `asn_org` field per connection identifying the carrier (e.g., "T-Mobile USA, Inc."). Requires a free MaxMind GeoLite2 license.
 
 ## Port Map
 
@@ -144,6 +146,45 @@ curl -s http://localhost:8090/api/streams | jq .
 | IRL Pro can't connect | Security group missing UDP 5000 | Verify `aegis-relay-sg` has UDP 5000 rule |
 | OBS shows black screen | Wrong stream ID or stream not created | Verify stream exists in management UI |
 | Management UI unreachable | TCP 3000 restricted to control plane IP | SSH tunnel: `ssh -L 3000:localhost:3000 ec2-user@{relay_ip}` |
+
+## GeoIP ASN Database (Carrier Identification)
+
+The srtla-receiver Docker image supports optional carrier identification via MaxMind's free GeoLite2-ASN database.
+
+### Setup
+
+1. Create a free MaxMind account at `dev.maxmind.com/geoip/geolite2-signup`
+2. Generate a license key under **Account → Manage License Keys**
+3. Download the database:
+   ```bash
+   curl -L -o /tmp/geolite2-asn.tar.gz \
+     "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=YOUR_KEY&suffix=tar.gz"
+   tar xzf /tmp/geolite2-asn.tar.gz -C /tmp/ --wildcards "*.mmdb"
+   cp /tmp/GeoLite2-ASN_*/GeoLite2-ASN.mmdb srtla-receiver-fork/data/
+   ```
+4. The Dockerfile copies the database to `/usr/share/GeoIP/GeoLite2-ASN.mmdb`
+5. `srtla_rec` is launched with `--geoip_db=/usr/share/GeoIP/GeoLite2-ASN.mmdb`
+
+### Stats API Output
+
+With ASN enabled, `GET :5080/stats` connections include:
+```json
+{
+  "addr": "172.58.34.12:49201",
+  "bytes": 1234567,
+  "share_pct": 62.3,
+  "asn_org": "T-Mobile USA, Inc."
+}
+```
+
+Without the database, the `asn_org` field is omitted and the dock UI falls back to IP-range heuristics.
+
+### Updating the Database
+
+MaxMind updates GeoLite2 databases weekly. To refresh:
+1. Re-download using the same license key
+2. Replace `data/GeoLite2-ASN.mmdb` in the srtla-receiver-fork repo
+3. Rebuild and push the Docker image
 
 ## Future: Custom AMI (Deferred)
 

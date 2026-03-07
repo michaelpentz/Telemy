@@ -9,6 +9,13 @@ const (
 	SessionActive       SessionStatus = "active"
 	SessionGrace        SessionStatus = "grace"
 	SessionStopped      SessionStatus = "stopped"
+
+	StepLaunchingInstance  = "launching_instance"
+	StepWaitingForInstance = "waiting_for_instance"
+	StepStartingDocker     = "starting_docker"
+	StepStartingContainers = "starting_containers"
+	StepCreatingStream     = "creating_stream"
+	StepReady              = "ready"
 )
 
 type Session struct {
@@ -17,6 +24,7 @@ type Session struct {
 	RelayInstanceID    *string
 	RelayAWSInstanceID string
 	Status             SessionStatus
+	ProvisionStep      string
 	Region             string
 	PairToken          string
 	RelayWSToken       string

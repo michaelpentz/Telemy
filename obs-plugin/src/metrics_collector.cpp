@@ -503,6 +503,9 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
             os << "\"share_pct\":" << buf << ",";
             os << "\"last_ms_ago\":" << link.last_ms_ago << ",";
             os << "\"uptime_s\":" << link.uptime_s;
+            if (!link.asn_org.empty()) {
+                os << ",\"asn_org\":\"" << JsonEscape(link.asn_org) << "\"";
+            }
             os << "}";
         }
         os << "],";

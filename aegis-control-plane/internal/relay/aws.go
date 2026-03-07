@@ -22,30 +22,68 @@ import (
 // relayUserDataScript is the EC2 user-data bootstrap for OpenIRL srtla-receiver.
 // Canonical copy lives at scripts/relay-user-data.sh.
 const relayUserDataScript = `#!/bin/bash
+# Aegis relay bootstrap for pre-baked AMI (aegis-relay-v1)
+# AMI includes: Docker, Docker Compose, pre-pulled container images
+# This script only writes config, starts containers, and creates the stream.
+#
+# Port map:
+#   UDP 5000  SRTLA bonded ingest (IRL Pro connects here)
+#   UDP 4000  SRT player output (OBS connects here)
+#   UDP 4001  SRT direct sender (non-bonded fallback)
+#   TCP 3000  Management UI
+#   TCP 5080  Per-link stats API (srtla_rec HTTP)
+#   TCP 8090  Backend API (remapped from default 8080 to avoid control plane conflict)
+
 set -euo pipefail
 exec > /var/log/srtla-setup.log 2>&1
-echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup starting"
+echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup starting (pre-baked AMI)"
 
-dnf update -y
-dnf install -y docker jq
-systemctl enable docker
+# Docker + Compose already installed in AMI; just ensure Docker is running
 systemctl start docker
 
-DOCKER_COMPOSE_VERSION="v2.27.0"
-ARCH=$(uname -m)
-mkdir -p /usr/local/lib/docker/cli-plugins
-curl -SL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${ARCH}" \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
-echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') Docker installed, setting up srtla-receiver"
-
-mkdir -p /opt/srtla-receiver/data
 cd /opt/srtla-receiver
 
-curl -sL https://raw.githubusercontent.com/OpenIRL/srtla-receiver/main/docker-compose.prod.yml \
-  -o docker-compose.yml
+# Write docker-compose with custom srtla-receiver image (per-link stats)
+cat > docker-compose.yml << 'COMPOSEEOF'
+services:
+  sls-management-ui:
+    image: ghcr.io/openirl/sls-management-ui:latest
+    container_name: sls-management-ui
+    restart: unless-stopped
+    environment:
+      REACT_APP_BASE_URL: "${APP_URL}"
+      REACT_APP_SRT_PLAYER_PORT: "${SRT_PLAYER_PORT:-4000}"
+      REACT_APP_SRT_SENDER_PORT: "${SRT_SENDER_PORT:-4001}"
+      REACT_APP_SLS_STATS_PORT: "${SLS_STATS_PORT:-8080}"
+      REACT_APP_SRTLA_PORT: "${SRTLA_PORT:-5000}"
+    ports:
+      - "${SLS_MGNT_PORT}:3000"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  receiver:
+    image: ghcr.io/michaelpentz/srtla-receiver:latest
+    container_name: srtla-receiver
+    restart: unless-stopped
+    ports:
+      - "${SLS_STATS_PORT}:8080/tcp"
+      - "${SRTLA_PORT}:5000/udp"
+      - "${SRT_SENDER_PORT}:4001/udp"
+      - "${SRT_PLAYER_PORT}:4000/udp"
+      - "5080:5080/tcp"
+    volumes:
+      - ./data:/var/lib/sls
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+COMPOSEEOF
+
+# Write .env (non-interactive, using defaults aligned with Aegis)
 cat > .env << 'ENVEOF'
 SRTLA_PORT=5000
 SRT_SENDER_PORT=4001
@@ -53,40 +91,51 @@ SRT_PLAYER_PORT=4000
 SLS_MGNT_PORT=3000
 SLS_STATS_PORT=8090
 APP_URL=http://localhost
+# Per-link stats exposed on port 5080 (hardcoded in compose, not variable)
 ENVEOF
 
-chown -R 3001:3001 /opt/srtla-receiver/data
-
+# Start containers (images pre-pulled in AMI, no download needed)
 docker compose up -d
 
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver containers started"
 
-# Wait for containers to become ready
+# Wait until containers are healthy/running before signaling ready
 deadline=$((SECONDS + 120))
 while true; do
   all_ready=true
   has_containers=false
   while IFS= read -r cid; do
-    [ -z "${cid}" ] && continue
+    if [ -z "${cid}" ]; then
+      continue
+    fi
+
     has_containers=true
     health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${cid}")
     status=$(docker inspect --format '{{.State.Status}}' "${cid}")
+
     if [ "${health}" = "none" ]; then
-      [ "${status}" != "running" ] && all_ready=false && break
+      if [ "${status}" != "running" ]; then
+        all_ready=false
+        break
+      fi
     elif [ "${health}" != "healthy" ]; then
-      all_ready=false && break
+      all_ready=false
+      break
     fi
   done < <(docker compose ps -q)
-  [ "${has_containers}" = true ] && [ "${all_ready}" = true ] && break
+
+  if [ "${has_containers}" = true ] && [ "${all_ready}" = true ]; then
+    break
+  fi
+
   if [ ${SECONDS} -ge ${deadline} ]; then
-    echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') timeout waiting for containers"
+    echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') timeout waiting for srtla-receiver containers to become ready"
     docker compose ps
     exit 1
   fi
+
   sleep 3
 done
-
-echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') containers ready, extracting API key"
 
 # Extract API key (try .apikey file first, then container logs as fallback)
 APIKEY=""
@@ -107,25 +156,29 @@ for attempt in $(seq 1 30); do
 done
 
 if [ -z "${APIKEY}" ]; then
-  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') WARNING: API key not found, stream auto-creation skipped"
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') WARNING: .apikey not found, stream auto-creation skipped"
 else
   echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') API key found, creating default stream"
+  # Create a default publisher stream via the backend API
   STREAM_RESP=$(curl -s -X POST http://localhost:8090/api/stream-ids \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${APIKEY}" \
     -d '{"publisher":"live_aegis","player":"play_aegis","description":"aegis-relay"}')
-  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create: ${STREAM_RESP}"
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create response: ${STREAM_RESP}"
 
+  # Fetch the created stream to get publish/play keys
   STREAMS=$(curl -s http://localhost:8090/api/stream-ids \
     -H "Authorization: Bearer ${APIKEY}")
   echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') streams: ${STREAMS}"
 
-  # Write stream keys to well-known files for health-check polling
+  # Write stream info for control plane health checks
   echo "${STREAMS}" > /tmp/srtla-streams.json
   echo "${APIKEY}" > /tmp/srtla-apikey
 fi
 
+# Signal ready (marker file for health check polling)
 touch /tmp/srtla-ready
+
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup complete"
 `
 
