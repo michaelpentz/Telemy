@@ -41,13 +41,13 @@ ALTER TABLE users ADD CONSTRAINT users_relay_slug_unique UNIQUE (relay_slug);
 **Step 2: Run the migration on EC2**
 
 ```bash
-ssh -i ~/.ssh/id_server_new ec2-user@<redacted-ec2-ip>
+ssh -i ~/.ssh/<SSH_KEY> ec2-user@<CONTROL_PLANE_IP>
 sudo -u postgres psql aegis -f /tmp/003_add_relay_slug.sql
 ```
 
 Upload the file first:
 ```bash
-scp -i ~/.ssh/id_server_new aegis-control-plane/migrations/003_add_relay_slug.sql ec2-user@<redacted-ec2-ip>:/tmp/
+scp -i ~/.ssh/<SSH_KEY> aegis-control-plane/migrations/003_add_relay_slug.sql ec2-user@<CONTROL_PLANE_IP>:/tmp/
 ```
 
 **Step 3: Verify the migration**
@@ -504,19 +504,19 @@ cd E:/Code/telemyapp/telemy-v0.0.4/aegis-control-plane && GOOS=linux GOARCH=amd6
 **Step 2: Upload and restart**
 
 ```bash
-scp -i ~/.ssh/id_server_new /tmp/aegis-api-linux ec2-user@<redacted-ec2-ip>:/tmp/aegis-api
-ssh -i ~/.ssh/id_server_new ec2-user@<redacted-ec2-ip> "sudo systemctl stop aegis-api && sudo cp /tmp/aegis-api /opt/aegis/bin/aegis-api && sudo systemctl start aegis-api"
+scp -i ~/.ssh/<SSH_KEY> /tmp/aegis-api-linux ec2-user@<CONTROL_PLANE_IP>:/tmp/aegis-api
+ssh -i ~/.ssh/<SSH_KEY> ec2-user@<CONTROL_PLANE_IP> "sudo systemctl stop aegis-api && sudo cp /tmp/aegis-api /opt/aegis/bin/aegis-api && sudo systemctl start aegis-api"
 ```
 
 **Step 3: Add env vars if not present**
 
 ```bash
-ssh -i ~/.ssh/id_server_new ec2-user@<redacted-ec2-ip> "grep CLOUDFLARE /etc/aegis-control-plane.env"
+ssh -i ~/.ssh/<SSH_KEY> ec2-user@<CONTROL_PLANE_IP> "grep CLOUDFLARE /etc/aegis-control-plane.env"
 ```
 
 If missing, add:
 ```bash
-ssh -i ~/.ssh/id_server_new ec2-user@<redacted-ec2-ip> "echo -e 'CLOUDFLARE_DNS_TOKEN=5wcLbiS_-_ZJwx_WLeJZfyoO3ucuUstaKWCCJ9aU\nCLOUDFLARE_ZONE_ID=69113d75f6631d1eab3b7b9f97e92ed9' | sudo tee -a /etc/aegis-control-plane.env"
+ssh -i ~/.ssh/<SSH_KEY> ec2-user@<CONTROL_PLANE_IP> "echo -e 'CLOUDFLARE_DNS_TOKEN=<CLOUDFLARE_TOKEN>\nCLOUDFLARE_ZONE_ID=<CLOUDFLARE_ZONE_ID>' | sudo tee -a /etc/aegis-control-plane.env"
 ```
 
 **Step 4: Verify healthz**
