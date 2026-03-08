@@ -39,22 +39,33 @@ struct HostPort {
 
 static HostPort parse_host_port(const std::wstring& raw) {
     HostPort hp;
-    auto colon = raw.rfind(L':');
+
+    // Scheme-driven TLS: explicit http:// disables TLS, everything else uses TLS.
+    std::wstring input = raw;
+    bool explicit_no_tls = false;
+    if (input.substr(0, 7) == L"http://") {
+        input = input.substr(7);
+        explicit_no_tls = true;
+    } else if (input.substr(0, 8) == L"https://") {
+        input = input.substr(8);
+    }
+
+    auto colon = input.rfind(L':');
     if (colon != std::wstring::npos && colon > 0) {
-        std::wstring port_str = raw.substr(colon + 1);
+        std::wstring port_str = input.substr(colon + 1);
         int port_val = 0;
         try { port_val = std::stoi(port_str); } catch (...) { port_val = 0; }
         if (port_val > 0 && port_val <= 65535) {
-            hp.host = raw.substr(0, colon);
+            hp.host = input.substr(0, colon);
             hp.port = static_cast<INTERNET_PORT>(port_val);
-            hp.use_tls = (hp.port == 443);
+            hp.use_tls = !explicit_no_tls;
             return hp;
         }
     }
-    // No port suffix — default to HTTPS on 443.
-    hp.host = raw;
-    hp.port = INTERNET_DEFAULT_HTTPS_PORT;
-    hp.use_tls = true;
+    // No port suffix — default based on scheme.
+    hp.host = input;
+    hp.port = explicit_no_tls ? 80 : INTERNET_DEFAULT_HTTPS_PORT;
+    hp.use_tls = !explicit_no_tls;
     return hp;
 }
 

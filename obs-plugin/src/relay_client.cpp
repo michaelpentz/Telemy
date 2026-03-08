@@ -89,6 +89,7 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     session.grace_window_seconds = timers["grace_window_seconds"].toInt(0);
     session.max_session_seconds = timers["max_session_seconds"].toInt(0);
     session.provision_step = obj["provision_step"].toString().toStdString();
+    session.instance_id = obj["instance_id"].toString().toStdString();
 
     // Reject if session_id is empty — indicates a malformed response.
     if (session.session_id.empty()) {
@@ -193,7 +194,16 @@ bool RelayClient::Stop(const std::string& jwt, const std::string& session_id)
 
 bool RelayClient::SendHeartbeat(const std::string& jwt, const std::string& session_id)
 {
-    std::string body = "{\"session_id\":\"" + session_id + "\"}";
+    // Fetch instance_id from stored session for the backend's identity binding check.
+    std::string instance_id;
+    {
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        if (current_session_) {
+            instance_id = current_session_->instance_id;
+        }
+    }
+    std::string body = "{\"session_id\":\"" + session_id
+                     + "\",\"instance_id\":\"" + instance_id + "\"}";
     std::wstring wide_jwt(jwt.begin(), jwt.end());
     std::vector<std::pair<std::wstring, std::wstring>> extra_headers;
     // Control-plane auth split (telemy-v0.0.3):
@@ -344,8 +354,8 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
         return;
     }
 
-    // Build wide host string with SLS stats port
-    std::string host_port = relay_ip + ":8090";
+    // Build wide host string with SLS stats port (plaintext — relay-local endpoint).
+    std::string host_port = "http://" + relay_ip + ":8090";
     std::wstring host_w(host_port.begin(), host_port.end());
     std::wstring path_w = L"/stats/play_aegis?legacy=1";
 
@@ -431,7 +441,7 @@ void RelayClient::PollPerLinkStats(const std::string& relay_ip)
         return;
     }
 
-    std::string host_port = relay_ip + ":5080";
+    std::string host_port = "http://" + relay_ip + ":5080";
     std::wstring host_w(host_port.begin(), host_port.end());
     std::wstring path_w = L"/stats";
 
