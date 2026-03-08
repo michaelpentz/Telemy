@@ -1,40 +1,32 @@
-# QA Checklist: Per-Link Relay Telemetry
+# QA Checklist: Relay Telemetry (v0.0.4 Native)
 
-This checklist verifies the flow of per-link SRT stats from the Aegis Relay to the OBS Dock.
+This checklist verifies the flow of relay stats from the AWS Relay to the OBS Dock in the v0.0.4 native architecture.
 
 ## 1. Prerequisites
 - [ ] Aegis Relay (AWS) instance active.
 - [ ] Bonding-capable source (e.g., Larix Broadcaster on a phone with 5G + WiFi) connected to the relay.
-- [ ] Control Plane (Go) running and receiving health reports from the relay.
-- [ ] Rust Core (`obs-telemetry-bridge`) polling the control plane.
+- [ ] OBS Studio running with `aegis-obs-plugin.dll` loaded.
+- [ ] Aegis Dock (Telemy v0.0.4) visible in OBS.
 
-## 2. Relay -> Control Plane Integration
-- [ ] Verify `POST /api/v1/relay/health` from the relay contains the `links[]` array.
-- [ ] Verify `links[]` correctly identifies active connections (e.g., T-Mobile, WiFi).
-- [ ] Verify `bitrate_kbps`, `rtt_ms`, `packet_loss_pct`, and `jitter_ms` are present for each link.
+## 2. Relay -> Plugin Integration (Aggregate)
+- [ ] Verify `PollRelayStats()` in `relay_client.cpp` polls the relay's port 8090 every 2s.
+- [ ] Verify `relay_ingest_bitrate_kbps`, `relay_rtt_ms`, `relay_pkt_loss`, and `relay_latency_ms` are injected into the top-level telemetry snapshot.
 
-## 3. Control Plane -> Rust Core Integration
-- [ ] Verify `GET /api/v1/relay/active` response includes the `links[]` array.
-- [ ] Verify the control plane correctly aggregates stats into the `bonded` object.
+## 3. Relay -> Plugin Integration (Per-Link)
+- [ ] Verify `PollPerLinkStats()` in `relay_client.cpp` polls the relay's port 5080 every 2s.
+- [ ] Verify `relay_links[]` array is injected into the snapshot, including `addr`, `bytes`, `share_pct`, `last_ms_ago`, and `asn_org`.
 
-## 4. Rust Core -> IPC Bridge Integration
-- [ ] Inspect the `status_snapshot` IPC payload.
-- [ ] Verify `relay.links[]` matches the data from the control plane.
-- [ ] Verify `connections.items[]` (in the bridge projection) is populated using link data.
-    - [ ] `name` maps to `link.label`.
-    - [ ] `bitrate` maps to `link.bitrate_kbps`.
-    - [ ] `status` maps to `link.status`.
+## 4. Plugin -> Dock UI Integration
+- [ ] Inspect the JSON snapshot pushed to the dock via CEF.
+- [ ] Verify `relay.status` and `relay.region` match the active session.
+- [ ] Verify `relay.links[]` matches the data from the relay's per-link stats API.
+- [ ] **Security Check**: Verify `pair_token` and `relay_ws_token` are EXCLUDED from the snapshot sent to the dock.
 
-## 5. UI Rendering (Aegis Dock - Connections Section)
-- [ ] **Link List:** Verify individual links appear as separate rows (e.g., T-Mobile, Verizon, WiFi).
-- [ ] **Metrics:** Verify instantaneous bitrate is shown per link.
-- [ ] **Signal Bars:** Verify signal bar counts reflect link quality (RTT/loss).
-- [ ] **Dynamic Updates:**
-    - [ ] Disconnect one link (e.g., turn off WiFi); verify its row shows `disconnected` or disappears.
-    - [ ] Reconnect the link; verify it reappears in the list.
-- [ ] **Bonded Aggregate:**
-    - [ ] Verify the bonded bitrate matches the sum of all link bitrates.
-    - [ ] Verify the "Bonded" status matches the relay's reported `bonded.health`.
+## 5. UI Rendering (Aegis Dock - Relay Section)
+- [ ] **Aggregate Card:** Verify bitrate bar shows real-time ingest throughput (e.g., 4.6 Mbps).
+- [ ] **Per-Link BitrateBars:** Verify individual links appear as separate bars (e.g., T-Mobile, WiFi).
+- [ ] **Stale Detection:** Disconnect a link; verify its bar fades (`opacity` drop) after 3s (`last_ms_ago > 3000`).
+- [ ] **Carrier Labels:** Verify ASN-based labels (T-Mobile, AT&T, etc.) appear correctly.
 
 ## 7. Validation Status (v0.0.4)
 - [x] **Relay E2E Telemetry:** PASSED (2026-03-05). Validated via IRL Pro bonded stream to AWS relay.
