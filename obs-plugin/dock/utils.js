@@ -212,17 +212,12 @@ export function cefCopyToClipboard(text) {
   document.body.removeChild(ta);
 }
 
-/** Known ASN org → short label mapping */
-var ASN_SHORT_LABELS = {
+/** Known mobile carrier ASN org → short label */
+var MOBILE_CARRIER_LABELS = {
   "t-mobile": "T-Mobile",
   "at&t": "AT&T",
   "verizon": "Verizon",
   "sprint": "Sprint",
-  "comcast": "Comcast",
-  "charter": "Charter",
-  "cox": "Cox",
-  "centurylink": "CenturyLink",
-  "spectrum": "Spectrum",
   "vodafone": "Vodafone",
   "ee limited": "EE",
   "three": "Three",
@@ -232,41 +227,76 @@ var ASN_SHORT_LABELS = {
   "rogers": "Rogers",
   "bell": "Bell",
   "telus": "TELUS",
+  "orange": "Orange",
+  "bouygues": "Bouygues",
+  "sfr": "SFR",
+  "swisscom": "Swisscom",
+  "kddi": "KDDI",
+  "softbank": "SoftBank",
+  "ntt docomo": "Docomo",
+  "jio": "Jio",
+  "airtel": "Airtel",
 };
 
-/** Parse ASN org name to a short carrier label */
-export function shortCarrierLabel(asnOrg) {
+/** Known ISP ASN org → short label (wired/ethernet connections) */
+var ISP_LABELS = {
+  "comcast": "Comcast",
+  "charter": "Charter",
+  "cox": "Cox",
+  "centurylink": "CenturyLink",
+  "spectrum": "Spectrum",
+  "lumen": "Lumen",
+  "frontier": "Frontier",
+  "windstream": "Windstream",
+  "mediacom": "Mediacom",
+  "altice": "Altice",
+  "optimum": "Optimum",
+  "consolidated": "Consolidated",
+  "google fiber": "Google Fiber",
+  "sonic": "Sonic",
+  "at&t internet": "AT&T Fiber",
+  "verizon fios": "Fios",
+  "bt group": "BT",
+  "sky broadband": "Sky",
+  "virgin media": "Virgin",
+  "deutsche telekom": "Telekom",
+  "telstra internet": "Telstra",
+  "nbn": "NBN",
+};
+
+/** Parse ASN org name to a short carrier label and type */
+export function classifyAsn(asnOrg) {
   if (!asnOrg) return null;
   var lower = asnOrg.toLowerCase();
-  for (var key in ASN_SHORT_LABELS) {
-    if (lower.includes(key)) return ASN_SHORT_LABELS[key];
+  // Check ISPs first (more specific matches like "at&t internet" before "at&t")
+  for (var key in ISP_LABELS) {
+    if (lower.includes(key)) return { label: ISP_LABELS[key], type: "ethernet" };
   }
-  // Fallback: take the first word if reasonable length
+  // Check mobile carriers
+  for (var key in MOBILE_CARRIER_LABELS) {
+    if (lower.includes(key)) return { label: MOBILE_CARRIER_LABELS[key], type: "cellular" };
+  }
+  // Unknown ASN — use first word as label, assume cellular (most IRL links are)
   var first = asnOrg.split(/[,\s]+/)[0];
-  if (first && first.length <= 12) return first;
-  return asnOrg.slice(0, 12);
+  var label = (first && first.length <= 12) ? first : asnOrg.slice(0, 12);
+  return { label: label, type: "cellular" };
 }
 
-/** Classify a link — uses ASN org from relay when available, falls back to IP heuristic */
-export function classifyLinkAddr(addr, asnOrg) {
+/** Kept for backward compat — delegates to classifyAsn */
+export function shortCarrierLabel(asnOrg) {
+  var result = classifyAsn(asnOrg);
+  return result ? result.label : null;
+}
+
+/** Classify a link — uses ASN org when available, otherwise numbered fallback.
+ *  linkIndex is the 0-based position in the links array. */
+export function classifyLinkAddr(addr, asnOrg, linkIndex) {
   if (!addr) return { label: "Link", type: "unknown" };
-  var ip = addr.split(":")[0];
-  var parts = ip.split(".");
-  var b0 = parseInt(parts[0], 10);
-  var b1 = parseInt(parts[1], 10);
-  // RFC 1918 private ranges → always WiFi regardless of ASN
-  if (b0 === 10 || (b0 === 192 && b1 === 168) ||
-      (b0 === 172 && b1 >= 16 && b1 <= 31)) {
-    return { label: "WiFi", type: "wifi" };
-  }
-  // Use ASN org label if available from relay
+  // Use ASN org if available (MaxMind on relay)
   if (asnOrg) {
-    return { label: shortCarrierLabel(asnOrg), type: "cellular" };
+    return classifyAsn(asnOrg);
   }
-  // Fallback: IP heuristics
-  // T-Mobile: 172.56.x.x, 172.58.x.x
-  if (b0 === 172 && (b1 === 56 || b1 === 58)) return { label: "T-Mobile", type: "cellular" };
-  // CGNAT range (100.64-127.x.x) — typically mobile carrier
-  if (b0 === 100 && b1 >= 64 && b1 <= 127) return { label: "Mobile", type: "cellular" };
-  return { label: "Mobile", type: "cellular" };
+  // No ASN — use numbered labels (no IP heuristics, avoids leaking assumptions)
+  var n = (linkIndex != null ? linkIndex : 0) + 1;
+  return { label: "Link " + n, type: "unknown" };
 }

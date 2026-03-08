@@ -91,7 +91,7 @@ export function BitrateBar({ value, max, color, label }) {
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
         <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)" }}>{label}</span>
         <span style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)", fontWeight: 600 }}>
-          {(value / 1000).toFixed(1)} Mbps
+          {value >= 1000 ? (value / 1000).toFixed(1) + " Mbps" : Math.round(value) + " kbps"}
         </span>
       </div>
       <div style={{ height: 4, background: "var(--theme-surface, #1a1d23)", borderRadius: 2, overflow: "hidden" }}>

@@ -81,8 +81,6 @@ export default function AegisDock() {
   const dockLayout = useDockCompactMode(dockRootRef);
   const isCompact = dockLayout === "compact" || dockLayout === "ultra";
   const isUltraCompact = dockLayout === "ultra";
-  const prevLinkBytesRef = useRef({});
-  const prevLinkTsRef = useRef(0);
 
   const bridge = useDockState();
   const sim = useSimulatedState();
@@ -188,6 +186,8 @@ export default function AegisDock() {
   const [sceneIntentLinkNames, setSceneIntentLinkNames] = useState(() => loadSceneIntentLinkNames());
   // autoSwitchSourceSelection removed — now derived from relayActive
   const [scenePanelExpanded, setScenePanelExpanded] = useState(false);
+  const [showConnDetails, setShowConnDetails] = useState(false);
+  const connDetailsTimerRef = useRef(null);
   const [scenePrefsHydrated, setScenePrefsHydrated] = useState(!useBridge);
   const scenePrefsSaveTimerRef = useRef(null);
   const scenesItemsRef = useRef(scenes.items);
@@ -509,29 +509,20 @@ export default function AegisDock() {
   // Animated bitrate values
   const bondedKbps = bitrate.bondedKbps || 0;
   const relayBondedKbps = relay.statsAvailable ? relay.ingestBitrateKbps : (bitrate.relayBondedKbps || bondedKbps);
-  // Per-link throughput from cumulative byte deltas
+  // Per-link throughput derived from share_pct × bonded bitrate
   const perLinkThroughputs = useMemo(() => {
     if (!relay.perLinkAvailable || !relay.links || relay.links.length === 0) return [];
-    const now = Date.now();
-    const dt = (now - prevLinkTsRef.current) / 1000;
-    const prev = prevLinkBytesRef.current;
-    const results = relay.links.map(link => {
-      const prevBytes = prev[link.addr] || 0;
-      const kbps = dt > 0.5 && prevBytes > 0
-        ? Math.max(0, ((link.bytes - prevBytes) / dt) * 8 / 1000)
-        : 0;
-      return { ...link, kbps, ...classifyLinkAddr(link.addr, link.asn_org) };
+    return relay.links.map((link, i) => {
+      const kbps = relayBondedKbps * (link.sharePct / 100);
+      return { ...link, kbps, ...classifyLinkAddr(link.addr, link.asn_org, i) };
     });
-    const nextPrev = {};
-    relay.links.forEach(l => { nextPrev[l.addr] = l.bytes; });
-    prevLinkBytesRef.current = nextPrev;
-    prevLinkTsRef.current = now;
-    return results;
-  }, [relay.perLinkAvailable, relay.links]);
+  }, [relay.perLinkAvailable, relay.links, relayBondedKbps]);
   // Relay connection URLs (for copy-to-clipboard)
   const relayIngestHost = relay.relayHostname || relay.publicIp;
   const relayIngestUrl = relayIngestHost ? "srtla://" + relayIngestHost + ":" + (relay.srtPort || 5000) : null;
   const relayObsPlayUrl = relayIngestHost ? "srt://" + relayIngestHost + ":4000?streamid=play_aegis" : null;
+  const relayDirectIngestUrl = relay.publicIp && relay.relayHostname ? "srtla://" + relay.publicIp + ":" + (relay.srtPort || 5000) : null;
+  const relayDirectPlayUrl = relay.publicIp && relay.relayHostname ? "srt://" + relay.publicIp + ":4000?streamid=play_aegis" : null;
   // Encoders & Uploads — per-output grouped data
   const encoderOutputs = ds.outputs || { groups: [], hidden: [] };
   const allEncoderItems = encoderOutputs.groups?.flatMap(g => g.items) || [];
@@ -1521,36 +1512,34 @@ export default function AegisDock() {
                     letterSpacing: "0.5px" }}>
                     Relay Ingest
                   </div>
-                  {/* Bitrate bar */}
-                  <div style={{ marginBottom: 4 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                      <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)" }}>Bitrate</span>
-                      <span style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontWeight: 600 }}>
-                        {relay.ingestBitrateKbps >= 1000
-                          ? `${(relay.ingestBitrateKbps / 1000).toFixed(1)} Mbps`
-                          : `${relay.ingestBitrateKbps} kbps`}
-                      </span>
+                  {/* Total + per-link bitrate bars */}
+                  <BitrateBar
+                    value={relay.ingestBitrateKbps}
+                    max={Math.max(relayBondedKbps, 6000)}
+                    color={relay.bandwidthMbps > 0 && (relay.recvRateMbps || 0) / relay.bandwidthMbps > 0.9
+                      ? "#da3633" : relay.bandwidthMbps > 0 && (relay.recvRateMbps || 0) / relay.bandwidthMbps > 0.7
+                      ? "#d29922" : "#2ea043"}
+                    label="Bonded"
+                  />
+                  {/* Per-link bonding bars (below Total) */}
+                  {perLinkThroughputs.map((link, i) => (
+                    <div key={link.addr} style={{ opacity: link.lastMsAgo > 3000 ? 0.4 : 1 }}>
+                      <BitrateBar
+                        value={link.kbps}
+                        max={Math.max(relayBondedKbps, 6000)}
+                        color={i === 0 ? "#2d7aed" : i === 1 ? "#8b5cf6" : "#e05d44"}
+                        label={`${link.label}  ${link.sharePct > 0 && link.sharePct < 1 ? "<1" : Math.round(link.sharePct)}%`}
+                      />
                     </div>
-                    <div style={{ height: 4, borderRadius: 2,
-                      background: "var(--theme-border, #3a3d45)", overflow: "hidden" }}>
-                      <div style={{
-                        height: "100%", borderRadius: 2, transition: "width 0.6s ease",
-                        width: `${Math.min(100, relay.bandwidthMbps > 0
-                          ? ((relay.recvRateMbps || 0) / relay.bandwidthMbps) * 100 : 50)}%`,
-                        background: relay.bandwidthMbps > 0 && (relay.recvRateMbps || 0) / relay.bandwidthMbps > 0.9
-                          ? "#da3633" : relay.bandwidthMbps > 0 && (relay.recvRateMbps || 0) / relay.bandwidthMbps > 0.7
-                          ? "#d29922" : "#2ea043",
-                      }} />
-                    </div>
-                  </div>
-                  {/* Stats pills — row 1: network */}
+                  ))}
+                  {/* Stats pills — network */}
                   <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                     <StatPill label="RTT" value={relay.rttMs != null ? `${Math.round(relay.rttMs)}ms` : "\u2014"}
                       color={relay.rttMs > 100 ? "#da3633" : relay.rttMs > 50 ? "#d29922" : "#2ea043"} />
                     <StatPill label="Latency" value={relay.relayLatencyMs != null ? `${relay.relayLatencyMs}ms` : "\u2014"}
                       color={relay.relayLatencyMs > 3500 ? "#da3633" : relay.relayLatencyMs > 2500 ? "#d29922" : "#2ea043"} />
                   </div>
-                  {/* Stats pills — row 2: packet loss */}
+                  {/* Stats pills — packet loss */}
                   <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                     <StatPill label="Loss" value={relay.pktLoss > 0 ? relay.pktLoss.toLocaleString() : "0"}
                       color={relay.pktLoss > 1000 ? "#da3633" : relay.pktLoss > 100 ? "#d29922" : "#2ea043"} />
@@ -1562,26 +1551,73 @@ export default function AegisDock() {
                 </div>
               )}
 
-              {/* Per-link bonding bars (cellular/WiFi from srtla_rec stats) */}
-              {perLinkThroughputs.length > 0 ? (
+              {/* Connection Details — hidden by default for privacy */}
+              {relayIngestUrl && (
                 <div style={{ marginBottom: 6 }}>
-                  {perLinkThroughputs.map((link, i) => (
-                    <div key={link.addr} style={{ opacity: link.lastMsAgo > 3000 ? 0.4 : 1 }}>
-                      <BitrateBar
-                        value={link.kbps}
-                        max={Math.max(relayBondedKbps, 6000)}
-                        color={i === 0 ? "#2d7aed" : i === 1 ? "#8b5cf6" : "#e05d44"}
-                        label={`${link.label}  ${Math.round(link.sharePct)}%`}
-                      />
+                  {!showConnDetails ? (
+                    <button onClick={function() {
+                      setShowConnDetails(true);
+                      if (connDetailsTimerRef.current) clearTimeout(connDetailsTimerRef.current);
+                      connDetailsTimerRef.current = setTimeout(function() { setShowConnDetails(false); }, 30000);
+                    }} style={{
+                      width: "100%", padding: "5px 0", border: "1px solid var(--theme-border, #2a2d35)",
+                      borderRadius: 3, background: "var(--theme-surface, #13151a)", cursor: "pointer",
+                      color: "var(--theme-text-muted, #5a5f6d)", fontSize: 9, fontWeight: 500,
+                      fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                    }}>
+                      {"\u26A0 Connection Details \u2014 do not share on stream  \u25BE"}
+                    </button>
+                  ) : (
+                    <div style={{
+                      background: "var(--theme-surface, #13151a)", borderRadius: 4,
+                      border: "1px solid var(--theme-border, #2a2d35)", overflow: "hidden",
+                    }}>
+                      <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px",
+                        cursor: "pointer", fontFamily: "monospace",
+                        borderBottom: "1px solid var(--theme-border, #1e2028)" }}
+                        onClick={function() { cefCopyToClipboard(relayIngestUrl); }}>
+                        {"Ingest  " + relayIngestUrl + "  \u29C9"}
+                      </div>
+                      {relayDirectIngestUrl && (
+                        <div style={{ fontSize: 9, color: "var(--theme-text-muted, #8b8f98)", padding: "3px 10px 3px 18px",
+                          cursor: "pointer", fontFamily: "monospace",
+                          borderBottom: "1px solid var(--theme-border, #1e2028)" }}
+                          onClick={function() { cefCopyToClipboard(relayDirectIngestUrl); }}>
+                        {"        " + relayDirectIngestUrl + "  \u29C9"}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px",
+                        cursor: "pointer", fontFamily: "monospace",
+                        borderBottom: "1px solid var(--theme-border, #1e2028)" }}
+                        onClick={function() { cefCopyToClipboard("live_aegis"); }}>
+                        {"Stream  live_aegis  \u29C9"}
+                      </div>
+                      <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px",
+                        cursor: "pointer", fontFamily: "monospace",
+                        borderBottom: "1px solid var(--theme-border, #1e2028)" }}
+                        onClick={function() { cefCopyToClipboard(relayObsPlayUrl); }}>
+                        {"Play    " + relayObsPlayUrl + "  \u29C9"}
+                      </div>
+                      {relayDirectPlayUrl && (
+                        <div style={{ fontSize: 9, color: "var(--theme-text-muted, #8b8f98)", padding: "3px 10px 3px 18px",
+                          cursor: "pointer", fontFamily: "monospace",
+                          borderBottom: "1px solid var(--theme-border, #1e2028)" }}
+                          onClick={function() { cefCopyToClipboard(relayDirectPlayUrl); }}>
+                          {"        " + relayDirectPlayUrl + "  \u29C9"}
+                        </div>
+                      )}
+                      <div style={{ textAlign: "center", padding: "3px 0", cursor: "pointer",
+                        fontSize: 9, color: "var(--theme-text-muted, #5a5f6d)" }}
+                        onClick={function() {
+                          setShowConnDetails(false);
+                          if (connDetailsTimerRef.current) clearTimeout(connDetailsTimerRef.current);
+                        }}>
+                        {"Hide  \u25B4"}
+                      </div>
                     </div>
-                  ))}
+                  )}
                 </div>
-              ) : null}
-
-              {/* Connection URLs — flat siblings, click-to-copy */}
-              {relayIngestUrl && <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px", cursor: "pointer", fontFamily: "monospace", background: "var(--theme-surface, #13151a)", borderTop: "1px solid var(--theme-border, #2a2d35)", borderLeft: "1px solid var(--theme-border, #2a2d35)", borderRight: "1px solid var(--theme-border, #2a2d35)", borderRadius: "4px 4px 0 0", marginTop: 2 }} onClick={function() { cefCopyToClipboard(relayIngestUrl); }}>{"Ingest  " + relayIngestUrl + "  \u29C9"}</div>}
-              {relayIngestUrl && <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px", cursor: "pointer", fontFamily: "monospace", background: "var(--theme-surface, #13151a)", borderLeft: "1px solid var(--theme-border, #2a2d35)", borderRight: "1px solid var(--theme-border, #2a2d35)" }} onClick={function() { cefCopyToClipboard("live_aegis"); }}>{"Stream   live_aegis  \u29C9"}</div>}
-              {relayObsPlayUrl && <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px", cursor: "pointer", fontFamily: "monospace", background: "var(--theme-surface, #13151a)", borderBottom: "1px solid var(--theme-border, #2a2d35)", borderLeft: "1px solid var(--theme-border, #2a2d35)", borderRight: "1px solid var(--theme-border, #2a2d35)", borderRadius: "0 0 4px 4px", marginBottom: 6 }} onClick={function() { cefCopyToClipboard(relayObsPlayUrl); }}>{"Play     " + relayObsPlayUrl + "  \u29C9"}</div>}
+              )}
 
               {/* Deactivate button */}
               {relayDeactivating ? (
