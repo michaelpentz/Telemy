@@ -13,6 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/telemyapp/aegis-control-plane/internal/config"
+	"github.com/telemyapp/aegis-control-plane/internal/dns"
 	"github.com/telemyapp/aegis-control-plane/internal/metrics"
 	"github.com/telemyapp/aegis-control-plane/internal/model"
 	"github.com/telemyapp/aegis-control-plane/internal/relay"
@@ -28,6 +29,9 @@ type mockStore struct {
 	getUsageCurrentFn        func(context.Context, string) (*model.UsageCurrent, error)
 	recordRelayHealthEventFn func(context.Context, store.RelayHealthInput) error
 	listRelayManifestFn      func(context.Context) ([]model.RelayManifestEntry, error)
+	updateProvisionStepFn    func(context.Context, string, string) error
+	getUserRelaySlugFn       func(context.Context, string) (string, error)
+	finalActivateSessionFn   func(context.Context, string) error
 }
 
 func (m *mockStore) StartOrGetSession(ctx context.Context, in store.StartInput) (*model.Session, bool, error) {
@@ -86,6 +90,35 @@ func (m *mockStore) ListRelayManifest(ctx context.Context) ([]model.RelayManifes
 	return nil, nil
 }
 
+func (m *mockStore) UpdateProvisionStep(ctx context.Context, sessionID, step string) error {
+	if m.updateProvisionStepFn != nil {
+		return m.updateProvisionStepFn(ctx, sessionID, step)
+	}
+	return nil
+}
+
+func (m *mockStore) GetUserRelaySlug(ctx context.Context, userID string) (string, error) {
+	if m.getUserRelaySlugFn != nil {
+		return m.getUserRelaySlugFn(ctx, userID)
+	}
+	return "", store.ErrNotFound
+}
+
+func (m *mockStore) FinalActivateSession(ctx context.Context, sessionID string) error {
+	if m.finalActivateSessionFn != nil {
+		return m.finalActivateSessionFn(ctx, sessionID)
+	}
+	return nil
+}
+
+func (m *mockStore) GetUserEIP(ctx context.Context, userID string) (string, string, error) {
+	return "", "", nil
+}
+
+func (m *mockStore) SetUserEIP(ctx context.Context, userID, allocationID, publicIP string) error {
+	return nil
+}
+
 type mockProvisioner struct {
 	provisionFn   func(context.Context, relay.ProvisionRequest) (relay.ProvisionResult, error)
 	deprovisionFn func(context.Context, relay.DeprovisionRequest) error
@@ -141,7 +174,7 @@ func TestRelayStop_IdempotentAlreadyStoppedSkipsDeprovision(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp)
+	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/stop", jsonBody(map[string]any{
 		"session_id": "ses_1",
 		"reason":     "user_requested",
@@ -191,7 +224,7 @@ func TestRelayStop_ActiveSessionCallsDeprovisionThenStops(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp)
+	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/stop", jsonBody(map[string]any{
 		"session_id": "ses_2",
 		"reason":     "user_requested",
@@ -230,7 +263,7 @@ func TestRelayStop_DeprovisionFailureReturns500(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp)
+	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/stop", jsonBody(map[string]any{
 		"session_id": "ses_3",
 		"reason":     "user_requested",
@@ -270,8 +303,11 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 		MaxSessionSeconds:  57600,
 	}
 
+	// startCalls tracks that store.StartOrGetSession is called each time.
+	// On call 1: created=true  → handler spawns async goroutine, returns 201.
+	// On call 2: created=false → handler does NOT spawn a second goroutine, returns 200
+	//            with the current session state (active after provisioning completes).
 	startCalls := 0
-	activateCalls := 0
 	ms := &mockStore{
 		startOrGetSessionFn: func(_ context.Context, in store.StartInput) (*model.Session, bool, error) {
 			startCalls++
@@ -281,38 +317,16 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 			if startCalls == 1 {
 				return firstSession, true, nil
 			}
+			// Simulate live lookup returning active state after provisioning completed.
 			return replayedSession, false, nil
 		},
-		activateSessionFn: func(_ context.Context, in store.ActivateProvisionedSessionInput) (*model.Session, error) {
-			activateCalls++
-			return replayedSession, nil
-		},
 	}
+	mp := &mockProvisioner{}
 
-	provisionCalls := 0
-	mp := &mockProvisioner{
-		provisionFn: func(_ context.Context, req relay.ProvisionRequest) (relay.ProvisionResult, error) {
-			provisionCalls++
-			if req.SessionID != "ses_new" {
-				t.Fatalf("unexpected session id: %s", req.SessionID)
-			}
-			return relay.ProvisionResult{
-				AWSInstanceID: "i-123",
-				AMIID:         "ami-123",
-				InstanceType:  "t4g.small",
-				PublicIP:      "198.51.100.21",
-				SRTPort:       9000,
-				WSURL:         "wss://relay.test/ws",
-			}, nil
-		},
-	}
-
-	router := NewRouter(testConfig(), ms, mp)
+	router := NewRouter(testConfig(), ms, mp, nil)
 	body := map[string]any{
 		"region_preference": "us-east-1",
-		"client_context": map[string]any{
-			"requested_by": "dashboard",
-		},
+		"client_context":    map[string]any{"requested_by": "dashboard"},
 	}
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(body))
@@ -325,18 +339,25 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 			t.Fatalf("first start expected 201, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		if i == 1 && rr.Code != http.StatusOK {
-			t.Fatalf("replay start expected 200, got %d body=%s", rr.Code, rr.Body.String())
+			t.Fatalf("replay start expected 200 with active session, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if i == 1 {
+			var resp struct {
+				Session struct {
+					Status string `json:"status"`
+				} `json:"session"`
+			}
+			if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode replay response: %v", err)
+			}
+			if resp.Session.Status != "active" {
+				t.Fatalf("replay should return active session, got status=%s", resp.Session.Status)
+			}
 		}
 	}
 
 	if startCalls != 2 {
 		t.Fatalf("expected 2 start/get calls, got %d", startCalls)
-	}
-	if provisionCalls != 1 {
-		t.Fatalf("expected 1 provision call, got %d", provisionCalls)
-	}
-	if activateCalls != 1 {
-		t.Fatalf("expected 1 activation call, got %d", activateCalls)
 	}
 }
 
@@ -375,7 +396,7 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp)
+	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "eu-west-1",
 		"client_context": map[string]any{
@@ -399,6 +420,8 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 }
 
 func TestRelayStart_ProvisionFailureCompensatesByStoppingSession(t *testing.T) {
+	// Handler returns 201 immediately and spawns an async pipeline goroutine.
+	// Compensation (stop without deprovision) is verified in TestProvisionPipeline_ProvisionFailureCompensates.
 	createdSession := &model.Session{
 		ID:                 "ses_prov_fail",
 		UserID:             "usr_1",
@@ -408,60 +431,31 @@ func TestRelayStart_ProvisionFailureCompensatesByStoppingSession(t *testing.T) {
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
 	}
-
-	stopCalls := 0
 	ms := &mockStore{
 		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
 			return createdSession, true, nil
 		},
-		stopSessionFn: func(_ context.Context, userID, sessionID string) (*model.Session, error) {
-			stopCalls++
-			if userID != "usr_1" || sessionID != "ses_prov_fail" {
-				t.Fatalf("unexpected stop target user=%s session=%s", userID, sessionID)
-			}
-			return &model.Session{
-				ID:     sessionID,
-				UserID: userID,
-				Status: model.SessionStopped,
-			}, nil
-		},
 	}
+	mp := &mockProvisioner{}
 
-	deprovCalls := 0
-	mp := &mockProvisioner{
-		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
-			return relay.ProvisionResult{}, context.DeadlineExceeded
-		},
-		deprovisionFn: func(_ context.Context, _ relay.DeprovisionRequest) error {
-			deprovCalls++
-			return nil
-		},
-	}
-
-	router := NewRouter(testConfig(), ms, mp)
+	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "us-east-1",
-		"client_context": map[string]any{
-			"requested_by": "dashboard",
-		},
+		"client_context":    map[string]any{"requested_by": "dashboard"},
 	}))
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
 	req.Header.Set("Idempotency-Key", "b9e2bdb0-0ef2-46ba-8201-76558a3d5337")
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if stopCalls != 1 {
-		t.Fatalf("expected 1 stop compensation call, got %d", stopCalls)
-	}
-	if deprovCalls != 0 {
-		t.Fatalf("expected no deprovision on provision failure, got %d", deprovCalls)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for new provisioning session, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
 func TestRelayStart_ActivationFailureCompensatesByDeprovisionAndStoppingSession(t *testing.T) {
+	// Handler returns 201 immediately and spawns an async pipeline goroutine.
+	// Deprovision+stop compensation is verified in TestProvisionPipeline_ActivationFailureDeprovisions.
 	createdSession := &model.Session{
 		ID:                 "ses_activate_fail",
 		UserID:             "usr_1",
@@ -471,77 +465,25 @@ func TestRelayStart_ActivationFailureCompensatesByDeprovisionAndStoppingSession(
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
 	}
-
-	stopCalls := 0
-	activateCalls := 0
 	ms := &mockStore{
 		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
 			return createdSession, true, nil
 		},
-		activateSessionFn: func(_ context.Context, in store.ActivateProvisionedSessionInput) (*model.Session, error) {
-			activateCalls++
-			if in.SessionID != "ses_activate_fail" {
-				t.Fatalf("unexpected activation session id: %s", in.SessionID)
-			}
-			return nil, context.Canceled
-		},
-		stopSessionFn: func(_ context.Context, userID, sessionID string) (*model.Session, error) {
-			stopCalls++
-			if userID != "usr_1" || sessionID != "ses_activate_fail" {
-				t.Fatalf("unexpected stop target user=%s session=%s", userID, sessionID)
-			}
-			return &model.Session{
-				ID:     sessionID,
-				UserID: userID,
-				Status: model.SessionStopped,
-			}, nil
-		},
 	}
+	mp := &mockProvisioner{}
 
-	deprovCalls := 0
-	mp := &mockProvisioner{
-		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
-			return relay.ProvisionResult{
-				AWSInstanceID: "i-orphan-risk",
-				AMIID:         "ami-123",
-				InstanceType:  "t4g.small",
-				PublicIP:      "198.51.100.50",
-				SRTPort:       9000,
-				WSURL:         "wss://relay.test/ws",
-			}, nil
-		},
-		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
-			deprovCalls++
-			if req.SessionID != "ses_activate_fail" || req.AWSInstanceID != "i-orphan-risk" {
-				t.Fatalf("unexpected deprovision request: %+v", req)
-			}
-			return nil
-		},
-	}
-
-	router := NewRouter(testConfig(), ms, mp)
+	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "us-east-1",
-		"client_context": map[string]any{
-			"requested_by": "dashboard",
-		},
+		"client_context":    map[string]any{"requested_by": "dashboard"},
 	}))
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
 	req.Header.Set("Idempotency-Key", "d4717a10-f714-4ea7-8ee4-df2de023c868")
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if activateCalls != 1 {
-		t.Fatalf("expected 1 activation call, got %d", activateCalls)
-	}
-	if deprovCalls != 1 {
-		t.Fatalf("expected 1 deprovision compensation call, got %d", deprovCalls)
-	}
-	if stopCalls != 1 {
-		t.Fatalf("expected 1 stop compensation call, got %d", stopCalls)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for new provisioning session, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -566,7 +508,7 @@ func TestRelayManifest_ReturnsConfiguredEntries(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{})
+	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/manifest", nil)
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
 	rr := httptest.NewRecorder()
@@ -593,7 +535,7 @@ func TestRelayManifest_EmptyManifestReturns503(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{})
+	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/manifest", nil)
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
 	rr := httptest.NewRecorder()
@@ -611,7 +553,7 @@ func TestRelayHealth_RejectedPayloadReturns400(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{})
+	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
 		"session_id":             "ses_1",
 		"instance_id":            "i-1",
@@ -635,7 +577,7 @@ func TestRelayHealth_StoreFailureReturns500(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{})
+	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
 		"session_id":             "ses_1",
 		"instance_id":            "i-1",
@@ -656,7 +598,7 @@ func TestMetricsEndpoint_ExposesPrometheusPayload(t *testing.T) {
 	metrics.ResetDefaultForTest()
 
 	ms := &mockStore{}
-	router := NewRouter(testConfig(), ms, &mockProvisioner{})
+	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -673,6 +615,202 @@ func TestMetricsEndpoint_ExposesPrometheusPayload(t *testing.T) {
 	}
 	if !bytes.Contains(rr.Body.Bytes(), []byte("# TYPE aegis_relay_provision_latency_ms histogram")) {
 		t.Fatalf("expected provision histogram type in metrics payload, body=%s", body)
+	}
+}
+
+// newTestServer creates a Server with no-op probe and dwell so pipeline tests run instantly.
+func newTestServer(ms *mockStore, mp *mockProvisioner) *Server {
+	return &Server{
+		cfg:         testConfig(),
+		store:       ms,
+		provisioner: mp,
+		probeReady:  func(_ context.Context, _ string) bool { return true },
+		dwell:       func(_ context.Context, _ time.Duration) {},
+	}
+}
+
+func TestProvisionPipeline_ProvisionFailureCompensates(t *testing.T) {
+	stopCalls := 0
+	ms := &mockStore{
+		stopSessionFn: func(_ context.Context, userID, sessionID string) (*model.Session, error) {
+			stopCalls++
+			if userID != "usr_1" || sessionID != "ses_prov_fail" {
+				t.Errorf("unexpected stop target user=%s session=%s", userID, sessionID)
+			}
+			return &model.Session{ID: sessionID, UserID: userID, Status: model.SessionStopped}, nil
+		},
+	}
+	deprovCalls := 0
+	mp := &mockProvisioner{
+		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
+			return relay.ProvisionResult{}, context.DeadlineExceeded
+		},
+		deprovisionFn: func(_ context.Context, _ relay.DeprovisionRequest) error {
+			deprovCalls++
+			return nil
+		},
+	}
+
+	s := newTestServer(ms, mp)
+	s.runProvisionPipeline("ses_prov_fail", "usr_1", "us-east-1")
+
+	if stopCalls != 1 {
+		t.Fatalf("expected 1 stop compensation call, got %d", stopCalls)
+	}
+	if deprovCalls != 0 {
+		t.Fatalf("expected no deprovision when no instance was launched, got %d", deprovCalls)
+	}
+}
+
+func TestProvisionPipeline_ActivationFailureDeprovisions(t *testing.T) {
+	activateCalls, deprovCalls, stopCalls := 0, 0, 0
+	ms := &mockStore{
+		activateSessionFn: func(_ context.Context, in store.ActivateProvisionedSessionInput) (*model.Session, error) {
+			activateCalls++
+			if in.SessionID != "ses_act_fail" {
+				t.Errorf("unexpected session id: %s", in.SessionID)
+			}
+			return nil, context.Canceled
+		},
+		stopSessionFn: func(_ context.Context, userID, sessionID string) (*model.Session, error) {
+			stopCalls++
+			return &model.Session{ID: sessionID, UserID: userID, Status: model.SessionStopped}, nil
+		},
+	}
+	mp := &mockProvisioner{
+		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
+			return relay.ProvisionResult{
+				AWSInstanceID: "i-orphan-risk",
+				AMIID:         "ami-123",
+				InstanceType:  "t4g.small",
+				PublicIP:      "198.51.100.50",
+				SRTPort:       5000,
+				WSURL:         "wss://test/ws",
+			}, nil
+		},
+		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
+			deprovCalls++
+			if req.AWSInstanceID != "i-orphan-risk" {
+				t.Errorf("unexpected instance id: %s", req.AWSInstanceID)
+			}
+			return nil
+		},
+	}
+
+	s := newTestServer(ms, mp)
+	s.runProvisionPipeline("ses_act_fail", "usr_1", "us-east-1")
+
+	if activateCalls != 1 {
+		t.Fatalf("expected 1 activation call, got %d", activateCalls)
+	}
+	if deprovCalls != 1 {
+		t.Fatalf("expected 1 deprovision compensation call, got %d", deprovCalls)
+	}
+	if stopCalls != 1 {
+		t.Fatalf("expected 1 stop compensation call, got %d", stopCalls)
+	}
+}
+
+// TestProvisionPipeline_FinalActivateFailureDeprovisions is a regression test for
+// audit finding #4: if FinalActivateSession fails after a live EC2 instance exists,
+// the pipeline must terminate that instance rather than leaving it running and leaking cost.
+func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
+	finalActivateCalls, deprovCalls, stopCalls := 0, 0, 0
+	ms := &mockStore{
+		activateSessionFn: func(_ context.Context, in store.ActivateProvisionedSessionInput) (*model.Session, error) {
+			return &model.Session{
+				ID:                 in.SessionID,
+				UserID:             in.UserID,
+				Status:             model.SessionProvisioning,
+				RelayAWSInstanceID: in.AWSInstanceID,
+				PublicIP:           in.PublicIP,
+			}, nil
+		},
+		finalActivateSessionFn: func(_ context.Context, _ string) error {
+			finalActivateCalls++
+			return errors.New("db write failed")
+		},
+		stopSessionFn: func(_ context.Context, userID, sessionID string) (*model.Session, error) {
+			stopCalls++
+			return &model.Session{ID: sessionID, UserID: userID, Status: model.SessionStopped}, nil
+		},
+	}
+	mp := &mockProvisioner{
+		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
+			return relay.ProvisionResult{
+				AWSInstanceID: "i-leak-risk",
+				AMIID:         "ami-123",
+				InstanceType:  "t4g.small",
+				PublicIP:      "198.51.100.50",
+				SRTPort:       5000,
+				WSURL:         "wss://test/ws",
+			}, nil
+		},
+		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
+			deprovCalls++
+			if req.AWSInstanceID != "i-leak-risk" {
+				t.Errorf("unexpected instance id in deprovision: %s", req.AWSInstanceID)
+			}
+			return nil
+		},
+	}
+
+	s := newTestServer(ms, mp)
+	s.runProvisionPipeline("ses_final_fail", "usr_1", "us-east-1")
+
+	if finalActivateCalls != 1 {
+		t.Fatalf("expected 1 final activate call, got %d", finalActivateCalls)
+	}
+	if deprovCalls != 1 {
+		t.Fatalf("expected 1 deprovision call (instance must not be leaked), got %d", deprovCalls)
+	}
+	if stopCalls != 1 {
+		t.Fatalf("expected 1 stop call, got %d", stopCalls)
+	}
+}
+
+func TestRelayHealth_MissingInstanceIDReturns400(t *testing.T) {
+	router := NewRouter(testConfig(), &mockStore{}, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
+		"session_id":   "ses_1",
+		"ingest_active": true,
+		// instance_id omitted intentionally
+	}))
+	req.Header.Set("X-Relay-Auth", "relay-key")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing instance_id, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRelayHealth_InstanceIDMismatchRejects(t *testing.T) {
+	// Simulate a stale or spoofed relay reporting against the wrong session instance.
+	ms := &mockStore{
+		recordRelayHealthEventFn: func(_ context.Context, in store.RelayHealthInput) error {
+			if in.InstanceID != "i-wrong" {
+				return errors.New("unexpected instance id passed to store")
+			}
+			// Store rejects because aws_instance_id doesn't match session's relay instance.
+			return store.ErrRelayHealthRejected
+		},
+	}
+
+	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
+		"session_id":             "ses_1",
+		"instance_id":            "i-wrong",
+		"ingest_active":          true,
+		"egress_active":          true,
+		"session_uptime_seconds": 60,
+	}))
+	req.Header.Set("X-Relay-Auth", "relay-key")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for instance_id mismatch, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
