@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 const defaultRelayDomain = "relay.telemyapp.com"
@@ -30,7 +31,7 @@ func NewClient() *Client {
 		zoneID:     os.Getenv("CLOUDFLARE_ZONE_ID"),
 		apiToken:   os.Getenv("CLOUDFLARE_DNS_TOKEN"),
 		baseDomain: domain,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

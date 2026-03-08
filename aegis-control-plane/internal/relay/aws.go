@@ -47,7 +47,7 @@ cd /opt/srtla-receiver
 cat > docker-compose.yml << 'COMPOSEEOF'
 services:
   sls-management-ui:
-    image: ghcr.io/openirl/sls-management-ui:latest
+    image: ghcr.io/openirl/sls-management-ui:latest  # TODO: pin to digest once stable version confirmed
     container_name: sls-management-ui
     restart: unless-stopped
     environment:
@@ -164,16 +164,16 @@ else
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${APIKEY}" \
     -d '{"publisher":"live_aegis","player":"play_aegis","description":"aegis-relay"}')
-  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create response: ${STREAM_RESP}"
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create response: [redacted]"
 
   # Fetch the created stream to get publish/play keys
   STREAMS=$(curl -s http://localhost:8090/api/stream-ids \
     -H "Authorization: Bearer ${APIKEY}")
-  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') streams: ${STREAMS}"
+  echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') streams: [redacted]"
 
-  # Write stream info for control plane health checks
-  echo "${STREAMS}" > /tmp/srtla-streams.json
-  echo "${APIKEY}" > /tmp/srtla-apikey
+  # Write stream info under the service data directory (not world-readable /tmp)
+  echo "${STREAMS}" > /opt/srtla-receiver/data/srtla-streams.json
+  echo "${APIKEY}" > /opt/srtla-receiver/data/srtla-apikey
 fi
 
 # Signal ready (marker file for health check polling)
@@ -347,6 +347,72 @@ func (p *AWSProvisioner) Deprovision(ctx context.Context, req DeprovisionRequest
 	labels := map[string]string{"op": "terminate_instances", "region": req.Region, "status": "ok"}
 	metrics.Default().IncCounter("aegis_aws_operations_total", labels)
 	metrics.Default().ObserveHistogram("aegis_aws_operation_latency_ms", termDurMS, labels)
+	return nil
+}
+
+// AllocateElasticIP allocates a new VPC Elastic IP and tags it for management.
+func (p *AWSProvisioner) AllocateElasticIP(ctx context.Context, region string) (allocationID string, publicIP string, err error) {
+	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(region))
+	if err != nil {
+		return "", "", fmt.Errorf("aws config: %w", err)
+	}
+	client := ec2.NewFromConfig(cfg)
+
+	out, err := client.AllocateAddress(ctx, &ec2.AllocateAddressInput{
+		Domain: ec2types.DomainTypeVpc,
+		TagSpecifications: []ec2types.TagSpecification{
+			{
+				ResourceType: ec2types.ResourceTypeElasticIp,
+				Tags: []ec2types.Tag{
+					{Key: aws.String("Name"), Value: aws.String("aegis-relay-eip")},
+					{Key: aws.String("ManagedBy"), Value: aws.String("aegis-control-plane")},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("allocate address: %w", err)
+	}
+	allocID := aws.ToString(out.AllocationId)
+	ip := aws.ToString(out.PublicIp)
+	log.Printf("eip: allocated %s (%s) in %s", allocID, ip, region)
+	return allocID, ip, nil
+}
+
+// AssociateElasticIP associates an allocated EIP with an EC2 instance.
+func (p *AWSProvisioner) AssociateElasticIP(ctx context.Context, region, allocationID, instanceID string) error {
+	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("aws config: %w", err)
+	}
+	client := ec2.NewFromConfig(cfg)
+
+	_, err = client.AssociateAddress(ctx, &ec2.AssociateAddressInput{
+		AllocationId: aws.String(allocationID),
+		InstanceId:   aws.String(instanceID),
+	})
+	if err != nil {
+		return fmt.Errorf("associate address: %w", err)
+	}
+	log.Printf("eip: associated %s with %s in %s", allocationID, instanceID, region)
+	return nil
+}
+
+// ReleaseElasticIP releases an allocated EIP back to the AWS pool.
+func (p *AWSProvisioner) ReleaseElasticIP(ctx context.Context, region, allocationID string) error {
+	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("aws config: %w", err)
+	}
+	client := ec2.NewFromConfig(cfg)
+
+	_, err = client.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
+		AllocationId: aws.String(allocationID),
+	})
+	if err != nil {
+		return fmt.Errorf("release address: %w", err)
+	}
+	log.Printf("eip: released %s in %s", allocationID, region)
 	return nil
 }
 

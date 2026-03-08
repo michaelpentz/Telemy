@@ -26,11 +26,13 @@ type Store interface {
 	GetSessionByID(rctx context.Context, userID, sessionID string) (*model.Session, error)
 	StopSession(rctx context.Context, userID, sessionID string) (*model.Session, error)
 	UpdateProvisionStep(rctx context.Context, sessionID, step string) error
+	FinalActivateSession(ctx context.Context, sessionID string) error
 	GetUsageCurrent(rctx context.Context, userID string) (*model.UsageCurrent, error)
 	RecordRelayHealth(rctx context.Context, in store.RelayHealthInput) error
 	ListRelayManifest(rctx context.Context) ([]model.RelayManifestEntry, error)
 	GetUserRelaySlug(ctx context.Context, userID string) (string, error)
-	DB() store.DB
+	GetUserEIP(ctx context.Context, userID string) (string, string, error)
+	SetUserEIP(ctx context.Context, userID, allocationID, publicIP string) error
 }
 
 type Server struct {
@@ -38,6 +40,9 @@ type Server struct {
 	store       Store
 	provisioner relay.Provisioner
 	dns         *dns.Client
+	// probeReady and dwell are injectable for tests; nil uses real implementations.
+	probeReady func(ctx context.Context, url string) bool
+	dwell      func(ctx context.Context, d time.Duration)
 }
 
 func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *dns.Client) http.Handler {

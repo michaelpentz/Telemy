@@ -43,6 +43,7 @@ type StartInput struct {
 
 type RelayHealthInput struct {
 	SessionID            string
+	InstanceID           string
 	ObservedAt           time.Time
 	IngestActive         bool
 	EgressActive         bool
@@ -124,25 +125,25 @@ func (s *Store) StartOrGetSession(ctx context.Context, in StartInput) (*model.Se
 	}
 	defer tx.Rollback(ctx)
 
-	var storedHash string
-	var storedResp []byte
+	var storedHash, storedSessionID string
 	const idemLookup = `
-select request_hash, response_json
+select request_hash, session_id
 from idempotency_records
 where user_id = $1 and endpoint = '/api/v1/relay/start' and idempotency_key = $2 and expires_at > now()`
-	err = tx.QueryRow(ctx, idemLookup, in.UserID, in.IdempotencyKey).Scan(&storedHash, &storedResp)
+	err = tx.QueryRow(ctx, idemLookup, in.UserID, in.IdempotencyKey).Scan(&storedHash, &storedSessionID)
 	if err == nil {
 		if storedHash != in.RequestHash {
 			return nil, false, ErrIdempotencyMismatch
 		}
-		var sess model.Session
-		if err := json.Unmarshal(storedResp, &sess); err != nil {
+		// Live lookup so replay always reflects current session state, not stale pre-activation snapshot.
+		sess, err := s.getSessionByIDTx(ctx, tx, in.UserID, storedSessionID)
+		if err != nil {
 			return nil, false, err
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return nil, false, err
 		}
-		return &sess, false, nil
+		return sess, false, nil
 	}
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, err
@@ -413,23 +414,38 @@ group by u.plan_tier, u.cycle_start_at, u.cycle_end_at, u.included_seconds`
 }
 
 func (s *Store) RecordRelayHealth(ctx context.Context, in RelayHealthInput) error {
+	// Join to relay_instances so we can validate that the reported instance_id matches
+	// what is actually bound to the session. Mismatched or stale reporters are rejected.
 	const q = `
 insert into relay_health_events
   (session_id, relay_instance_id, observed_at, ingest_active, egress_active, session_uptime_seconds, payload_json, created_at)
 select
   s.id, s.relay_instance_id, $2, $3, $4, $5, $6, now()
 from sessions s
-where s.id = $1 and s.relay_instance_id is not null`
-	tag, err := s.db.Exec(ctx, q, in.SessionID, in.ObservedAt, in.IngestActive, in.EgressActive, in.SessionUptimeSeconds, in.RawPayload)
+join relay_instances ri on ri.id = s.relay_instance_id
+where s.id = $1 and ri.aws_instance_id = $7`
+	tag, err := s.db.Exec(ctx, q, in.SessionID, in.ObservedAt, in.IngestActive, in.EgressActive, in.SessionUptimeSeconds, in.RawPayload, in.InstanceID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: no relay_instance bound for session", ErrRelayHealthRejected)
+		return fmt.Errorf("%w: session not found or instance_id mismatch", ErrRelayHealthRejected)
 	}
 
 	_, err = s.db.Exec(ctx, `update relay_instances ri set last_health_at = $2 where ri.id = (select relay_instance_id from sessions where id = $1)`, in.SessionID, in.ObservedAt)
 	return err
+}
+
+func (s *Store) FinalActivateSession(ctx context.Context, sessionID string) error {
+	const q = `update sessions set status = 'active', provision_step = 'ready', updated_at = now() where id = $1 and status = 'provisioning'`
+	tag, err := s.db.Exec(ctx, q, sessionID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("final_activate: no provisioning session for id=%s", sessionID)
+	}
+	return nil
 }
 
 func (s *Store) ListRelayManifest(ctx context.Context) ([]model.RelayManifestEntry, error) {
@@ -570,6 +586,28 @@ func (s *Store) GetUserRelaySlug(ctx context.Context, userID string) (string, er
 func (s *Store) UpdateProvisionStep(ctx context.Context, sessionID, step string) error {
 	const q = `update sessions set provision_step = $2, updated_at = now() where id = $1 and status = 'provisioning'`
 	_, err := s.db.Exec(ctx, q, sessionID, step)
+	return err
+}
+
+// GetUserEIP returns the Elastic IP allocation ID and public IP for a user.
+// Returns empty strings (no error) if the user has no EIP allocated.
+func (s *Store) GetUserEIP(ctx context.Context, userID string) (allocationID string, publicIP string, err error) {
+	err = s.db.QueryRow(ctx,
+		`SELECT coalesce(eip_allocation_id, ''), coalesce(host(eip_public_ip), '') FROM users WHERE id = $1`,
+		userID).Scan(&allocationID, &publicIP)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", "", ErrNotFound
+		}
+		return "", "", err
+	}
+	return allocationID, publicIP, nil
+}
+
+// SetUserEIP stores the Elastic IP allocation ID and public IP for a user.
+func (s *Store) SetUserEIP(ctx context.Context, userID, allocationID, publicIP string) error {
+	const q = `UPDATE users SET eip_allocation_id = $2, eip_public_ip = $3::inet WHERE id = $1`
+	_, err := s.db.Exec(ctx, q, userID, allocationID, publicIP)
 	return err
 }
 

@@ -125,14 +125,20 @@ std::mutex g_dock_replay_cache_mu;
 DockReplayCache g_dock_replay_cache;
 bool g_dock_action_selftest_attempted = false;
 
-// Vault and config â€” loaded once in obs_module_load, accessible throughout.
+// Vault and config â€" loaded once in obs_module_load, accessible throughout.
 aegis::Vault       g_vault;
 aegis::PluginConfig g_config;
 
-// HTTPS client and relay client â€” g_http owns the WinHTTP session;
+// HTTPS client and relay client â€" g_http owns the WinHTTP session;
 // g_relay holds a reference to g_http so it must be destroyed first.
 aegis::HttpsClient g_http;
 std::unique_ptr<aegis::RelayClient> g_relay;
+
+// Joinable relay worker threads — stored so they can be joined on unload
+// instead of being detached (which risks use-after-free on g_relay).
+static std::mutex g_relay_worker_mu;
+static std::thread g_relay_start_worker;
+static std::thread g_relay_stop_worker;
 
 struct DockJsSinkProbeState {
     bool js_sink_registered = false;
@@ -529,9 +535,7 @@ std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session) {
            << ",\"status\":\"" << JsonEscape(session.status) << "\""
            << ",\"region\":\"" << JsonEscape(session.region) << "\""
            << ",\"public_ip\":\"" << JsonEscape(session.public_ip) << "\""
-           << ",\"srt_port\":" << session.srt_port
-           << ",\"pair_token\":\"" << JsonEscape(session.pair_token) << "\""
-           << ",\"ws_url\":\"" << JsonEscape(session.ws_url) << "\"";
+           << ",\"srt_port\":" << session.srt_port;
     if (!session.relay_hostname.empty()) {
         detail << ",\"relay_hostname\":\"" << JsonEscape(session.relay_hostname) << "\"";
     }
@@ -1361,7 +1365,7 @@ void ReplayDockStateToJsSinkIfAvailable() {
             delivered ? "true" : "false",
             static_cast<int>(themed.size()));
     } else {
-        // No status snapshot cached yet â€” synthesize a minimal one with just the theme
+        // No status snapshot cached yet â€" synthesize a minimal one with just the theme
         // so the dock picks up OBS color scheme on page load / refresh.
         const ObsDockThemeSlots cached_theme = GetCachedObsDockTheme();
         if (cached_theme.valid) {
@@ -1918,7 +1922,9 @@ void SwitchScenePumpTick(void*, float seconds) {
         g_theme_poll_accum_seconds = 0.0f;
         PollObsThemeChangesOnObsThread();
     }
-    if (g_metrics_poll_accum_seconds >= 0.5f) {
+    const float metrics_interval_sec = static_cast<float>(
+        std::max(100, std::min(g_config.metrics_poll_interval_ms, 5000))) / 1000.0f;
+    if (g_metrics_poll_accum_seconds >= metrics_interval_sec) {
         g_metrics_poll_accum_seconds = 0.0f;
         EmitCurrentStatusSnapshotToDock("metrics_poll", true);
     }
@@ -1980,7 +1986,7 @@ extern "C" void aegis_obs_shim_notify_dock_page_ready(void) {
 
     // Safety net: fire a deferred fresh scene enumeration 1s after page-ready.
     // The initial replay's executeJavaScript is fire-and-forget into CEF's IPC
-    // pipeline â€” if the render process hasn't fully committed the V8 context,
+    // pipeline â€" if the render process hasn't fully committed the V8 context,
     // the scene snapshot JS call can be silently dropped.  This deferred
     // re-enumeration ensures the dock always gets scene data.
     QTimer::singleShot(1000, qApp, []() {
@@ -2185,7 +2191,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
-    // â”€â”€ load_scene_prefs: read dock_scene_prefs.json from plugin config dir â”€â”€
+    // â"€â"€ load_scene_prefs: read dock_scene_prefs.json from plugin config dir â"€â"€
     if (action_type == "load_scene_prefs") {
         char* config_dir = obs_module_config_path("");
         if (!config_dir) {
@@ -2237,7 +2243,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
                 }
             }
 
-            // No prefs file at either path â€” return empty object so the dock hydrates cleanly
+            // No prefs file at either path â€" return empty object so the dock hydrates cleanly
             blog(LOG_INFO,
                 "[aegis-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s detail=no_prefs_file",
                 request_id.c_str());
@@ -2256,7 +2262,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
-    // â”€â”€ save_scene_prefs: write prefsJson to dock_scene_prefs.json â”€â”€
+    // â"€â"€ save_scene_prefs: write prefsJson to dock_scene_prefs.json â"€â"€
     if (action_type == "save_scene_prefs") {
         std::string prefs_json;
         (void)TryExtractJsonStringField(action_json, "prefsJson", &prefs_json);
@@ -2302,7 +2308,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
-    // â”€â”€ request_scene_snapshot: force a fresh OBS scene enumeration â”€â”€
+    // â"€â"€ request_scene_snapshot: force a fresh OBS scene enumeration â"€â"€
     if (action_type == "request_scene_snapshot") {
         blog(
             LOG_INFO,
@@ -2335,11 +2341,16 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         }
         // Emit immediate "queued" so the dock knows the action was received.
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        // Capture by value â€” never capture g_relay or g_config by reference in a detached thread.
+        // Capture by value — never capture g_relay or g_config by reference in a worker thread.
         std::string jwt = *jwt_opt;
         std::string req_id = request_id;
         int heartbeat_interval = g_config.relay_heartbeat_interval_sec;
-        std::thread([jwt, req_id, heartbeat_interval]() {
+        {
+            std::lock_guard<std::mutex> lk(g_relay_worker_mu);
+            if (g_relay_start_worker.joinable()) {
+                g_relay_start_worker.join();
+            }
+            g_relay_start_worker = std::thread([jwt, req_id, heartbeat_interval]() {
             try {
                 auto session = g_relay->Start(jwt);
                 if (session) {
@@ -2442,7 +2453,8 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
                     req_id.c_str(), e.what());
                 EmitDockActionResult("relay_start", req_id, "failed", false, JsonEscape(e.what()), "");
             }
-        }).detach();
+            });
+        }
         return true;
     }
 
@@ -2465,38 +2477,43 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         // Emit immediate "queued" so the dock knows the action was received.
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         std::string req_id = request_id;
-        std::thread([jwt, sid, req_id]() {
-            try {
-                g_relay->StopHeartbeatLoop();
-                bool ok = g_relay->Stop(jwt, sid);
-                if (ok) {
-                    blog(LOG_INFO,
-                        "[aegis-obs-plugin] relay_stop completed: request_id=%s",
-                        req_id.c_str());
-                    EmitDockActionResult("relay_stop", req_id, "completed", true, "", "");
-                } else {
-                    blog(LOG_WARNING,
-                        "[aegis-obs-plugin] relay_stop failed: request_id=%s error=relay_stop_failed",
-                        req_id.c_str());
-                    EmitDockActionResult("relay_stop", req_id, "failed", false, "relay_stop_failed", "");
-                }
-            } catch (const std::exception& e) {
-                blog(LOG_WARNING,
-                    "[aegis-obs-plugin] relay_stop exception: request_id=%s error=%s",
-                    req_id.c_str(), e.what());
-                EmitDockActionResult("relay_stop", req_id, "failed", false, JsonEscape(e.what()), "");
+        {
+            std::lock_guard<std::mutex> lk(g_relay_worker_mu);
+            if (g_relay_stop_worker.joinable()) {
+                g_relay_stop_worker.join();
             }
-        }).detach();
+            g_relay_stop_worker = std::thread([jwt, sid, req_id]() {
+                try {
+                    g_relay->StopHeartbeatLoop();
+                    bool ok = g_relay->Stop(jwt, sid);
+                    if (ok) {
+                        blog(LOG_INFO,
+                            "[aegis-obs-plugin] relay_stop completed: request_id=%s",
+                            req_id.c_str());
+                        EmitDockActionResult("relay_stop", req_id, "completed", true, "", "");
+                    } else {
+                        blog(LOG_WARNING,
+                            "[aegis-obs-plugin] relay_stop failed: request_id=%s error=relay_stop_failed",
+                            req_id.c_str());
+                        EmitDockActionResult("relay_stop", req_id, "failed", false, "relay_stop_failed", "");
+                    }
+                } catch (const std::exception& e) {
+                    blog(LOG_WARNING,
+                        "[aegis-obs-plugin] relay_stop exception: request_id=%s error=%s",
+                        req_id.c_str(), e.what());
+                    EmitDockActionResult("relay_stop", req_id, "failed", false, JsonEscape(e.what()), "");
+                }
+            });
+        }
         return true;
     }
 
-    // â”€â”€ load_config: return current plugin config fields to dock â”€â”€
+    // â"€â"€ load_config: return current plugin config fields to dock â"€â"€
     if (action_type == "load_config") {
-        const std::optional<std::string> relay_shared_key = g_vault.Get("relay_shared_key");
         std::ostringstream detail;
         detail << "{";
         detail << "\"relay_api_host\":" << JsStringLiteral(g_config.relay_api_host) << ",";
-        detail << "\"relay_shared_key\":" << JsStringLiteral(relay_shared_key.value_or("")) << ",";
+        detail << "\"relay_shared_key_present\":" << (g_vault.Get("relay_shared_key").has_value() ? "true" : "false") << ",";
         detail << "\"relay_heartbeat_interval_sec\":" << g_config.relay_heartbeat_interval_sec << ",";
         detail << "\"metrics_poll_interval_ms\":" << g_config.metrics_poll_interval_ms << ",";
         detail << "\"grafana_enabled\":" << (g_config.grafana_enabled ? "true" : "false") << ",";
@@ -2515,7 +2532,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
-    // â”€â”€ save_config: receive config fields from dock and persist â”€â”€
+    // â"€â"€ save_config: receive config fields from dock and persist â"€â"€
     if (action_type == "save_config") {
         std::string relay_api_host;
         std::string relay_shared_key;
@@ -2594,7 +2611,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
-    // â”€â”€ vault_set: encrypt and store a secret â”€â”€
+    // â"€â"€ vault_set: encrypt and store a secret â"€â"€
     if (action_type == "vault_set") {
         std::string key;
         std::string value;
@@ -2623,50 +2640,22 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
         return true;
     }
 
-    // â”€â”€ vault_get: retrieve a decrypted secret â”€â”€
+    // vault_get: disabled — secrets must not be readable from dock JS.
     if (action_type == "vault_get") {
-        std::string key;
-        (void)TryExtractJsonStringField(action_json, "key", &key);
-        if (key.empty()) {
-            blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=vault_get request_id=%s error=missing_key",
-                request_id.c_str());
-            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_key", "");
-            return false;
-        }
-        const std::optional<std::string> secret = g_vault.Get(key);
-        // NOTE: secret value is never logged.
-        std::ostringstream detail;
-        if (secret.has_value()) {
-            detail << "{\"key\":" << JsStringLiteral(key)
-                   << ",\"value\":" << JsStringLiteral(secret.value()) << "}";
-        } else {
-            detail << "{\"key\":" << JsStringLiteral(key) << ",\"value\":null}";
-        }
-        blog(LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=vault_get request_id=%s key=%s found=%s",
-            request_id.c_str(), key.c_str(), secret.has_value() ? "true" : "false");
-        EmitDockActionResult(action_type, request_id, "completed", true, "", detail.str());
-        return true;
+        blog(LOG_WARNING,
+            "[aegis-obs-plugin] dock action rejected: type=vault_get request_id=%s error=secret_readback_disabled",
+            request_id.c_str());
+        EmitDockActionResult(action_type, request_id, "rejected", false, "secret_readback_disabled", "");
+        return false;
     }
 
-    // â”€â”€ vault_keys: return sorted list of stored vault key names â”€â”€
+    // vault_keys: disabled — vault key enumeration must not be exposed to dock JS.
     if (action_type == "vault_keys") {
-        const std::vector<std::string> keys = g_vault.Keys();
-        std::ostringstream detail;
-        detail << "{\"keys\":[";
-        for (size_t i = 0; i < keys.size(); ++i) {
-            if (i > 0) {
-                detail << ",";
-            }
-            detail << JsStringLiteral(keys[i]);
-        }
-        detail << "]}";
-        blog(LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=vault_keys request_id=%s count=%d",
-            request_id.c_str(), static_cast<int>(keys.size()));
-        EmitDockActionResult(action_type, request_id, "completed", true, "", detail.str());
-        return true;
+        blog(LOG_WARNING,
+            "[aegis-obs-plugin] dock action rejected: type=vault_keys request_id=%s error=vault_keys_disabled",
+            request_id.c_str());
+        EmitDockActionResult(action_type, request_id, "rejected", false, "vault_keys_disabled", "");
+        return false;
     }
 
     blog(
@@ -2711,7 +2700,7 @@ bool obs_module_load(void) {
         blog(LOG_INFO, "[aegis-obs-plugin] registered switch-scene pump timer");
     }
 
-    // No IPC layer in v0.0.4 â€” dock bridge assets are loaded directly by the
+    // No IPC layer in v0.0.4 â€" dock bridge assets are loaded directly by the
     // CEF host. Pipe status is always "ok" since there is no pipe.
     SetDockSceneSnapshotEmitter({});
     InitializeBrowserDockHostBridge();
@@ -2787,7 +2776,7 @@ void obs_module_unload(void) {
     ShutdownBrowserDockHostBridge();
     ClearDockReplayCache();
 
-    // Emergency relay teardown â€” blocks up to 3 seconds to send a graceful
+    // Emergency relay teardown â€" blocks up to 3 seconds to send a graceful
     // stop to the relay API before the WinHTTP session is destroyed.
     if (g_relay && g_relay->HasActiveSession()) {
         blog(LOG_INFO, "[aegis-obs-plugin] relay emergency stop on unload");
@@ -2799,7 +2788,19 @@ void obs_module_unload(void) {
                 "[aegis-obs-plugin] relay emergency stop skipped: no relay_jwt in vault");
         }
     }
-    // Destroy g_relay before g_http â€” RelayClient holds a reference to g_http.
+    // Join any outstanding relay worker threads before destroying g_relay.
+    {
+        std::lock_guard<std::mutex> lk(g_relay_worker_mu);
+        if (g_relay_start_worker.joinable()) {
+            blog(LOG_INFO, "[aegis-obs-plugin] joining relay_start worker on unload");
+            g_relay_start_worker.join();
+        }
+        if (g_relay_stop_worker.joinable()) {
+            blog(LOG_INFO, "[aegis-obs-plugin] joining relay_stop worker on unload");
+            g_relay_stop_worker.join();
+        }
+    }
+    // Destroy g_relay before g_http — RelayClient holds a reference to g_http.
     g_relay.reset();
     blog(LOG_INFO, "[aegis-obs-plugin] relay client destroyed");
 }

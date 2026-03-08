@@ -128,6 +128,15 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
+	probe := s.probeReady
+	if probe == nil {
+		probe = s.probeUntilReady
+	}
+	dwell := s.dwell
+	if dwell == nil {
+		dwell = stepDwell
+	}
+
 	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepLaunchingInstance); err != nil {
 		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepLaunchingInstance, err)
 	}
@@ -160,7 +169,37 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepWaitingForInstance, err)
 	}
 	// Minimum dwell so clients polling at 2s can see each step
-	stepDwell(ctx, 3*time.Second)
+	dwell(ctx, 3*time.Second)
+
+	// Associate Elastic IP for a stable relay address (no DNS churn).
+	if awsProv, ok := s.provisioner.(*relay.AWSProvisioner); ok {
+		eipAllocID, eipIP, eipErr := s.store.GetUserEIP(ctx, userID)
+		if eipErr != nil && !errors.Is(eipErr, store.ErrNotFound) {
+			log.Printf("provision_pipeline: get_user_eip_failed session_id=%s err=%v", sessionID, eipErr)
+		}
+		if eipAllocID == "" {
+			// First provision — allocate a new EIP.
+			allocID, allocIP, allocErr := awsProv.AllocateElasticIP(ctx, region)
+			if allocErr != nil {
+				log.Printf("provision_pipeline: allocate_eip_failed session_id=%s err=%v (falling back to auto-assigned IP)", sessionID, allocErr)
+			} else {
+				eipAllocID = allocID
+				eipIP = allocIP
+				if setErr := s.store.SetUserEIP(ctx, userID, eipAllocID, eipIP); setErr != nil {
+					log.Printf("provision_pipeline: set_user_eip_failed session_id=%s err=%v", sessionID, setErr)
+				}
+			}
+		}
+		if eipAllocID != "" {
+			if assocErr := awsProv.AssociateElasticIP(ctx, region, eipAllocID, prov.AWSInstanceID); assocErr != nil {
+				log.Printf("provision_pipeline: associate_eip_failed session_id=%s alloc=%s err=%v (falling back to auto-assigned IP)", sessionID, eipAllocID, assocErr)
+			} else {
+				log.Printf("provision_pipeline: eip_associated session_id=%s alloc=%s ip=%s", sessionID, eipAllocID, eipIP)
+				prov.PublicIP = eipIP
+				prov.WSURL = fmt.Sprintf("wss://%s:7443/telemetry", eipIP)
+			}
+		}
+	}
 
 	pairToken, err := generatePairToken(8)
 	if err != nil {
@@ -196,9 +235,9 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepStartingDocker); err != nil {
 		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepStartingDocker, err)
 	}
-	stepDwell(ctx, 3*time.Second)
+	dwell(ctx, 3*time.Second)
 	healthURL := fmt.Sprintf("http://%s:8090/health", prov.PublicIP)
-	if !s.probeUntilReady(ctx, healthURL) {
+	if !probe(ctx, healthURL) {
 		log.Printf("provision_pipeline: health_probe_timeout session_id=%s", sessionID)
 		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
 		return
@@ -207,16 +246,16 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepStartingContainers); err != nil {
 		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepStartingContainers, err)
 	}
-	stepDwell(ctx, 3*time.Second)
+	dwell(ctx, 3*time.Second)
 
 	if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepCreatingStream); err != nil {
 		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepCreatingStream, err)
 	}
-	stepDwell(ctx, 3*time.Second)
+	dwell(ctx, 3*time.Second)
 
 	// Stream is auto-created by user-data script shortly after containers start.
 	// Probe /health again to confirm the backend is still responsive (no auth needed).
-	if !s.probeUntilReady(ctx, healthURL) {
+	if !probe(ctx, healthURL) {
 		log.Printf("provision_pipeline: post_stream_health_probe_timeout session_id=%s", sessionID)
 		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
 		return
@@ -226,17 +265,19 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 		log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepReady, err)
 	}
 	// Let clients see "Ready 6/6" before flipping to active
-	stepDwell(ctx, 3*time.Second)
+	dwell(ctx, 3*time.Second)
 
-	if slug, slugErr := s.store.GetUserRelaySlug(ctx, userID); slugErr == nil && slug != "" {
+	if slug, slugErr := s.store.GetUserRelaySlug(ctx, userID); slugErr == nil && slug != "" && s.dns != nil {
 		if dnsErr := s.dns.CreateOrUpdateRecord(slug, prov.PublicIP); dnsErr != nil {
 			log.Printf("dns: create record failed session_id=%s slug=%s err=%v", sessionID, slug, dnsErr)
 		}
 	}
 
-	const activateQ = `update sessions set status = 'active', provision_step = 'ready', updated_at = now() where id = $1 and status = 'provisioning'`
-	if _, err := s.store.DB().Exec(ctx, activateQ, sessionID); err != nil {
+	// Final state transition: provisioning → active. If this fails, the live EC2 instance
+	// must be terminated to prevent cost leakage from a permanently stuck session.
+	if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
 		log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
 		return
 	}
 	log.Printf("provision_pipeline: completed session_id=%s", sessionID)
@@ -361,12 +402,8 @@ func (s *Server) handleRelayStop(w http.ResponseWriter, r *http.Request) {
 		metrics.Default().IncCounter("aegis_relay_deprovision_total", labels)
 		metrics.Default().ObserveHistogram("aegis_relay_deprovision_latency_ms", durMS, labels)
 
-		// Delete DNS record for relay subdomain
-		if slug, slugErr := s.store.GetUserRelaySlug(r.Context(), userID); slugErr == nil && slug != "" {
-			if dnsErr := s.dns.DeleteRecord(slug); dnsErr != nil {
-				log.Printf("dns: delete record failed session_id=%s slug=%s err=%v", curr.ID, slug, dnsErr)
-			}
-		}
+		// DNS record is NOT deleted — EIP-backed records are permanent.
+		// The record stays pointed at the user's Elastic IP across provision cycles.
 	}
 
 	sess, err := s.store.StopSession(r.Context(), userID, req.SessionID)
@@ -445,7 +482,7 @@ func (s *Server) handleUsageCurrent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRelayHealth(w http.ResponseWriter, r *http.Request) {
 	var req relayHealthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.SessionID == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.SessionID == "" || req.InstanceID == "" {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid relay health payload")
 		return
 	}
@@ -463,6 +500,7 @@ func (s *Server) handleRelayHealth(w http.ResponseWriter, r *http.Request) {
 
 	err := s.store.RecordRelayHealth(r.Context(), store.RelayHealthInput{
 		SessionID:            req.SessionID,
+		InstanceID:           req.InstanceID,
 		ObservedAt:           observedAt,
 		IngestActive:         req.IngestActive,
 		EgressActive:         req.EgressActive,
@@ -515,6 +553,9 @@ func toSessionResponse(sess *model.Session) map[string]any {
 	}
 	if sess.ProvisionStep != "" {
 		resp["provision_step"] = sess.ProvisionStep
+	}
+	if sess.RelayAWSInstanceID != "" {
+		resp["instance_id"] = sess.RelayAWSInstanceID
 	}
 	return resp
 }
