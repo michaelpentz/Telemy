@@ -1,17 +1,13 @@
-# Aegis State Machine Spec v1
+# Aegis State Machine Spec v1 (v0.0.4 Native)
 
 ## 1. Scope
 
-This spec defines the authoritative runtime state machine for `telemy-v0.0.3`.
+This spec defines the authoritative runtime state machine for the Telemy v0.0.4 native C++ plugin.
 
 Responsibilities:
 - Determine desired OBS scene target from local and cloud signals.
 - Enforce deterministic transitions and conflict resolution.
-- Support crash recovery and reconnect semantics.
-
-Out of scope:
-- UI rendering details
-- Exact chat command syntax grammar
+- Support crash recovery and reconnect semantics within the OBS process.
 
 ---
 
@@ -24,7 +20,7 @@ Out of scope:
 - CloudLink inactive or disconnected.
 
 2. `IRL_CONNECTING`
-- Cloud relay start requested, awaiting provisioning/telemetry.
+- Cloud relay start requested, awaiting async provisioning and telemetry.
 
 3. `IRL_ACTIVE`
 - Cloud relay telemetry connected and healthy.
@@ -33,7 +29,7 @@ Out of scope:
 - Relay disconnected or ingest lost; grace timer active.
 
 5. `DEGRADED`
-- Critical dependency unavailable (IPC or OBS control path unstable), limited automation.
+- Critical dependency unavailable or OBS control path unstable, limited automation.
 
 6. `FATAL`
 - Non-recoverable runtime failure; requires operator action.
@@ -52,17 +48,17 @@ Final scene command is emitted only when intent differs from current scene and g
 
 ## 3. Inputs
 
-## 3.1 Local Inputs
+## 3.1 Local Inputs (Native Polling)
 
 - `obs_bitrate_kbps`
 - `obs_rtt_ms`
-- `obs_connected` (obws session)
-- `ipc_ready` (plugin link health)
+- `obs_connected` (OBS module state)
 - `chat_command` (authorized)
 
 ## 3.2 Cloud Inputs (IRL path)
 
 - `relay_session_status` (`provisioning|active|grace|stopped`)
+- `relay_provision_step` (`launching_instance|waiting_for_instance|starting_docker|starting_containers|creating_stream|ready`)
 - `relay_ingest_active` (bool)
 - `relay_telemetry_connected` (bool)
 - `grace_remaining_seconds`
@@ -70,8 +66,7 @@ Final scene command is emitted only when intent differs from current scene and g
 ## 3.3 System Inputs
 
 - `startup`
-- `shutdown_requested`
-- `core_restart_detected`
+- `obs_shutdown_notice`
 - `config_reload`
 
 ---
@@ -79,9 +74,8 @@ Final scene command is emitted only when intent differs from current scene and g
 ## 4. Guard Conditions
 
 Global guards:
-1. Scene switch blocked if `ipc_ready == false`.
-2. Scene switch blocked if manual override is enabled (except explicit admin commands).
-3. Chat mutating commands require RBAC + cooldown pass.
+1. Scene switch blocked if manual override is enabled (except explicit admin commands).
+2. Chat mutating commands require RBAC + cooldown pass.
 
 IRL guards:
 1. Enter `IRL_ACTIVE` only if relay telemetry auth succeeded.
@@ -114,7 +108,7 @@ IRL guards:
 - Trigger: explicit IRL off command and stop acknowledged.
 
 8. `ANY -> DEGRADED`
-- Trigger: repeated IPC failures, OBS control unavailable, or protocol error storm.
+- Trigger: OBS control unavailable or protocol error storm.
 
 9. `DEGRADED -> prior stable mode`
 - Trigger: dependency health restored and validation probe succeeds.
@@ -157,6 +151,7 @@ Determinism:
 - Recovery stability window: 3 consecutive healthy polls
 - IRL grace window: 600s
 - Mode transition debounce (non-critical): 250ms
+- Relay provision step dwell: 3s (minimum)
 
 All thresholds are configuration-backed with sensible bounds.
 
@@ -180,8 +175,8 @@ No implicit provisioning on startup.
 
 ## 9. Failure Handling Policies
 
-1. IPC failure:
-- Mark `ipc_ready=false`, enter `DEGRADED`, suppress auto scene-switch commands requiring plugin path.
+1. Native Control failure:
+- Enter `DEGRADED`, suppress auto scene-switch commands requiring plugin path.
 
 2. Backend unreachable:
 - Stay in `STUDIO` for local operation.
@@ -191,16 +186,12 @@ No implicit provisioning on startup.
 - Continue IRL operation while ingest and telemetry remain active.
 - Rely on C1 relay teardown conditions for safety.
 
-4. Core restart:
-- Plugin attempts one restart.
-- Reconnect-first flow restores prior active session when possible.
-
 ---
 
 ## 10. Formal Invariants
 
 1. No duplicate active relay sessions per user.
-2. No scene-switch emit when IPC is unavailable.
+2. No scene-switch emit when native OBS control is unstable.
 3. Pair token is never used for control-plane auth.
 4. State transitions must match table in section 5.
 5. Every emitted scene-switch command must have traceable reason and request id.
@@ -224,9 +215,8 @@ No implicit provisioning on startup.
 
 ## 11.3 Safety Tests
 
-1. IPC down => no scene-switch emit, `DEGRADED` entered.
-2. Repeated protocol errors => controlled reset, not crash.
-3. Startup with existing active session => reconnect path, no new provisioning.
+1. OBS control unstable => no scene-switch emit, `DEGRADED` entered.
+2. Startup with existing active session => reconnect path, no new provisioning.
 
 ## 11.4 Timing Tests
 

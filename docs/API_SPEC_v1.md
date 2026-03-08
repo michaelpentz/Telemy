@@ -1,13 +1,8 @@
-# Aegis Control Plane API Spec v1
+# Aegis Control Plane API Spec v1 (v0.0.4)
 
 ## 1. Scope
 
-This spec defines the cloud API for the Telemy control plane. Originally written for v0.0.3, updated for v0.0.4 (all-native C++ plugin, no Rust).
-
-Implementation status note (workspace snapshot audited 2026-02-22, US/Pacific):
-- This document is the target v1 contract.
-- The current local `aegis-control-plane` implementation does not yet enforce all items below.
-- Known gaps include client-version/platform headers, rate limiting/response headers, and some error-envelope fields (`request_id`, `details`).
+This spec defines the cloud API for the Telemy v0.0.4 control plane. This is the authoritative contract for the native C++ plugin.
 
 Focus:
 - Authentication and authorization
@@ -20,11 +15,9 @@ Base path:
 - `/api/v1`
 
 Transport:
-- HTTPS only (TLS 1.2+)
-- JSON request/response
-
-Current implementation note:
-- The Go API server listens on plain HTTP and assumes TLS termination happens upstream (reverse proxy / load balancer).
+- **HTTPS only (TLS 1.2+)**. 
+- Clients must not infer TLS intent from the port number (e.g., custom ports like 8443 must still use TLS).
+- The Go API server assumes TLS termination happens upstream (reverse proxy / load balancer).
 
 ---
 
@@ -32,16 +25,14 @@ Current implementation note:
 
 Credentials:
 1. `cp_access_jwt`:
-- Used by the C++ plugin (v0.0.4) or Rust core (v0.0.3) for control-plane API calls.
+- Used by the C++ plugin for control-plane API calls.
 - Sent as `Authorization: Bearer <jwt>`.
 
 2. `pair_token`:
-- Not valid for control-plane endpoints.
-- Ingest-only credential for relay path.
+- Ingest-only credential for relay path. Not valid for control-plane endpoints.
 
 3. `relay_ws_token`:
-- Not valid for control-plane endpoints.
-- Relay telemetry auth only.
+- Relay telemetry auth only. Not valid for control-plane endpoints.
 
 Hard rule:
 - Any use of `pair_token` or `relay_ws_token` on control-plane endpoints returns `401`.
@@ -61,10 +52,6 @@ Required for relay start:
 Optional tracing:
 - `X-Request-ID: <uuid-v4>`
 
-Current implementation note:
-- Only `Authorization` and `Idempotency-Key` (for `POST /relay/start`) are enforced in code today.
-- `X-Aegis-Client-Version`, `X-Aegis-Client-Platform`, and `X-Request-ID` are not currently validated or echoed.
-
 ---
 
 ## 4. Resource Model
@@ -74,14 +61,13 @@ Current implementation note:
 ```json
 {
   "session_id": "ses_01JABCDEF...",
-  "user_id": "usr_01JABCDEF...",
   "status": "provisioning|active|grace|stopped",
   "provision_step": "launching_instance|waiting_for_instance|starting_docker|starting_containers|creating_stream|ready",
   "region": "us-east-1",
   "relay": {
     "instance_id": "i-0abc123...",
     "public_ip": "203.0.113.10",
-    "srt_port": 9000,
+    "srt_port": 5000,
     "ws_url": "wss://203.0.113.10:7443/telemetry"
   },
   "credentials": {
@@ -110,8 +96,7 @@ Start or return an active relay session for the authenticated user.
 
 Idempotency:
 - `Idempotency-Key` is required.
-- Same user + same key returns same session response for TTL window.
-- If user already has active/provisioning session and key differs, return existing active/provisioning session (no duplicate provisioning).
+- **Async Refresh**: If a session transitions from `provisioning` to `active` after the initial request, subsequent replays with the same key will return the current `active` state (reconstructing the session response) rather than a stale `provisioning` cached response.
 
 Request body:
 ```json
@@ -120,7 +105,7 @@ Request body:
   "client_context": {
     "obs_connected": true,
     "mode": "studio|irl",
-    "requested_by": "dashboard|chatbridge"
+    "requested_by": "dashboard"
   }
 }
 ```
@@ -138,7 +123,7 @@ Response body:
     "region": "us-east-1",
     "relay": {
       "public_ip": "203.0.113.10",
-      "srt_port": 9000,
+      "srt_port": 5000,
       "ws_url": "wss://203.0.113.10:7443/telemetry"
     },
     "credentials": {
@@ -178,7 +163,7 @@ Example `200`:
     "region": "us-east-1",
     "relay": {
       "public_ip": "203.0.113.10",
-      "srt_port": 9000,
+      "srt_port": 5000,
       "ws_url": "wss://203.0.113.10:7443/telemetry"
     },
     "credentials": {
@@ -277,6 +262,7 @@ Retention:
 
 Behavior:
 - Same user + same key + same endpoint returns original success payload.
+- **Async Replay**: Replaying `/relay/start` will reconstruct the session response based on current DB state if the session has progressed since the original record was created.
 - Same key with materially different body returns `409 idempotency_mismatch`.
 
 ---
@@ -336,7 +322,8 @@ Response `200`:
 Used by relay service to report liveness and billing reconciliation data.
 
 Auth:
-- Relay service credential (not client JWT).
+- **X-Relay-Auth**: Shared relay health secret.
+- **Identity Binding**: Request must include both `session_id` and `instance_id`. Backend validates that `instance_id` matches the session.
 
 Request body:
 ```json
@@ -367,9 +354,6 @@ Responses include:
 - `X-RateLimit-Limit`
 - `X-RateLimit-Remaining`
 - `X-RateLimit-Reset`
-
-Current implementation note:
-- Rate limiting and `X-RateLimit-*` headers are specified targets and are not yet implemented in the local Go server.
 
 ---
 

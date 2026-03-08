@@ -47,6 +47,8 @@ Network throughput uses delta-based byte calculation (not session averages). Enc
 
 Output: a JSON telemetry snapshot containing `health`, OBS stats, system stats, GPU stats, network stats, and per-output data array.
 
+**Security Note**: To protect credentials, the telemetry snapshot delivered to the JS dock is stripped of all sensitive fields (e.g., `pair_token`, `relay_ws_token`, `relay_shared_key`). The dock layer operates in a restricted trust zone and only receives operational metrics and non-sensitive status.
+
 ### ConfigVault (`src/config_vault.cpp`)
 
 Two files at `%APPDATA%/Telemy/`:

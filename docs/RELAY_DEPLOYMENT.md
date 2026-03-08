@@ -32,9 +32,9 @@ srtla-receiver provides:
 | 4001 | UDP | SRT publisher (SLS ingest) | 0.0.0.0/0 |
 | 4000 | UDP | SRT player (SLS output for OBS) | 0.0.0.0/0 |
 | 22   | TCP | SSH Access (Diagnostics) | 0.0.0.0/0 (or admin IP) |
-| 3000 | TCP | SLS Management UI | Control plane IP only |
-| 8090 | TCP | SLS Backend API (Aggregate stats) | Control plane IP only |
-| 5080 | TCP | Per-link Stats API (srtla_rec) | Control plane IP only |
+| 3000 | TCP | SLS Management UI | Restricted (SSH Tunnel recommended) |
+| 8090 | TCP | SLS Backend API (Aggregate stats) | Restricted to OBS/Plugin IPs |
+| 5080 | TCP | Per-link Stats API (srtla_rec) | Restricted to OBS/Plugin IPs |
 
 **Note:** `srtla_rec` acts as a raw UDP proxy on port 5000, forwarding bonded traffic to `localhost:4001` where SLS handles the SRT session.
 
@@ -44,7 +44,15 @@ Security group: `aegis-relay-sg` (`<RELAY_SG_ID>`)
 
 - **UDP 4000-5000**: Open to all (`0.0.0.0/0`) for dynamic cellular ingest.
 - **TCP 22**: Open for SSH diagnostics using `aegis-relay-key.pem`.
-- **TCP 3000, 8090, 5080**: Restricted to control plane IP (`<CONTROL_PLANE_IP>/32`).
+- **TCP 8090, 5080**: Must be accessible from the streamer's OBS machine to enable real-time dock telemetry. 
+- **TCP 3000**: Restricted to admin/control-plane IPs.
+
+## Hardening & Admin Material
+
+The relay bootstrap process has been hardened to minimize sensitive material leakage:
+- **Admin API Key**: Temporarily written to `/opt/srtla-receiver/data/.apikey` for stream auto-creation, then restricted.
+- **Log Masking**: Stream-management responses are no longer logged to broad transient locations.
+- **Cleanup**: Ephemeral setup markers in `/tmp` are minimized.
 
 ## SSH Access
 
