@@ -370,6 +370,7 @@
               sharePct: l.share_pct || 0,
               lastMsAgo: l.last_ms_ago || 0,
               uptimeS: l.uptime_s || 0,
+              asn_org: l.asn_org || "",
             };
           }),
         },
