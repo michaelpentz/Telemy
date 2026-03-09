@@ -48,6 +48,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
       set(_aegis_dock_asset_root "${AEGIS_DOCK_BRIDGE_ASSET_SOURCE_ROOT}")
     else()
       foreach(_candidate
+          "${CMAKE_CURRENT_LIST_DIR}/dock"
           "${CMAKE_CURRENT_LIST_DIR}/.."
           "${CMAKE_CURRENT_LIST_DIR}/../..")
         if (EXISTS "${_candidate}/aegis-dock-bridge.js"
@@ -83,6 +84,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
       # Copy aegis-dock.html if present alongside the bridge assets.
       foreach(_html_candidate
           "${_aegis_dock_asset_root}/aegis-dock.html"
+          "${CMAKE_CURRENT_LIST_DIR}/dock/aegis-dock.html"
           "${CMAKE_CURRENT_LIST_DIR}/../aegis-dock.html"
           "${CMAKE_CURRENT_LIST_DIR}/../../aegis-dock.html")
         if (EXISTS "${_html_candidate}")
