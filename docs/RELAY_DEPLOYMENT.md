@@ -209,6 +209,6 @@ Each user gets one AWS Elastic IP per region, allocated on first relay provision
 
 Mobile clients (IRL Pro on iOS) cache DNS aggressively. With Elastic IP, the DNS record never changes, so reconnection after a relay cycle is instant — no stale cache issues.
 
-## Future: Custom AMI (Deferred)
+## Custom AMI (Implemented)
 
-For production, a Packer template will pre-bake Docker + srtla-receiver into the AMI. This eliminates the ~2-3 min user-data boot delay. Not yet implemented — user-data approach is sufficient for testing.
+Relay instances use a pre-baked AMI (`aegis-relay-v1`) with Docker, Docker Compose, and container images pre-pulled. The user-data script only writes config files and starts containers — no package installation or image pulls at boot time. This reduces relay boot from ~2-3 minutes to ~15-30 seconds.
