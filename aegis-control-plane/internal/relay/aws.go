@@ -47,7 +47,7 @@ cd /opt/srtla-receiver
 cat > docker-compose.yml << 'COMPOSEEOF'
 services:
   sls-management-ui:
-    image: ghcr.io/openirl/sls-management-ui:latest  # TODO: pin to digest once stable version confirmed
+    image: ghcr.io/openirl/sls-management-ui@sha256:2cd2c4ea05bd75144b3b30f735e62665dbb8c1352245e5b8f994790582cff007
     container_name: sls-management-ui
     restart: unless-stopped
     environment:
