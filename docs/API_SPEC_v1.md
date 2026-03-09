@@ -27,15 +27,10 @@ Credentials:
 1. `cp_access_jwt`:
 - Used by the C++ plugin for control-plane API calls.
 - Sent as `Authorization: Bearer <jwt>`.
-
-2. `pair_token`:
-- Ingest-only credential for relay path. Not valid for control-plane endpoints.
-
-3. `relay_ws_token`:
-- Relay telemetry auth only. Not valid for control-plane endpoints.
+- Stored in DPAPI-encrypted vault on the client. Never exposed to the dock JS layer.
 
 Hard rule:
-- Any use of `pair_token` or `relay_ws_token` on control-plane endpoints returns `401`.
+- Only `cp_access_jwt` is valid for control-plane endpoints.
 
 ---
 
@@ -67,12 +62,7 @@ Optional tracing:
   "relay": {
     "instance_id": "i-0abc123...",
     "public_ip": "203.0.113.10",
-    "srt_port": 5000,
-    "ws_url": "wss://203.0.113.10:7443/telemetry"
-  },
-  "credentials": {
-    "pair_token": "A1B2C3D4",
-    "relay_ws_token": "eyJhbGciOi..."
+    "srt_port": 5000
   },
   "timers": {
     "grace_window_seconds": 600,
@@ -122,13 +112,9 @@ Response body:
     "status": "provisioning|active",
     "region": "us-east-1",
     "relay": {
+      "instance_id": "i-0abc123...",
       "public_ip": "203.0.113.10",
-      "srt_port": 5000,
-      "ws_url": "wss://203.0.113.10:7443/telemetry"
-    },
-    "credentials": {
-      "pair_token": "A1B2C3D4",
-      "relay_ws_token": "eyJhbGciOi..."
+      "srt_port": 5000
     },
     "timers": {
       "grace_window_seconds": 600,
@@ -162,13 +148,9 @@ Example `200`:
     "status": "active",
     "region": "us-east-1",
     "relay": {
+      "instance_id": "i-0abc123...",
       "public_ip": "203.0.113.10",
-      "srt_port": 5000,
-      "ws_url": "wss://203.0.113.10:7443/telemetry"
-    },
-    "credentials": {
-      "pair_token": "A1B2C3D4",
-      "relay_ws_token": "eyJhbGciOi..."
+      "srt_port": 5000
     },
     "timers": {
       "grace_remaining_seconds": 0,
@@ -445,10 +427,9 @@ When a GeoLite2-ASN.mmdb database is present, `srtla_rec` resolves each connecti
 | T-Mobile USA, Inc. | T-Mobile |
 | AT&T Mobility | AT&T |
 | Verizon Wireless | Verizon |
-| (RFC 1918 private IP) | WiFi |
-| (unknown/no ASN) | Mobile |
+| (unknown/no ASN) | Link N |
 
-Fallback when ASN unavailable: IP-range heuristics (RFC 1918 → WiFi, CGNAT → Mobile, T-Mobile ranges → T-Mobile).
+Fallback when ASN unavailable: links labeled "Link 1", "Link 2", etc. (no IP leak, safe for on-stream display).
 
 ### 12.3 C++ Plugin Integration
 

@@ -42,8 +42,13 @@ Columns:
 - `cycle_start_at` timestamptz not null
 - `cycle_end_at` timestamptz not null
 - `included_seconds` integer not null default 0
+- `eip_allocation_id` text null
+- `eip_public_ip` inet null
 - `created_at` timestamptz not null default now()
 - `updated_at` timestamptz not null default now()
+
+Notes:
+- `eip_allocation_id` / `eip_public_ip`: Per-user Elastic IP for stable relay addresses. Allocated on first relay provision, reused for all subsequent provisions. Single-region (us-west-2) for now.
 
 Checks:
 - `plan_tier in ('starter','standard','pro')`
