@@ -29,9 +29,10 @@ OBS Process
 
 OBS module lifecycle hooks:
 - `obs_module_load()` — initializes all components, registers 500ms tick callback, creates dock host
-- `obs_module_unload()` — tears down relay (emergency shutdown), cleans up resources
-- **Tick callback** — drives MetricsCollector polling, pushes JSON snapshots to dock via CEF
+- `obs_module_unload()` — joins relay worker threads, tears down relay (emergency shutdown), cleans up resources
+- **Tick callback** — drives MetricsCollector polling at configurable `metrics_poll_interval_ms` (default 500ms, clamped 100-5000ms), pushes JSON snapshots to dock via CEF
 - **Action dispatch** — routes dock UI actions (`switch_scene`, `relay_start`, `relay_stop`, `save_scene_prefs`, `load_scene_prefs`) to native handlers
+- **Secret isolation** — `vault_get` and `vault_keys` actions are rejected from the dock; `load_config` returns `relay_shared_key_present` (boolean) instead of the actual key
 
 ### MetricsCollector (`src/metrics_collector.cpp`)
 
@@ -47,7 +48,7 @@ Network throughput uses delta-based byte calculation (not session averages). Enc
 
 Output: a JSON telemetry snapshot containing `health`, OBS stats, system stats, GPU stats, network stats, and per-output data array.
 
-**Security Note**: To protect credentials, the telemetry snapshot delivered to the JS dock is stripped of all sensitive fields (e.g., `pair_token`, `relay_ws_token`, `relay_shared_key`). The dock layer operates in a restricted trust zone and only receives operational metrics and non-sensitive status.
+**Security Note**: The telemetry snapshot delivered to the JS dock is stripped of all sensitive fields (`pair_token`, `ws_url`, `relay_shared_key`). The dock cannot read secrets — `vault_get` and `vault_keys` actions are rejected, and `load_config` returns only a boolean for `relay_shared_key_present`. The dock layer operates in a restricted trust zone and only receives operational metrics and non-sensitive status.
 
 ### ConfigVault (`src/config_vault.cpp`)
 
@@ -60,7 +61,7 @@ Two files at `%APPDATA%/Telemy/`:
 
 Windows-only WinHTTP wrapper:
 - RAII session/connection/request handles
-- **HTTP/HTTPS support**: Uses `parse_host_port()` helper. If port != 443, it defaults to non-TLS HTTP.
+- **HTTP/HTTPS support**: Uses `parse_host_port()` with scheme-driven TLS (`https://` or no prefix = TLS, `http://` = plaintext). Port number does not influence TLS decision.
 - Synchronous calls on worker threads (no blocking OBS main thread)
 - Bearer token auth from ConfigVault
 - TLS via Windows certificate store (no bundled CA certs)
@@ -68,10 +69,10 @@ Windows-only WinHTTP wrapper:
 ### RelayClient (`src/relay_client.cpp`)
 
 Manages the AWS relay instance lifecycle:
-- **Start** — POST to control plane, receives session ID + connection credentials (public IP, SRT port, pair token, WebSocket URL)
-- **Heartbeat** — 30s interval keep-alive; server-side 5min TTL
-- **Stop** — explicit teardown request
-- **Emergency shutdown** — on `obs_module_unload`, ensures relay is torn down even on OBS crash/force-quit
+- **Start** — POST to control plane, receives session ID + connection details (public IP, SRT port, instance_id). Runs on a joinable worker thread (mutex-protected, old thread joined before new one starts).
+- **Heartbeat** — 30s interval keep-alive with `instance_id` binding; server-side 5min TTL
+- **Stop** — explicit teardown request. Runs on a separate joinable worker thread.
+- **Emergency shutdown** — on `obs_module_unload`, joins both worker threads, then tears down relay
 
 ### DockHost (`src/obs_browser_dock_host_scaffold.cpp`)
 
@@ -123,7 +124,7 @@ v0.0.4 introduces deep visibility into the individual cellular/WiFi links contri
 4. **Relay Stack Integration** — The `ghcr.io/michaelpentz/srtla-receiver:latest` Docker image (forked from `OpenIRL/srtla-receiver`) runs this modified binary, with `supervisord` passing `--stats_port=5080`.
 5. **Plugin Polling** — `PollPerLinkStats()` in the C++ plugin polls the relay's port 5080 every ~2s.
 6. **UI Visualization** — The Dock UI renders a dynamic `BitrateBar` for each link, showing its relative share %. Links with `last_ms_ago > 3000` are rendered with reduced opacity to indicate staleness.
-7. **ASN-Based Carrier Identification** — The custom `srtla_rec` fork optionally links against `libmaxminddb` to resolve each connection's source IP to its ASN organization name (e.g., "T-Mobile USA, Inc.", "AT&T Mobility"). The stats endpoint includes an `asn_org` field per connection when a GeoLite2-ASN database is available. The Dock UI maps ASN org names to short carrier labels (T-Mobile, AT&T, Verizon, etc.) for display. Private IP addresses (RFC 1918) are always labeled "WiFi" regardless of ASN. When ASN data is unavailable, the UI falls back to IP-range heuristics.
+7. **ASN-Based Carrier Identification** — The custom `srtla_rec` fork optionally links against `libmaxminddb` to resolve each connection's source IP to its ASN organization name (e.g., "T-Mobile USA, Inc.", "AT&T Mobility"). The stats endpoint includes an `asn_org` field per connection when a GeoLite2-ASN database is available. The Dock UI maps ASN org names to short carrier labels (T-Mobile, AT&T, Verizon, etc.) for display. When ASN data is unavailable, links are labeled "Link 1", "Link 2", etc. (no IP leak, safe for on-stream display). With ASN data, mobile carriers get cellular type labels and ISPs get ethernet type labels (covers USB-C-to-Ethernet setups).
 
 **Data Flow Summary**: `srtla_rec` counters -> HTTP `/stats` -> C++ `PollPerLinkStats` -> JSON snapshot -> CEF JS -> Dock BitrateBar.
 
@@ -200,9 +201,19 @@ EC2 relay instances run a dual-process stack via Docker Compose for bonded SRT:
 The stack handles packet reordering and bonding overhead, resulting in ~5s E2E latency with high reliability over unstable cellular links.
 
 Provisioned via Go control plane (`aegis-control-plane/`):
-- `internal/relay/aws.go` — EC2 RunInstances with user-data bootstrap
+- `internal/relay/aws.go` — EC2 RunInstances with user-data bootstrap, Elastic IP management
 - `scripts/relay-user-data.sh` — Docker + srtla-receiver install (~2-3 min boot)
 - Security group `aegis-relay-sg` — public UDP ports + restricted TCP management
+
+### Elastic IP (Stable Relay Addresses)
+
+Each user gets one AWS Elastic IP per region, allocated on first provision and reused for all subsequent provisions. This ensures mobile clients (IRL Pro) never lose connectivity due to stale DNS caches.
+
+- **Allocation**: First provision allocates an EIP via `ec2:AllocateAddress`, stored in `users.eip_allocation_id` and `users.eip_public_ip`.
+- **Association**: Each provision calls `ec2:AssociateAddress` to bind the EIP to the new instance.
+- **DNS**: The relay DNS record (`<slug>.relay.telemyapp.com`) is permanent — created once, never deleted on deprovision. Instance termination auto-disassociates the EIP (AWS handles this).
+- **Fallback**: If EIP allocation fails (quota, permissions), the pipeline falls back to auto-assigned IP + DNS update.
+- **Cost**: Free while attached to a running instance; ~$3.60/mo per user when idle.
 
 ## Dock Source Management
 

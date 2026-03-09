@@ -2,9 +2,9 @@
 
 ## Overview
 
-Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) to provide bonded SRT relay for IRL streaming. The control plane provisions ephemeral EC2 instances that auto-install srtla-receiver via user-data.
+Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) to provide bonded SRT relay for IRL streaming. The control plane provisions ephemeral EC2 instances that auto-install srtla-receiver via user-data. Each user gets a permanent Elastic IP that persists across relay provision cycles for stable DNS.
 
-**Pipeline:** IRL Pro (bonded cellular) -> SRTLA -> EC2 relay -> SRT -> OBS
+**Pipeline:** IRL Pro (bonded cellular) -> SRTLA -> EC2 relay (Elastic IP) -> SRT -> OBS
 
 ## Software Stack
 
@@ -185,7 +185,7 @@ With ASN enabled, `GET :5080/stats` connections include:
 }
 ```
 
-Without the database, the `asn_org` field is omitted and the dock UI falls back to IP-range heuristics.
+Without the database, the `asn_org` field is omitted and the dock UI labels links as "Link 1", "Link 2", etc.
 
 ### Updating the Database
 
@@ -193,6 +193,21 @@ MaxMind updates GeoLite2 databases weekly. To refresh:
 1. Re-download using the same license key
 2. Replace `data/GeoLite2-ASN.mmdb` in the srtla-receiver-fork repo
 3. Rebuild and push the Docker image
+
+## Elastic IP (Stable Relay Addresses)
+
+Each user gets one AWS Elastic IP per region, allocated on first relay provision. The EIP is stored in the `users` table and associated to each new relay instance during provisioning. DNS records are permanent — created once, never deleted on deprovision.
+
+- **First provision**: Allocate EIP → save to DB → associate to instance → create DNS
+- **Subsequent provisions**: Read EIP from DB → associate to instance → DNS unchanged
+- **Deprovision**: Instance terminated (EIP auto-disassociates), DNS stays, EIP stays allocated
+- **Fallback**: If EIP allocation fails, falls back to auto-assigned IP (current behavior)
+- **Cost**: Free while attached to running instance; ~$3.60/mo per user when idle
+- **IAM**: Requires `ec2:AllocateAddress`, `ec2:AssociateAddress`, `ec2:ReleaseAddress`, `ec2:DescribeAddresses` on the control plane IAM role
+
+### IRL Pro Benefit
+
+Mobile clients (IRL Pro on iOS) cache DNS aggressively. With Elastic IP, the DNS record never changes, so reconnection after a relay cycle is instant — no stale cache issues.
 
 ## Future: Custom AMI (Deferred)
 
