@@ -8,6 +8,9 @@
 
 #if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
 #include <QtCore/QByteArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonValue>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
@@ -273,44 +276,17 @@ bool TryExtractJsonStringFieldQt(
     if (field_name.isEmpty() || !out_value) {
         return false;
     }
-    const QString needle = QStringLiteral("\"") + field_name + QStringLiteral("\"");
-    const int key_pos = json_text.indexOf(needle);
-    if (key_pos < 0) {
+    QJsonParseError err;
+    QJsonDocument doc = QJsonDocument::fromJson(json_text.toUtf8(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
         return false;
     }
-    int colon_pos = json_text.indexOf(QChar(':'), key_pos + needle.size());
-    if (colon_pos < 0) {
+    QJsonValue val = doc.object().value(field_name);
+    if (!val.isString()) {
         return false;
     }
-    int pos = colon_pos + 1;
-    while (pos < json_text.size() && json_text.at(pos).isSpace()) {
-        pos += 1;
-    }
-    if (pos >= json_text.size() || json_text.at(pos) != QChar('"')) {
-        return false;
-    }
-    pos += 1;
-
-    QString value;
-    bool escaping = false;
-    for (; pos < json_text.size(); ++pos) {
-        const QChar ch = json_text.at(pos);
-        if (escaping) {
-            value.append(ch);
-            escaping = false;
-            continue;
-        }
-        if (ch == QChar('\\')) {
-            escaping = true;
-            continue;
-        }
-        if (ch == QChar('"')) {
-            *out_value = value;
-            return true;
-        }
-        value.append(ch);
-    }
-    return false;
+    *out_value = val.toString();
+    return true;
 }
 
 bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& prefixed_text) {
