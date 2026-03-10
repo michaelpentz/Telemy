@@ -143,6 +143,7 @@ for attempt in $(seq 1 30); do
   # Method 1: .apikey file written by srtla-receiver container
   if [ -f /opt/srtla-receiver/data/.apikey ]; then
     APIKEY=$(cat /opt/srtla-receiver/data/.apikey)
+    chmod 0600 /opt/srtla-receiver/data/.apikey 2>/dev/null || true
     [ -n "${APIKEY}" ] && break
   fi
   # Method 2: grep from container logs (|| true prevents pipefail exit)
@@ -174,6 +175,7 @@ else
   # Write stream info under the service data directory (not world-readable /tmp)
   echo "${STREAMS}" > /opt/srtla-receiver/data/srtla-streams.json
   echo "${APIKEY}" > /opt/srtla-receiver/data/srtla-apikey
+  chmod 0600 /opt/srtla-receiver/data/srtla-apikey /opt/srtla-receiver/data/srtla-streams.json
 fi
 
 # Signal ready (marker file for health check polling)
@@ -310,7 +312,6 @@ func (p *AWSProvisioner) Provision(ctx context.Context, req ProvisionRequest) (P
 		InstanceType:  p.instanceType,
 		PublicIP:      publicIP,
 		SRTPort:       5000,
-		WSURL:         fmt.Sprintf("wss://%s:7443/telemetry", publicIP),
 	}, nil
 }
 

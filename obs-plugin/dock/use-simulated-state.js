@@ -89,7 +89,6 @@ export function useSimulatedState() {
       relayHostname: simRelayActive ? (simRelayData.relayHostname || null) : null,
       ingestUrl: simRelayActive ? (simRelayData.ingestUrl || null) : null,
       pairToken: simRelayActive ? (simRelayData.pairToken || null) : null,
-      wsUrl: null,
       graceWindowSeconds: null,
       maxSessionSeconds: null,
       // SLS aggregate stats (simulated)

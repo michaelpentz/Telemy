@@ -28,10 +28,9 @@ type Session struct {
 	Region             string
 	PairToken          string
 	RelayWSToken       string
-	PublicIP           string
-	SRTPort            int
-	WSURL              string
-	RelayHostname      string
+	PublicIP       string
+	SRTPort        int
+	RelayHostname  string
 	StartedAt          time.Time
 	StoppedAt          *time.Time
 	DurationSeconds    int

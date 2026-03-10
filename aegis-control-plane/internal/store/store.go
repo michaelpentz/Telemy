@@ -23,7 +23,8 @@ var (
 )
 
 type Store struct {
-	db DB
+	db          DB
+	relayDomain string
 }
 
 type DB interface {
@@ -60,14 +61,18 @@ type ActivateProvisionedSessionInput struct {
 	InstanceType  string
 	PublicIP      string
 	SRTPort       int
-	WSURL         string
 	PairToken     string
 	RelayWSToken  string
 }
 
-func New(db DB) *Store {
-	return &Store{db: db}
+func New(db DB, relayDomain ...string) *Store {
+	domain := "relay.telemyapp.com"
+	if len(relayDomain) > 0 && relayDomain[0] != "" {
+		domain = relayDomain[0]
+	}
+	return &Store{db: db, relayDomain: domain}
 }
+
 
 func (s *Store) DB() DB {
 	return s.db
@@ -85,7 +90,7 @@ func HashJSON(v any) (string, error) {
 func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
 from sessions s
@@ -99,9 +104,10 @@ limit 1`
 	var relayInstanceID string
 	var relaySlug string
 	var stoppedAt *time.Time
+	var wsURLIgnored string
 	if err := s.db.QueryRow(ctx, q, userID).Scan(
 		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
-		&out.PublicIP, &out.SRTPort, &out.WSURL,
+		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
 	); err != nil {
@@ -113,7 +119,7 @@ limit 1`
 	out.StoppedAt = stoppedAt
 	out.RelayInstanceID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
-		out.RelayHostname = relaySlug + ".relay.telemyapp.com"
+		out.RelayHostname = relaySlug + "." + s.relayDomain
 	}
 	return &out, nil
 }
@@ -179,7 +185,7 @@ values
 		UserID:             in.UserID,
 		Status:             model.SessionProvisioning,
 		Region:             in.Region,
-		SRTPort:            9000,
+		SRTPort:            5000,
 		StartedAt:          now,
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
@@ -197,7 +203,7 @@ values
 func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
 from sessions s
@@ -210,9 +216,10 @@ limit 1`
 	var relayInstanceID string
 	var relaySlug string
 	var stoppedAt *time.Time
+	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID).Scan(
 		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
-		&out.PublicIP, &out.SRTPort, &out.WSURL,
+		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
 	); err != nil {
@@ -224,7 +231,7 @@ limit 1`
 	out.StoppedAt = stoppedAt
 	out.RelayInstanceID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
-		out.RelayHostname = relaySlug + ".relay.telemyapp.com"
+		out.RelayHostname = relaySlug + "." + s.relayDomain
 	}
 	return &out, nil
 }
@@ -242,9 +249,9 @@ func (s *Store) ActivateProvisionedSession(ctx context.Context, in ActivateProvi
 insert into relay_instances
   (id, session_id, aws_instance_id, region, ami_id, instance_type, public_ip, srt_port, ws_url, state, launched_at, created_at)
 values
-  ($1, $2, $3, $4, $5, $6, $7::inet, $8, $9, 'running', $10, $10)`
+  ($1, $2, $3, $4, $5, $6, $7::inet, $8, '', 'running', $9, $9)`
 	if _, err := tx.Exec(ctx, insertRelay,
-		relayID, in.SessionID, in.AWSInstanceID, in.Region, in.AMIID, in.InstanceType, in.PublicIP, in.SRTPort, in.WSURL, now,
+		relayID, in.SessionID, in.AWSInstanceID, in.Region, in.AMIID, in.InstanceType, in.PublicIP, in.SRTPort, now,
 	); err != nil {
 		return nil, err
 	}
@@ -277,7 +284,7 @@ where user_id = $1 and id = $2 and status = 'provisioning'`
 func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, sessionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 9000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
 from sessions s
@@ -289,9 +296,10 @@ limit 1`
 	var relayInstanceID string
 	var relaySlug string
 	var stoppedAt *time.Time
+	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID, sessionID).Scan(
 		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
-		&out.PublicIP, &out.SRTPort, &out.WSURL,
+		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
 	); err != nil {
@@ -303,7 +311,7 @@ limit 1`
 	out.StoppedAt = stoppedAt
 	out.RelayInstanceID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
-		out.RelayHostname = relaySlug + ".relay.telemyapp.com"
+		out.RelayHostname = relaySlug + "." + s.relayDomain
 	}
 	return &out, nil
 }

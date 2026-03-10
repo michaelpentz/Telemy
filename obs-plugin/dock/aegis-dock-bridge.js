@@ -329,7 +329,6 @@
           ingestUrl: (relay.relay_hostname || snap.relay_hostname || relay.public_ip || snap.relay_public_ip)
             ? ("srtla://" + (relay.relay_hostname || snap.relay_hostname || relay.public_ip || snap.relay_public_ip) + ":" + String(relay.srt_port || snap.relay_srt_port || 5000))
             : null,
-          wsUrl: relay.ws_url || null,
           graceWindowSeconds: relay.grace_window_seconds || null,
           maxSessionSeconds: relay.max_session_seconds || null,
           licensed: true, // placeholder — future: OAuth gate derives from subscription status
@@ -502,10 +501,8 @@
               status: d.status || "active",
               region: d.region || null,
               public_ip: d.public_ip || null,
-              srt_port: d.srt_port || 9000,
+              srt_port: d.srt_port || 5000,
               relay_hostname: d.relay_hostname || null,
-              pair_token: d.pair_token || null,
-              ws_url: d.ws_url || null,
               grace_window_seconds: d.grace_window_seconds || null,
               max_session_seconds: d.max_session_seconds || null,
             };

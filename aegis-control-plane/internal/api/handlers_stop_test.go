@@ -134,7 +134,6 @@ func (m *mockProvisioner) Provision(ctx context.Context, req relay.ProvisionRequ
 		InstanceType:  "t4g.small",
 		PublicIP:      "203.0.113.10",
 		SRTPort:       9000,
-		WSURL:         "wss://relay.default/ws",
 	}, nil
 }
 
@@ -174,7 +173,7 @@ func TestRelayStop_IdempotentAlreadyStoppedSkipsDeprovision(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
+	_, router := NewRouter(testConfig(), ms, mp, dns.NewClient("relay.telemyapp.com"))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/stop", jsonBody(map[string]any{
 		"session_id": "ses_1",
 		"reason":     "user_requested",
@@ -224,7 +223,7 @@ func TestRelayStop_ActiveSessionCallsDeprovisionThenStops(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
+	_, router := NewRouter(testConfig(), ms, mp, dns.NewClient("relay.telemyapp.com"))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/stop", jsonBody(map[string]any{
 		"session_id": "ses_2",
 		"reason":     "user_requested",
@@ -263,7 +262,7 @@ func TestRelayStop_DeprovisionFailureReturns500(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
+	_, router := NewRouter(testConfig(), ms, mp, dns.NewClient("relay.telemyapp.com"))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/stop", jsonBody(map[string]any{
 		"session_id": "ses_3",
 		"reason":     "user_requested",
@@ -296,7 +295,6 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 		RelayAWSInstanceID: "i-123",
 		PublicIP:           "198.51.100.21",
 		SRTPort:            9000,
-		WSURL:              "wss://relay.test/ws",
 		PairToken:          "PAIR1234",
 		RelayWSToken:       "ws_token",
 		GraceWindowSeconds: 600,
@@ -323,7 +321,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 	}
 	mp := &mockProvisioner{}
 
-	router := NewRouter(testConfig(), ms, mp, nil)
+	_, router := NewRouter(testConfig(), ms, mp, nil)
 	body := map[string]any{
 		"region_preference": "us-east-1",
 		"client_context":    map[string]any{"requested_by": "dashboard"},
@@ -370,7 +368,6 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 		RelayAWSInstanceID: "i-existing",
 		PublicIP:           "203.0.113.77",
 		SRTPort:            9000,
-		WSURL:              "wss://relay.existing/ws",
 		PairToken:          "EXIST123",
 		RelayWSToken:       "existing_ws_token",
 		GraceWindowSeconds: 600,
@@ -396,7 +393,7 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
+	_, router := NewRouter(testConfig(), ms, mp, dns.NewClient("relay.telemyapp.com"))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "eu-west-1",
 		"client_context": map[string]any{
@@ -438,7 +435,7 @@ func TestRelayStart_ProvisionFailureCompensatesByStoppingSession(t *testing.T) {
 	}
 	mp := &mockProvisioner{}
 
-	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
+	_, router := NewRouter(testConfig(), ms, mp, dns.NewClient("relay.telemyapp.com"))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "us-east-1",
 		"client_context":    map[string]any{"requested_by": "dashboard"},
@@ -472,7 +469,7 @@ func TestRelayStart_ActivationFailureCompensatesByDeprovisionAndStoppingSession(
 	}
 	mp := &mockProvisioner{}
 
-	router := NewRouter(testConfig(), ms, mp, dns.NewClient())
+	_, router := NewRouter(testConfig(), ms, mp, dns.NewClient("relay.telemyapp.com"))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "us-east-1",
 		"client_context":    map[string]any{"requested_by": "dashboard"},
@@ -508,7 +505,7 @@ func TestRelayManifest_ReturnsConfiguredEntries(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/manifest", nil)
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
 	rr := httptest.NewRecorder()
@@ -535,7 +532,7 @@ func TestRelayManifest_EmptyManifestReturns503(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/relay/manifest", nil)
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
 	rr := httptest.NewRecorder()
@@ -553,7 +550,7 @@ func TestRelayHealth_RejectedPayloadReturns400(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
 		"session_id":             "ses_1",
 		"instance_id":            "i-1",
@@ -577,7 +574,7 @@ func TestRelayHealth_StoreFailureReturns500(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
 		"session_id":             "ses_1",
 		"instance_id":            "i-1",
@@ -598,7 +595,7 @@ func TestMetricsEndpoint_ExposesPrometheusPayload(t *testing.T) {
 	metrics.ResetDefaultForTest()
 
 	ms := &mockStore{}
-	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -626,6 +623,7 @@ func newTestServer(ms *mockStore, mp *mockProvisioner) *Server {
 		provisioner: mp,
 		probeReady:  func(_ context.Context, _ string) bool { return true },
 		dwell:       func(_ context.Context, _ time.Duration) {},
+		appCtx:      context.Background(),
 	}
 }
 
@@ -685,7 +683,6 @@ func TestProvisionPipeline_ActivationFailureDeprovisions(t *testing.T) {
 				InstanceType:  "t4g.small",
 				PublicIP:      "198.51.100.50",
 				SRTPort:       5000,
-				WSURL:         "wss://test/ws",
 			}, nil
 		},
 		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
@@ -743,7 +740,6 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 				InstanceType:  "t4g.small",
 				PublicIP:      "198.51.100.50",
 				SRTPort:       5000,
-				WSURL:         "wss://test/ws",
 			}, nil
 		},
 		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
@@ -770,7 +766,7 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 }
 
 func TestRelayHealth_MissingInstanceIDReturns400(t *testing.T) {
-	router := NewRouter(testConfig(), &mockStore{}, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), &mockStore{}, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
 		"session_id":   "ses_1",
 		"ingest_active": true,
@@ -797,7 +793,7 @@ func TestRelayHealth_InstanceIDMismatchRejects(t *testing.T) {
 		},
 	}
 
-	router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
 		"session_id":             "ses_1",
 		"instance_id":            "i-wrong",

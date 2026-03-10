@@ -336,6 +336,46 @@
 
     // ── Dock action result ────────────────────────────────────────────
 
+    // RF-016: Allowlist of safe fields for relay_start results dispatched as CustomEvent.
+    // Secrets (pair_token, ws_url, relay_ws_token, relay_shared_key) must never
+    // leak into the CEF page event bus.
+    _RELAY_START_SAFE_FIELDS: {
+      status: 1, region: 1, public_ip: 1, srt_port: 1, relay_hostname: 1,
+      grace_window_seconds: 1, max_session_seconds: 1, session_id: 1,
+      provision_step: 1, slug: 1
+    },
+
+    _sanitizeRelayStartResult: function (result) {
+      if (!result || typeof result !== "object") return result;
+      if (result.actionType !== "relay_start") return result;
+
+      var safeFields = nativeApi._RELAY_START_SAFE_FIELDS;
+      var sanitized = {
+        actionType: result.actionType,
+        requestId: result.requestId,
+        status: result.status,
+        ok: result.ok,
+        error: result.error
+      };
+
+      // Sanitize detail — only pass through allowlisted fields
+      var detail = result.detail;
+      if (typeof detail === "string") {
+        try { detail = JSON.parse(detail); } catch (_e) { detail = null; }
+      }
+      if (detail && typeof detail === "object") {
+        var safeDetail = {};
+        for (var key in detail) {
+          if (detail.hasOwnProperty(key) && safeFields[key]) {
+            safeDetail[key] = detail[key];
+          }
+        }
+        sanitized.detail = safeDetail;
+      }
+
+      return sanitized;
+    },
+
     receiveDockActionResultJson: function (jsonText) {
       var host = ensureHost();
       var parsed = parseJson(jsonText, "Invalid dock-action-result JSON");
@@ -344,8 +384,10 @@
         if (typeof host.notifyDockActionResult === "function") {
           ok = host.notifyDockActionResult(parsed.value);
         }
-        // Dispatch the full result so React handlers receive actionType, requestId, status, detail
-        dispatch("aegis:dock:action-native-result", parsed.value);
+        // RF-016: Sanitize relay_start results before dispatching as CustomEvent
+        // to prevent secret fields from leaking into the CEF page event bus.
+        var dispatchPayload = nativeApi._sanitizeRelayStartResult(parsed.value);
+        dispatch("aegis:dock:action-native-result", dispatchPayload);
       }
       return ok || (parsed.ok);
     },

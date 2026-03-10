@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const defaultRelayDomain = "relay.telemyapp.com"
-
 // Client manages Cloudflare DNS A records for relay subdomains.
 type Client struct {
 	zoneID     string
@@ -21,16 +19,12 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// NewClient reads Cloudflare credentials from environment variables.
-func NewClient() *Client {
-	domain := os.Getenv("CLOUDFLARE_RELAY_DOMAIN")
-	if domain == "" {
-		domain = defaultRelayDomain
-	}
+// NewClient creates a DNS client. The baseDomain is the relay domain (e.g. "relay.telemyapp.com").
+func NewClient(baseDomain string) *Client {
 	return &Client{
 		zoneID:     os.Getenv("CLOUDFLARE_ZONE_ID"),
 		apiToken:   os.Getenv("CLOUDFLARE_DNS_TOKEN"),
-		baseDomain: domain,
+		baseDomain: baseDomain,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }

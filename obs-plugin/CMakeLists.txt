@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(aegis_obs_plugin LANGUAGES CXX)
 
 option(AEGIS_BUILD_OBS_PLUGIN "Build OBS plugin target (requires OBS Studio SDK)" OFF)
+option(AEGIS_BUILD_TESTS "Build Aegis unit tests (Catch2 v3, requires Qt6::Core)" OFF)
 option(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST "Enable OBS plugin browser-dock host wiring scaffold" OFF)
 option(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF "Enable OBS browser-panel/QCef-backed dock host implementation" OFF)
 option(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE "Enable Qt WebEngine-backed OBS browser dock host implementation" OFF)
@@ -21,7 +22,14 @@ if (AEGIS_BUILD_OBS_PLUGIN)
   endif()
 
   add_library(aegis-obs-plugin MODULE src/obs_plugin_entry.cpp)
-  target_sources(aegis-obs-plugin PRIVATE src/config_vault.cpp src/metrics_collector.cpp src/relay_client.cpp)
+  target_sources(aegis-obs-plugin PRIVATE
+    src/config_vault.cpp
+    src/metrics_collector.cpp
+    src/relay_client.cpp
+    src/dock_theme.cpp
+    src/dock_replay_cache.cpp
+    src/dock_action_dispatch.cpp
+  )
   target_include_directories(aegis-obs-plugin PRIVATE ${OBS_INCLUDE_DIRS})
   if (OBS_LIBRARY_DIRS)
     target_link_directories(aegis-obs-plugin PRIVATE ${OBS_LIBRARY_DIRS})
@@ -72,7 +80,8 @@ if (AEGIS_BUILD_OBS_PLUGIN)
       foreach(_asset_name
           "aegis-dock-bridge.js"
           "aegis-dock-bridge-host.js"
-          "aegis-dock-browser-host-bootstrap.js")
+          "aegis-dock-browser-host-bootstrap.js"
+          "aegis-dock-app.js")
         add_custom_command(
           TARGET aegis-obs-plugin POST_BUILD
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -145,4 +154,11 @@ if (AEGIS_BUILD_OBS_PLUGIN)
       endif()
     endif()
   endif()
+endif()
+
+# --------------------------------------------------------------------------
+# Unit tests (Catch2 v3) — opt-in, does not require OBS SDK.
+# --------------------------------------------------------------------------
+if (AEGIS_BUILD_TESTS)
+  add_subdirectory(tests)
 endif()

@@ -16,7 +16,6 @@ struct RelaySession {
     std::string region;
     std::string public_ip;
     int         srt_port = 9000;
-    std::string ws_url;
     std::string relay_hostname;  // e.g. "k7mx2p.telemyapp.com"
     std::string pair_token;
     std::string instance_id;   // AWS instance ID — needed for /relay/health
@@ -77,6 +76,9 @@ public:
                             int interval_sec = 30);
     void StopHeartbeatLoop();
 
+    // Hot-reconfigure api_host and relay_shared_key without restarting OBS.
+    void Reconfigure(const std::string& api_host, const std::string& relay_shared_key);
+
     // Called from obs_module_unload — blocks up to 3 seconds
     void EmergencyRelayStop(const std::string& jwt);
 
@@ -106,6 +108,8 @@ private:
     std::thread heartbeat_thread_;
     std::mutex heartbeat_cv_mutex_;
     std::condition_variable heartbeat_cv_;
+    int heartbeat_consecutive_failures_{0};
+    static constexpr int kHeartbeatMaxConsecutiveFailures = 3;
 
     RelayStats         stats_;
     mutable std::mutex stats_mutex_;

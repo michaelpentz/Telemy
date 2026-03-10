@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,16 +45,24 @@ type Server struct {
 	// probeReady and dwell are injectable for tests; nil uses real implementations.
 	probeReady func(ctx context.Context, url string) bool
 	dwell      func(ctx context.Context, d time.Duration)
+	// appCtx is cancelled on process shutdown; provisioning goroutines derive from it.
+	appCtx context.Context
+	// wg tracks in-flight provisioning goroutines so Shutdown can wait for them.
+	wg sync.WaitGroup
 }
 
-func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *dns.Client) http.Handler {
-	s := &Server{cfg: cfg, store: st, provisioner: prov, dns: dnsClient}
+func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *dns.Client, opts ...RouterOption) (*Server, http.Handler) {
+	s := &Server{cfg: cfg, store: st, provisioner: prov, dns: dnsClient, appCtx: context.Background()}
+	for _, o := range opts {
+		o(s)
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	// AWS relay provisioning can exceed tens of seconds during EC2 launch/wait.
 	r.Use(middleware.Timeout(3 * time.Minute))
+	r.Use(maxBodySize(1 << 20)) // 1 MB request body limit
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -71,7 +81,33 @@ func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *d
 		v1.With(s.relaySharedAuth).Post("/relay/health", s.handleRelayHealth)
 	})
 
-	return r
+	return s, r
+}
+
+// RouterOption configures optional Server fields.
+type RouterOption func(*Server)
+
+// WithAppContext sets the application-scoped context for background goroutines.
+func WithAppContext(ctx context.Context) RouterOption {
+	return func(s *Server) { s.appCtx = ctx }
+}
+
+// Shutdown waits for in-flight provisioning goroutines to finish, up to the
+// given timeout. Returns true if all goroutines completed, false on timeout.
+func (s *Server) Shutdown(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		log.Printf("server: all provisioning goroutines finished")
+		return true
+	case <-time.After(timeout):
+		log.Printf("server: timed out waiting for %v for provisioning goroutines", timeout)
+		return false
+	}
 }
 
 func (s *Server) relaySharedAuth(next http.Handler) http.Handler {
@@ -103,6 +139,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// maxBodySize returns middleware that limits request body size for methods that
+// carry a body (POST, PUT, PATCH). Exceeding the limit causes the JSON decoder
+// to return an error which handlers translate to 413 Request Entity Too Large.
+func maxBodySize(n int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch:
+				r.Body = http.MaxBytesReader(w, r.Body, n)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func parseIdempotencyKey(h string) (uuid.UUID, error) {
