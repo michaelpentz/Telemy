@@ -37,7 +37,7 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 
-	st := store.New(pool)
+	st := store.New(pool, cfg.RelayDomain)
 	manifestEntries := buildManifestEntries(cfg)
 	if err := st.UpsertRelayManifest(ctx, manifestEntries); err != nil {
 		log.Fatalf("sync relay manifest: %v", err)
@@ -59,8 +59,8 @@ func main() {
 	default:
 		prov = relay.NewFakeProvisioner()
 	}
-	dnsClient := dns.NewClient()
-	handler := api.NewRouter(cfg, st, prov, dnsClient)
+	dnsClient := dns.NewClient(cfg.RelayDomain)
+	appServer, handler := api.NewRouter(cfg, st, prov, dnsClient, api.WithAppContext(ctx))
 
 	srv := &http.Server{
 		Addr:        cfg.ListenAddr,
@@ -73,6 +73,10 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
+		// Wait for in-flight provisioning goroutines before tearing down HTTP.
+		// The appCtx derived from ctx is already cancelled, so provisioning
+		// contexts will hit their deadline; give them up to 30s to clean up.
+		appServer.Shutdown(30 * time.Second)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)

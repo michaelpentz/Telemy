@@ -24,7 +24,6 @@ func (f *FakeProvisioner) Provision(_ context.Context, req ProvisionRequest) (Pr
 		InstanceType:  "t4g.small",
 		PublicIP:      ip,
 		SRTPort:       5000,
-		WSURL:         fmt.Sprintf("wss://%s:7443/telemetry", ip),
 	}, nil
 }
 

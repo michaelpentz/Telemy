@@ -14,7 +14,6 @@ type ProvisionResult struct {
 	InstanceType  string
 	PublicIP      string
 	SRTPort       int
-	WSURL         string
 }
 
 type DeprovisionRequest struct {

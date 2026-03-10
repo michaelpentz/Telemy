@@ -20,6 +20,7 @@ type Config struct {
 	AWSSubnetID     string
 	AWSSecurityIDs  []string
 	AWSKeyName      string
+	RelayDomain     string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -36,6 +37,7 @@ func LoadFromEnv() (Config, error) {
 		AWSSubnetID:     os.Getenv("AEGIS_AWS_SUBNET_ID"),
 		AWSSecurityIDs:  splitCSV(os.Getenv("AEGIS_AWS_SECURITY_GROUP_IDS")),
 		AWSKeyName:      os.Getenv("AEGIS_AWS_KEY_NAME"),
+		RelayDomain:     envOrDefault("CLOUDFLARE_RELAY_DOMAIN", "relay.telemyapp.com"),
 	}
 
 	if cfg.DatabaseURL == "" {

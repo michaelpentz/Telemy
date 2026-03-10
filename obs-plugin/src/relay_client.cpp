@@ -76,8 +76,7 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     // Relay connection info (nested under "relay" key in Go response).
     QJsonObject relayObj = obj["relay"].toObject();
     session.public_ip = relayObj["public_ip"].toString().toStdString();
-    session.srt_port = relayObj["srt_port"].toInt(9000);
-    session.ws_url = relayObj["ws_url"].toString().toStdString();
+    session.srt_port = relayObj["srt_port"].toInt(5000);
     session.relay_hostname = relayObj["relay_hostname"].toString().toStdString();
 
     // Credentials.
@@ -251,6 +250,7 @@ void RelayClient::StartHeartbeatLoop(const std::string& jwt,
     StopHeartbeatLoop();
 
     heartbeat_running_ = true;
+    heartbeat_consecutive_failures_ = 0;
 
     heartbeat_thread_ = std::thread([this, jwt, session_id, interval_sec]() {
         blog(LOG_INFO, "relay: heartbeat loop started (session %s, interval %ds)",
@@ -270,14 +270,47 @@ void RelayClient::StartHeartbeatLoop(const std::string& jwt,
             }
 
             try {
-                if (!SendHeartbeat(jwt, session_id)) {
-                    blog(LOG_WARNING, "relay: heartbeat failed, stopping loop");
-                    heartbeat_running_ = false;
+                if (SendHeartbeat(jwt, session_id)) {
+                    heartbeat_consecutive_failures_ = 0;
+                } else {
+                    // Check if this was a terminal 404 (session expired) —
+                    // SendHeartbeat clears current_session_ on 404.
+                    bool session_expired;
+                    {
+                        std::lock_guard<std::mutex> lock(session_mutex_);
+                        session_expired = !current_session_.has_value();
+                    }
+                    if (session_expired) {
+                        blog(LOG_WARNING, "relay: heartbeat session expired (404), stopping loop");
+                        heartbeat_running_ = false;
+                    } else {
+                        ++heartbeat_consecutive_failures_;
+                        if (heartbeat_consecutive_failures_ >= kHeartbeatMaxConsecutiveFailures) {
+                            blog(LOG_WARNING,
+                                 "relay: heartbeat failed %d consecutive times, stopping loop",
+                                 heartbeat_consecutive_failures_);
+                            heartbeat_running_ = false;
+                        } else {
+                            blog(LOG_WARNING,
+                                 "relay: heartbeat transient failure (%d/%d), will retry",
+                                 heartbeat_consecutive_failures_,
+                                 kHeartbeatMaxConsecutiveFailures);
+                        }
+                    }
                 }
             } catch (const std::exception& e) {
-                blog(LOG_WARNING, "relay: heartbeat exception: %s", e.what());
-                // Continue the loop — transient network errors should not kill
-                // the heartbeat permanently. The next attempt may succeed.
+                ++heartbeat_consecutive_failures_;
+                if (heartbeat_consecutive_failures_ >= kHeartbeatMaxConsecutiveFailures) {
+                    blog(LOG_WARNING,
+                         "relay: heartbeat exception (%d consecutive failures), stopping loop: %s",
+                         heartbeat_consecutive_failures_, e.what());
+                    heartbeat_running_ = false;
+                } else {
+                    blog(LOG_WARNING,
+                         "relay: heartbeat exception (%d/%d), will retry: %s",
+                         heartbeat_consecutive_failures_,
+                         kHeartbeatMaxConsecutiveFailures, e.what());
+                }
             }
         }
 
@@ -295,6 +328,23 @@ void RelayClient::StopHeartbeatLoop()
     if (heartbeat_thread_.joinable()) {
         heartbeat_thread_.join();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Reconfigure — hot-swap api_host and relay_shared_key so the user does not
+// need to restart OBS after changing relay settings in the dock.
+// ---------------------------------------------------------------------------
+
+void RelayClient::Reconfigure(const std::string& api_host,
+                               const std::string& relay_shared_key)
+{
+    StopHeartbeatLoop();
+
+    api_host_w_ = std::wstring(api_host.begin(), api_host.end());
+    relay_shared_key_w_ = std::wstring(relay_shared_key.begin(), relay_shared_key.end());
+    logged_missing_health_shared_key_ = false;
+
+    blog(LOG_INFO, "relay: reconfigured api_host=%s", api_host.c_str());
 }
 
 // ---------------------------------------------------------------------------

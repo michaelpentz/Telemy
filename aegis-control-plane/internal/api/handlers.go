@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"slices"
 	"time"
 
@@ -18,6 +19,24 @@ import (
 	"github.com/telemyapp/aegis-control-plane/internal/relay"
 	"github.com/telemyapp/aegis-control-plane/internal/store"
 )
+
+// decodeJSON decodes a JSON request body into dst, rejecting unknown fields.
+// Returns an appropriate HTTP status code and error message on failure.
+// A zero status indicates success.
+func decodeJSON(r *http.Request, dst any) (status int, msg string) {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return http.StatusRequestEntityTooLarge, "request body too large"
+		}
+		return http.StatusBadRequest, "invalid JSON payload"
+	}
+	return 0, ""
+}
+
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type relayStartRequest struct {
 	RegionPreference string `json:"region_preference"`
@@ -61,8 +80,12 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req relayStartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid JSON payload")
+	if code, msg := decodeJSON(r, &req); code != 0 {
+		writeAPIError(w, code, "invalid_request", msg)
+		return
+	}
+	if len(req.RegionPreference) > 64 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "region_preference too long")
 		return
 	}
 
@@ -100,7 +123,11 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 			log.Printf("relay_start: failed setting initial provision step session_id=%s err=%v", sess.ID, err)
 		}
 		sess.ProvisionStep = model.StepLaunchingInstance
-		go s.runProvisionPipeline(sess.ID, sess.UserID, sess.Region)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.runProvisionPipeline(sess.ID, sess.UserID, sess.Region)
+		}()
 	}
 
 	status := http.StatusOK
@@ -125,7 +152,7 @@ func (s *Server) compensateRelayStartProvisioned(ctx context.Context, sess *mode
 }
 
 func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(s.appCtx, 3*time.Minute)
 	defer cancel()
 
 	probe := s.probeReady
@@ -186,7 +213,12 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 				eipAllocID = allocID
 				eipIP = allocIP
 				if setErr := s.store.SetUserEIP(ctx, userID, eipAllocID, eipIP); setErr != nil {
-					log.Printf("provision_pipeline: set_user_eip_failed session_id=%s err=%v", sessionID, setErr)
+					log.Printf("provision_pipeline: set_user_eip_failed session_id=%s err=%v — releasing orphaned EIP %s", sessionID, setErr, eipAllocID)
+					if relErr := awsProv.ReleaseElasticIP(ctx, region, eipAllocID); relErr != nil {
+						log.Printf("provision_pipeline: release_orphaned_eip_failed session_id=%s alloc=%s err=%v", sessionID, eipAllocID, relErr)
+					}
+					eipAllocID = ""
+					eipIP = ""
 				}
 			}
 		}
@@ -196,7 +228,6 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 			} else {
 				log.Printf("provision_pipeline: eip_associated session_id=%s alloc=%s ip=%s", sessionID, eipAllocID, eipIP)
 				prov.PublicIP = eipIP
-				prov.WSURL = fmt.Sprintf("wss://%s:7443/telemetry", eipIP)
 			}
 		}
 	}
@@ -223,7 +254,6 @@ func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
 		InstanceType:  prov.InstanceType,
 		PublicIP:      prov.PublicIP,
 		SRTPort:       prov.SRTPort,
-		WSURL:         prov.WSURL,
 		PairToken:     pairToken,
 		RelayWSToken:  relayWSToken,
 	}); err != nil {
@@ -358,8 +388,16 @@ func (s *Server) handleRelayStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req relayStopRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.SessionID == "" {
+	if code, msg := decodeJSON(r, &req); code != 0 {
+		writeAPIError(w, code, "invalid_request", msg)
+		return
+	}
+	if req.SessionID == "" {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "session_id is required")
+		return
+	}
+	if len(req.Reason) > 256 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "reason too long")
 		return
 	}
 
@@ -482,8 +520,16 @@ func (s *Server) handleUsageCurrent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRelayHealth(w http.ResponseWriter, r *http.Request) {
 	var req relayHealthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.SessionID == "" || req.InstanceID == "" {
+	if code, msg := decodeJSON(r, &req); code != 0 {
+		writeAPIError(w, code, "invalid_request", msg)
+		return
+	}
+	if req.SessionID == "" || req.InstanceID == "" {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid relay health payload")
+		return
+	}
+	if req.SessionUptimeSeconds < 0 || req.SessionUptimeSeconds > 604800 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "session_uptime_seconds out of range")
 		return
 	}
 
@@ -532,7 +578,6 @@ func toSessionResponse(sess *model.Session) map[string]any {
 	relayMap := map[string]any{
 		"public_ip": sess.PublicIP,
 		"srt_port":  sess.SRTPort,
-		"ws_url":    sess.WSURL,
 	}
 	if sess.RelayHostname != "" {
 		relayMap["relay_hostname"] = sess.RelayHostname

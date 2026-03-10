@@ -143,6 +143,6 @@ func sessionRowWithTimes(sessionID, userID, relayID, awsID, status string, start
 	}
 	return pgxmock.NewRows(cols).AddRow(
 		sessionID, userID, relayID, awsID, status, "", "us-east-1", "ABCDEFGH", "relaytoken",
-		"203.0.113.10", 9000, "wss://203.0.113.10:7443/telemetry", startedAt, stoppedAt, 120, 600, 57600, "",
+		"203.0.113.10", 9000, "", startedAt, stoppedAt, 120, 600, 57600, "",
 	)
 }

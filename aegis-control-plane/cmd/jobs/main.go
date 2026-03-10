@@ -32,7 +32,7 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 
-	st := store.New(pool)
+	st := store.New(pool, cfg.RelayDomain)
 	jobs.NewRunner(st).Start(ctx)
 
 	log.Printf("aegis-jobs worker started")
