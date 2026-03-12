@@ -25,7 +25,6 @@ import (
 // A zero status indicates success.
 func decodeJSON(r *http.Request, dst any) (status int, msg string) {
 	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {

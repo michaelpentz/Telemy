@@ -71,7 +71,8 @@ APP_URL=http://localhost
 # Per-link stats exposed on port 5080 (hardcoded in compose, not variable)
 ENVEOF
 
-# Start containers (images pre-pulled in AMI, no download needed)
+# Pull latest images (AMI has pre-pulled base, but :latest may have been updated)
+docker compose pull
 docker compose up -d
 
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver containers started"
