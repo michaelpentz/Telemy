@@ -16,6 +16,12 @@ import (
 	"github.com/telemyapp/aegis-control-plane/internal/model"
 )
 
+// Session timer defaults (RF-031).
+const (
+	DefaultMaxSessionSeconds  = 57600 // 16 hours
+	DefaultGraceWindowSeconds = 600   // 10 minutes
+)
+
 var (
 	ErrNotFound            = errors.New("not found")
 	ErrIdempotencyMismatch = errors.New("idempotency mismatch")
@@ -175,8 +181,8 @@ where user_id = $1 and endpoint = '/api/v1/relay/start' and idempotency_key = $2
 insert into sessions
   (id, user_id, status, region, idempotency_key, requested_by, pair_token, relay_ws_token, started_at, max_session_seconds, grace_window_seconds, duration_seconds, reconciled_seconds, created_at, updated_at)
 values
-  ($1, $2, 'provisioning', $3, $4, $5, '', '', $6, 57600, 600, 0, 0, $6, $6)`
-	if _, err := tx.Exec(ctx, insertSession, newID, in.UserID, in.Region, in.IdempotencyKey, in.RequestedBy, now); err != nil {
+  ($1, $2, 'provisioning', $3, $4, $5, '', '', $6, $7, $8, 0, 0, $6, $6)`
+	if _, err := tx.Exec(ctx, insertSession, newID, in.UserID, in.Region, in.IdempotencyKey, in.RequestedBy, now, DefaultMaxSessionSeconds, DefaultGraceWindowSeconds); err != nil {
 		return nil, false, err
 	}
 
@@ -187,8 +193,8 @@ values
 		Region:             in.Region,
 		SRTPort:            5000,
 		StartedAt:          now,
-		GraceWindowSeconds: 600,
-		MaxSessionSeconds:  57600,
+		GraceWindowSeconds: DefaultGraceWindowSeconds,
+		MaxSessionSeconds:  DefaultMaxSessionSeconds,
 	}
 
 	if err := s.persistIdempotencyRecord(ctx, tx, in, sess); err != nil {
@@ -211,7 +217,8 @@ left join relay_instances ri on ri.id = s.relay_instance_id
 left join users u on u.id = s.user_id
 where s.user_id = $1 and s.status in ('provisioning', 'active', 'grace')
 order by s.created_at desc
-limit 1`
+limit 1
+for update of s`
 	var out model.Session
 	var relayInstanceID string
 	var relaySlug string
@@ -343,7 +350,7 @@ insert into idempotency_records
 values
   ($1, '/api/v1/relay/start', $2, $3, $4, $5, now(), now() + interval '1 hour')
 on conflict (user_id, endpoint, idempotency_key)
-do update set response_json = excluded.response_json, session_id = excluded.session_id`
+do update set response_json = excluded.response_json, session_id = excluded.session_id, expires_at = now() + interval '1 hour'`
 	_, err = tx.Exec(ctx, q, in.UserID, in.IdempotencyKey, in.RequestHash, resp, sess.ID)
 	return err
 }

@@ -82,7 +82,7 @@ func main() {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("aegis-control-plane listening on %s", cfg.ListenAddr)
+	log.Printf("WARNING: API server starting on plain HTTP (%s). Ensure a TLS-terminating proxy (e.g., Cloudflare) is in front.", cfg.ListenAddr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("http server: %v", err)
 	}

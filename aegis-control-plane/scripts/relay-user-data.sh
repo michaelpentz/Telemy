@@ -15,6 +15,9 @@ set -euo pipefail
 exec > /var/log/srtla-setup.log 2>&1
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') srtla-receiver setup starting (pre-baked AMI)"
 
+# Forward cloud-init output for relay debugging
+ln -sf /var/log/cloud-init-output.log /opt/srtla-receiver/cloud-init.log 2>/dev/null || true
+
 # Docker + Compose already installed in AMI; just ensure Docker is running
 systemctl start docker
 
@@ -154,6 +157,10 @@ else
   echo "${STREAMS}" > /tmp/srtla-streams.json
   echo "${APIKEY}" > /tmp/srtla-apikey
 fi
+
+# Dump final container state for debugging
+docker compose ps --format json > /tmp/srtla-containers.json 2>/dev/null || true
+docker compose logs --tail=50 > /tmp/srtla-container-logs.txt 2>/dev/null || true
 
 # Signal ready (marker file for health check polling)
 touch /tmp/srtla-ready
