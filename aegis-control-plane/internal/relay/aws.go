@@ -76,6 +76,7 @@ services:
       - "5080:5080/tcp"
     volumes:
       - ./data:/var/lib/sls
+      - ./data/ipinfo_lite.mmdb:/usr/share/GeoIP/ipinfo_lite.mmdb:ro
     logging:
       driver: "json-file"
       options:
