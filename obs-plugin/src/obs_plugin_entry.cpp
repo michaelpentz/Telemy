@@ -19,6 +19,7 @@
 #include <QJsonObject>
 #include <QTimer>
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -59,6 +60,7 @@ std::unique_ptr<aegis::RelayClient> g_relay;
 std::mutex g_relay_worker_mu;
 std::thread g_relay_start_worker;
 std::thread g_relay_stop_worker;
+std::atomic<bool> g_relay_start_cancel{false};
 
 // ---------------------------------------------------------------------------
 // Shared utility functions — called from dock_replay_cache.cpp and
@@ -845,7 +847,9 @@ void obs_module_unload(void) {
                 "[aegis-obs-plugin] relay emergency stop skipped: no relay_jwt in vault");
         }
     }
-    // Join any outstanding relay worker threads before destroying g_relay.
+    // Signal cancellation and join any outstanding relay worker threads
+    // before destroying g_relay.
+    g_relay_start_cancel.store(true);
     {
         std::lock_guard<std::mutex> lk(g_relay_worker_mu);
         if (g_relay_start_worker.joinable()) {
