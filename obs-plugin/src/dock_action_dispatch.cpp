@@ -12,6 +12,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <mutex>
@@ -48,6 +49,7 @@ extern std::unique_ptr<aegis::RelayClient> g_relay;
 extern std::mutex g_relay_worker_mu;
 extern std::thread g_relay_start_worker;
 extern std::thread g_relay_stop_worker;
+extern std::atomic<bool> g_relay_start_cancel;
 
 // ---------------------------------------------------------------------------
 // Module-local globals
@@ -849,9 +851,16 @@ bool DispatchDockAction(const std::string& action_json,
         int heartbeat_interval = g_config.relay_heartbeat_interval_sec;
         {
             std::lock_guard<std::mutex> lk(g_relay_worker_mu);
+            // Signal any running worker to stop, then detach it so we don't
+            // block the UI thread.  The old worker will notice the flag and
+            // exit on its next poll iteration.
             if (g_relay_start_worker.joinable()) {
-                g_relay_start_worker.join();
+                g_relay_start_cancel.store(true);
+                g_relay_start_worker.detach();
+                blog(LOG_INFO,
+                    "[aegis-obs-plugin] relay_start: cancelled previous worker");
             }
+            g_relay_start_cancel.store(false);
             g_relay_start_worker = std::thread([jwt, req_id, heartbeat_interval]() {
             try {
                 auto session = g_relay->Start(jwt);
@@ -863,6 +872,12 @@ bool DispatchDockAction(const std::string& action_json,
                         const auto deadline =
                             std::chrono::steady_clock::now() + std::chrono::seconds(180);
                         while (std::chrono::steady_clock::now() < deadline) {
+                            if (g_relay_start_cancel.load()) {
+                                blog(LOG_INFO,
+                                    "[aegis-obs-plugin] relay_start cancelled: request_id=%s",
+                                    req_id.c_str());
+                                return;
+                            }
                             auto polled = g_relay->GetActive(jwt);
                             if (!polled) {
                                 const auto now = std::chrono::steady_clock::now();
@@ -890,6 +905,7 @@ bool DispatchDockAction(const std::string& action_json,
                             }
 
                             if (polled->status == "active") {
+                                if (g_relay_start_cancel.load()) return;
                                 g_relay->StartHeartbeatLoop(jwt, polled->session_id, heartbeat_interval);
                                 blog(LOG_INFO,
                                     "[aegis-obs-plugin] relay_start completed: request_id=%s session_id=[redacted] region=%s status=%s",
@@ -921,6 +937,12 @@ bool DispatchDockAction(const std::string& action_json,
                             std::this_thread::sleep_for(sleep_for);
                         }
 
+                        if (g_relay_start_cancel.load()) {
+                            blog(LOG_INFO,
+                                "[aegis-obs-plugin] relay_start cancelled: request_id=%s",
+                                req_id.c_str());
+                            return;
+                        }
                         blog(LOG_WARNING,
                             "[aegis-obs-plugin] relay_start failed: request_id=%s error=provision_timeout",
                             req_id.c_str());
