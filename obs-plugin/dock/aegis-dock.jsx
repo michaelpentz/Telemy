@@ -750,6 +750,16 @@ export default function AegisDock() {
       <style>{getDockCss(activeTheme)}</style>
 
       {/* ================================================================= */}
+      {/* SIMULATION MODE BANNER (RF-019)                                   */}
+      {/* ================================================================= */}
+      {!useBridge && <div style={{
+        background: "linear-gradient(90deg, #b33a00 0%, #cc4400 50%, #b33a00 100%)",
+        color: "#fff", textAlign: "center", fontSize: 10, fontWeight: 700,
+        padding: "4px 0", letterSpacing: "0.12em", flexShrink: 0,
+        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+      }}>SIMULATION MODE</div>}
+
+      {/* ================================================================= */}
       {/* HEALTH ACCENT RAIL — top edge status indicator                     */}
       {/* ================================================================= */}
       <div style={{

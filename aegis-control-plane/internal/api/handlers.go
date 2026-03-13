@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"regexp"
 	"slices"
@@ -24,7 +25,9 @@ import (
 // Returns an appropriate HTTP status code and error message on failure.
 // A zero status indicates success.
 func decodeJSON(r *http.Request, dst any) (status int, msg string) {
+	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20) // 1MB limit
 	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
@@ -151,7 +154,7 @@ func (s *Server) compensateRelayStartProvisioned(ctx context.Context, sess *mode
 }
 
 func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
-	ctx, cancel := context.WithTimeout(s.appCtx, 3*time.Minute)
+	ctx, cancel := context.WithTimeout(s.appCtx, 5*time.Minute)
 	defer cancel()
 
 	probe := s.probeReady
@@ -609,13 +612,14 @@ func generatePairToken(length int) (string, error) {
 	if length <= 0 {
 		return "", errors.New("invalid token length")
 	}
-	buf := make([]byte, length)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
+	max := big.NewInt(int64(len(alphabet)))
 	out := make([]byte, length)
-	for i := range buf {
-		out[i] = alphabet[int(buf[i])%len(alphabet)]
+	for i := range out {
+		idx, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		out[i] = alphabet[idx.Int64()]
 	}
 	return string(out), nil
 }

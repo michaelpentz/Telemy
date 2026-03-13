@@ -396,9 +396,27 @@
 
     sendDockAction: function (action) {
       var host = ensureHost();
+      // RF-025: Strip relay_shared_key from save_config before CEF transport
+      var sanitizedAction = action;
+      if (action && action.type === "save_config" && action.payload && typeof action.payload === "object") {
+        if ("relay_shared_key" in action.payload) {
+          var cleanPayload = {};
+          for (var k in action.payload) {
+            if (action.payload.hasOwnProperty(k) && k !== "relay_shared_key") {
+              cleanPayload[k] = action.payload[k];
+            }
+          }
+          sanitizedAction = {};
+          for (var ak in action) {
+            if (action.hasOwnProperty(ak)) {
+              sanitizedAction[ak] = ak === "payload" ? cleanPayload : action[ak];
+            }
+          }
+        }
+      }
       var jsonText = "";
       try {
-        jsonText = JSON.stringify(action || {});
+        jsonText = JSON.stringify(sanitizedAction || {});
       } catch (_e) {
         jsonText = "";
       }

@@ -37,6 +37,14 @@ OBS_MODULE_USE_DEFAULT_LOCALE("aegis-obs-plugin", "en-US")
 
 namespace {
 
+// ---------------------------------------------------------------------------
+// Named constants (RF-031)
+// ---------------------------------------------------------------------------
+static constexpr float kThemePollIntervalSec       = 0.5f;   // OBS theme change poll
+static constexpr float kSwitchPumpMinIntervalSec   = 0.05f;  // scene-switch drain cadence
+static constexpr float kHealthDegradedDropPct      = 0.05f;  // per-output drop % threshold
+static constexpr float kHealthDegradedMissPct      = 0.05f;  // render-miss % threshold
+
 bool g_obs_timer_registered = false;
 bool g_frontend_event_callback_registered = false;
 bool g_frontend_exit_seen = false;
@@ -228,13 +236,13 @@ std::string DeriveHealthFromSnapshot(const aegis::MetricsSnapshot& snapshot) {
         total_drop += out.drop_pct;
         active_count++;
     }
-    if (active_count > 0 && (total_drop / active_count) > 0.05f) {
+    if (active_count > 0 && (total_drop / active_count) > kHealthDegradedDropPct) {
         health = "degraded";
     }
     if (snapshot.obs.render_total_frames > 0) {
         const float miss_pct = static_cast<float>(snapshot.obs.render_missed_frames) /
                                static_cast<float>(snapshot.obs.render_total_frames);
-        if (miss_pct > 0.05f) {
+        if (miss_pct > kHealthDegradedMissPct) {
             health = "degraded";
         }
     }
@@ -610,7 +618,7 @@ void SwitchScenePumpTick(void*, float seconds) {
         g_metrics_poll_accum_seconds += seconds;
     }
     DrainExpiredPendingDockActions();
-    if (g_theme_poll_accum_seconds >= 0.5f) {
+    if (g_theme_poll_accum_seconds >= kThemePollIntervalSec) {
         g_theme_poll_accum_seconds = 0.0f;
         PollObsThemeChangesOnObsThread();
     }
@@ -620,7 +628,7 @@ void SwitchScenePumpTick(void*, float seconds) {
         g_metrics_poll_accum_seconds = 0.0f;
         EmitCurrentStatusSnapshotToDock("metrics_poll", true);
     }
-    if (g_switch_pump_accum_seconds < 0.05f) {
+    if (g_switch_pump_accum_seconds < kSwitchPumpMinIntervalSec) {
         return;
     }
     g_switch_pump_accum_seconds = 0.0f;
