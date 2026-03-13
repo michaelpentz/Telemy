@@ -14,6 +14,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QSaveFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -190,17 +191,15 @@ static bool SaveLocked(const std::map<std::string, std::string>& entries,
     QJsonDocument doc(obj);
     QByteArray json = doc.toJson(QJsonDocument::Indented);
 
-    QFile file(QString::fromStdString(path));
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate |
-                   QIODevice::Text)) {
+    QSaveFile file(QString::fromStdString(path));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         blog(LOG_WARNING, "vault: failed to open %s for writing",
              path.c_str());
         return false;
     }
 
     file.write(json);
-    file.close();
-    return true;
+    return file.commit();
 }
 
 bool Vault::Load()
@@ -483,16 +482,18 @@ bool PluginConfig::SaveToDisk()
     QJsonDocument doc(obj);
     QByteArray json = doc.toJson(QJsonDocument::Indented);
 
-    QFile file(QString::fromStdString(path));
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate |
-                   QIODevice::Text)) {
+    QSaveFile file(QString::fromStdString(path));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         blog(LOG_WARNING, "config: failed to open %s for writing",
              path.c_str());
         return false;
     }
 
     file.write(json);
-    file.close();
+    if (!file.commit()) {
+        blog(LOG_WARNING, "config: atomic commit failed for %s", path.c_str());
+        return false;
+    }
 
     // Update snapshot so the next save preserves what we just wrote.
     raw_json_snapshot_ = QString(doc.toJson(QJsonDocument::Compact))

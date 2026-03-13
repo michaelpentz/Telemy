@@ -136,7 +136,7 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt)
 std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
 {
     std::string uuid = GenerateUuidV4();
-    std::string body = "{\"mode\":\"auto\",\"idempotency_key\":\"" + uuid + "\"}";
+    std::string body = "{\"region_preference\":\"\",\"client_context\":{\"obs_connected\":true,\"mode\":\"auto\",\"requested_by\":\"obs-plugin\"}}";
     std::wstring wide_jwt(jwt.begin(), jwt.end());
     std::wstring wide_uuid(uuid.begin(), uuid.end());
 

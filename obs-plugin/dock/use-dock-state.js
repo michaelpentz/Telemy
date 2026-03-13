@@ -25,7 +25,6 @@ export function useDockState() {
     const stateEvents = [
       "aegis:dock:native-ready",
       "aegis:dock:host-fallback",
-      "aegis:dock:ipc-envelope-json",
       "aegis:dock:scene-snapshot",
       "aegis:dock:scene-snapshot-json",
       "aegis:dock:current-scene",

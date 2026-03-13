@@ -140,7 +140,8 @@ static HttpResponse read_response(HINTERNET request)
     }
     resp.status_code = static_cast<unsigned long>(status_code);
 
-    // Read the body in chunks.
+    // Read the body in chunks (capped at 1 MB to prevent unbounded allocation).
+    static constexpr size_t kMaxResponseBodyBytes = 1048576;  // 1 MB
     DWORD bytes_available = 0;
     do {
         bytes_available = 0;
@@ -159,6 +160,12 @@ static HttpResponse read_response(HINTERNET request)
         }
 
         resp.body.append(buffer.data(), bytes_read);
+
+        if (resp.body.size() > kMaxResponseBodyBytes) {
+            AEGIS_LOG_WARN("response body exceeded 1 MB limit, truncating");
+            resp.body.resize(kMaxResponseBodyBytes);
+            break;
+        }
 
     } while (bytes_available > 0);
 
