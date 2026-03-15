@@ -43,6 +43,7 @@ void LogSceneSnapshot(const char* reason);
 // ---------------------------------------------------------------------------
 // Extern globals — defined in obs_plugin_entry.cpp
 // ---------------------------------------------------------------------------
+extern aegis::HttpsClient g_http;
 extern aegis::Vault       g_vault;
 extern aegis::PluginConfig g_config;
 extern std::unique_ptr<aegis::RelayClient> g_relay;
@@ -1129,6 +1130,13 @@ bool DispatchDockAction(const std::string& action_json,
             const std::string new_host = g_config.relay_api_host;
             const auto new_key = g_vault.Get("relay_shared_key");
             g_relay->Reconfigure(new_host, new_key.value_or(""));
+        } else if (!g_config.relay_api_host.empty()) {
+            const auto new_key = g_vault.Get("relay_shared_key");
+            g_relay = std::make_unique<aegis::RelayClient>(
+                g_http, g_config.relay_api_host, new_key.value_or(""));
+            blog(LOG_INFO,
+                "[aegis-obs-plugin] relay client created from save_config: host=%s",
+                g_config.relay_api_host.c_str());
         }
 
         blog(LOG_INFO,
