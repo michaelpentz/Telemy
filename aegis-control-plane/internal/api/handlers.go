@@ -128,7 +128,7 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			s.runProvisionPipeline(sess.ID, sess.UserID, sess.Region)
+			s.runProvisionPipeline(s.appCtx, sess.ID, sess.UserID, sess.Region)
 		}()
 	}
 
@@ -153,8 +153,8 @@ func (s *Server) compensateRelayStartProvisioned(ctx context.Context, sess *mode
 	}
 }
 
-func (s *Server) runProvisionPipeline(sessionID, userID, region string) {
-	ctx, cancel := context.WithTimeout(s.appCtx, 5*time.Minute)
+func (s *Server) runProvisionPipeline(appCtx context.Context, sessionID, userID, region string) {
+	ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
 	defer cancel()
 
 	probe := s.probeReady

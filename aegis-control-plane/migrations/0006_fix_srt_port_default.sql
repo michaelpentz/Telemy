@@ -1,0 +1,1 @@
+ALTER TABLE relay_instances ALTER COLUMN srt_port SET DEFAULT 5000;

@@ -133,7 +133,7 @@ func (m *mockProvisioner) Provision(ctx context.Context, req relay.ProvisionRequ
 		AMIID:         "ami-default",
 		InstanceType:  "t4g.small",
 		PublicIP:      "203.0.113.10",
-		SRTPort:       9000,
+		SRTPort:       5000,
 	}, nil
 }
 
@@ -283,7 +283,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 		UserID:             "usr_1",
 		Status:             model.SessionProvisioning,
 		Region:             "us-east-1",
-		SRTPort:            9000,
+		SRTPort:            5000,
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
 	}
@@ -294,7 +294,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 		Region:             "us-east-1",
 		RelayAWSInstanceID: "i-123",
 		PublicIP:           "198.51.100.21",
-		SRTPort:            9000,
+		SRTPort:            5000,
 		PairToken:          "PAIR1234",
 		RelayWSToken:       "ws_token",
 		GraceWindowSeconds: 600,
@@ -367,7 +367,7 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 		Region:             "eu-west-1",
 		RelayAWSInstanceID: "i-existing",
 		PublicIP:           "203.0.113.77",
-		SRTPort:            9000,
+		SRTPort:            5000,
 		PairToken:          "EXIST123",
 		RelayWSToken:       "existing_ws_token",
 		GraceWindowSeconds: 600,
@@ -424,7 +424,7 @@ func TestRelayStart_ProvisionFailureCompensatesByStoppingSession(t *testing.T) {
 		UserID:             "usr_1",
 		Status:             model.SessionProvisioning,
 		Region:             "us-east-1",
-		SRTPort:            9000,
+		SRTPort:            5000,
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
 	}
@@ -458,7 +458,7 @@ func TestRelayStart_ActivationFailureCompensatesByDeprovisionAndStoppingSession(
 		UserID:             "usr_1",
 		Status:             model.SessionProvisioning,
 		Region:             "us-east-1",
-		SRTPort:            9000,
+		SRTPort:            5000,
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
 	}
@@ -650,7 +650,7 @@ func TestProvisionPipeline_ProvisionFailureCompensates(t *testing.T) {
 	}
 
 	s := newTestServer(ms, mp)
-	s.runProvisionPipeline("ses_prov_fail", "usr_1", "us-east-1")
+	s.runProvisionPipeline(context.Background(), "ses_prov_fail", "usr_1", "us-east-1")
 
 	if stopCalls != 1 {
 		t.Fatalf("expected 1 stop compensation call, got %d", stopCalls)
@@ -695,7 +695,7 @@ func TestProvisionPipeline_ActivationFailureDeprovisions(t *testing.T) {
 	}
 
 	s := newTestServer(ms, mp)
-	s.runProvisionPipeline("ses_act_fail", "usr_1", "us-east-1")
+	s.runProvisionPipeline(context.Background(), "ses_act_fail", "usr_1", "us-east-1")
 
 	if activateCalls != 1 {
 		t.Fatalf("expected 1 activation call, got %d", activateCalls)
@@ -752,7 +752,7 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 	}
 
 	s := newTestServer(ms, mp)
-	s.runProvisionPipeline("ses_final_fail", "usr_1", "us-east-1")
+	s.runProvisionPipeline(context.Background(), "ses_final_fail", "usr_1", "us-east-1")
 
 	if finalActivateCalls != 1 {
 		t.Fatalf("expected 1 final activate call, got %d", finalActivateCalls)
