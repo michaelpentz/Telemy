@@ -15,7 +15,7 @@ struct RelaySession {
     std::string status;    // "provisioning", "active", "grace", "stopped"
     std::string region;
     std::string public_ip;
-    int         srt_port = 9000;
+    int         srt_port = 5000;
     std::string relay_hostname;  // e.g. "k7mx2p.telemyapp.com"
     std::string pair_token;
     std::string instance_id;   // AWS instance ID — needed for /relay/health
@@ -109,7 +109,9 @@ private:
     std::mutex heartbeat_cv_mutex_;
     std::condition_variable heartbeat_cv_;
     int heartbeat_consecutive_failures_{0};
-    static constexpr int kHeartbeatMaxConsecutiveFailures = 3;
+    int heartbeat_current_interval_sec_{30};
+    static constexpr int kHeartbeatBackoffThreshold = 3;
+    static constexpr int kHeartbeatMaxIntervalSec = 120;
 
     RelayStats         stats_;
     mutable std::mutex stats_mutex_;

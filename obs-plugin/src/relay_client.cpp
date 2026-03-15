@@ -251,17 +251,18 @@ void RelayClient::StartHeartbeatLoop(const std::string& jwt,
 
     heartbeat_running_ = true;
     heartbeat_consecutive_failures_ = 0;
+    heartbeat_current_interval_sec_ = interval_sec;
 
     heartbeat_thread_ = std::thread([this, jwt, session_id, interval_sec]() {
         blog(LOG_INFO, "relay: heartbeat loop started (session %s, interval %ds)",
              session_id.c_str(), interval_sec);
 
         while (heartbeat_running_) {
-            // Wait for the interval, but wake early if StopHeartbeatLoop() signals.
+            // Wait for the current interval, but wake early if StopHeartbeatLoop() signals.
             {
                 std::unique_lock<std::mutex> lock(heartbeat_cv_mutex_);
                 heartbeat_cv_.wait_for(lock,
-                    std::chrono::seconds(interval_sec),
+                    std::chrono::seconds(heartbeat_current_interval_sec_),
                     [this] { return !heartbeat_running_.load(); });
             }
 
@@ -272,6 +273,7 @@ void RelayClient::StartHeartbeatLoop(const std::string& jwt,
             try {
                 if (SendHeartbeat(jwt, session_id)) {
                     heartbeat_consecutive_failures_ = 0;
+                    heartbeat_current_interval_sec_ = interval_sec;
                 } else {
                     // Check if this was a terminal 404 (session expired) —
                     // SendHeartbeat clears current_session_ on 404.
@@ -285,31 +287,34 @@ void RelayClient::StartHeartbeatLoop(const std::string& jwt,
                         heartbeat_running_ = false;
                     } else {
                         ++heartbeat_consecutive_failures_;
-                        if (heartbeat_consecutive_failures_ >= kHeartbeatMaxConsecutiveFailures) {
+                        if (heartbeat_consecutive_failures_ >= kHeartbeatBackoffThreshold) {
+                            heartbeat_current_interval_sec_ = std::min(
+                                heartbeat_current_interval_sec_ * 2, kHeartbeatMaxIntervalSec);
                             blog(LOG_WARNING,
-                                 "relay: heartbeat failed %d consecutive times, stopping loop",
-                                 heartbeat_consecutive_failures_);
-                            heartbeat_running_ = false;
+                                 "relay: heartbeat failed %d consecutive times, backing off to %ds",
+                                 heartbeat_consecutive_failures_, heartbeat_current_interval_sec_);
                         } else {
                             blog(LOG_WARNING,
-                                 "relay: heartbeat transient failure (%d/%d), will retry",
+                                 "relay: heartbeat transient failure (%d/%d), will retry in %ds",
                                  heartbeat_consecutive_failures_,
-                                 kHeartbeatMaxConsecutiveFailures);
+                                 kHeartbeatBackoffThreshold,
+                                 heartbeat_current_interval_sec_);
                         }
                     }
                 }
             } catch (const std::exception& e) {
                 ++heartbeat_consecutive_failures_;
-                if (heartbeat_consecutive_failures_ >= kHeartbeatMaxConsecutiveFailures) {
+                if (heartbeat_consecutive_failures_ >= kHeartbeatBackoffThreshold) {
+                    heartbeat_current_interval_sec_ = std::min(
+                        heartbeat_current_interval_sec_ * 2, kHeartbeatMaxIntervalSec);
                     blog(LOG_WARNING,
-                         "relay: heartbeat exception (%d consecutive failures), stopping loop: %s",
-                         heartbeat_consecutive_failures_, e.what());
-                    heartbeat_running_ = false;
+                         "relay: heartbeat exception (%d failures, backoff %ds): %s",
+                         heartbeat_consecutive_failures_, heartbeat_current_interval_sec_, e.what());
                 } else {
                     blog(LOG_WARNING,
-                         "relay: heartbeat exception (%d/%d), will retry: %s",
+                         "relay: heartbeat exception (%d/%d), will retry in %ds: %s",
                          heartbeat_consecutive_failures_,
-                         kHeartbeatMaxConsecutiveFailures, e.what());
+                         kHeartbeatBackoffThreshold, heartbeat_current_interval_sec_, e.what());
                 }
             }
         }

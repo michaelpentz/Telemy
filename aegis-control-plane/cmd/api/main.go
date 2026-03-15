@@ -26,6 +26,8 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	appCtx, appCancel := context.WithCancel(ctx)
+	defer appCancel()
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -60,7 +62,7 @@ func main() {
 		prov = relay.NewFakeProvisioner()
 	}
 	dnsClient := dns.NewClient(cfg.RelayDomain)
-	appServer, handler := api.NewRouter(cfg, st, prov, dnsClient, api.WithAppContext(ctx))
+	appServer, handler := api.NewRouter(cfg, st, prov, dnsClient, api.WithAppContext(appCtx))
 
 	srv := &http.Server{
 		Addr:        cfg.ListenAddr,
@@ -73,6 +75,7 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
+		appCancel()
 		// Wait for in-flight provisioning goroutines before tearing down HTTP.
 		// The appCtx derived from ctx is already cancelled, so provisioning
 		// contexts will hit their deadline; give them up to 30s to clean up.
