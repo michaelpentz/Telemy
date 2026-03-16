@@ -1,8 +1,8 @@
 package relay
 
 import (
-	"crypto/rand"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -169,7 +169,7 @@ else
   STREAM_RESP=$(curl -s -X POST http://localhost:8090/api/stream-ids \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${APIKEY}" \
-    -d '{"publisher":"live_aegis","player":"play_aegis","description":"aegis-relay"}')
+    -d '{"publisher":"live_STREAM_TOKEN","player":"play_STREAM_TOKEN","description":"aegis-relay"}')
   echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create response: [redacted]"
 
   # Fetch the created stream to get publish/play keys
@@ -238,7 +238,8 @@ func (p *AWSProvisioner) Provision(ctx context.Context, req ProvisionRequest) (P
 	}
 	client := ec2.NewFromConfig(cfg)
 
-	userData := base64.StdEncoding.EncodeToString([]byte(relayUserDataScript))
+	userData := strings.ReplaceAll(relayUserDataScript, "STREAM_TOKEN", req.StreamToken)
+	userData = base64.StdEncoding.EncodeToString([]byte(userData))
 	runInput := &ec2.RunInstancesInput{
 		ImageId:      aws.String(amiID),
 		InstanceType: ec2types.InstanceType(p.instanceType),

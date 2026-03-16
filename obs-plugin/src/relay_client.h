@@ -18,6 +18,7 @@ struct RelaySession {
     int         srt_port = 5000;
     std::string relay_hostname;  // e.g. "k7mx2p.telemyapp.com"
     std::string pair_token;
+    std::string stream_token;
     std::string instance_id;   // AWS instance ID — needed for /relay/health
     int         grace_window_seconds = 0;
     int         max_session_seconds = 0;

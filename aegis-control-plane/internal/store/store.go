@@ -79,7 +79,6 @@ func New(db DB, relayDomain ...string) *Store {
 	return &Store{db: db, relayDomain: domain}
 }
 
-
 func (s *Store) DB() DB {
 	return s.db
 }
@@ -95,7 +94,7 @@ func HashJSON(v any) (string, error) {
 
 func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -112,7 +111,7 @@ limit 1`
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := s.db.QueryRow(ctx, q, userID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -186,15 +185,9 @@ values
 		return nil, false, err
 	}
 
-	sess := &model.Session{
-		ID:                 newID,
-		UserID:             in.UserID,
-		Status:             model.SessionProvisioning,
-		Region:             in.Region,
-		SRTPort:            5000,
-		StartedAt:          now,
-		GraceWindowSeconds: DefaultGraceWindowSeconds,
-		MaxSessionSeconds:  DefaultMaxSessionSeconds,
+	sess, err := s.getSessionByIDTx(ctx, tx, in.UserID, newID)
+	if err != nil {
+		return nil, false, err
 	}
 
 	if err := s.persistIdempotencyRecord(ctx, tx, in, sess); err != nil {
@@ -208,7 +201,7 @@ values
 
 func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -225,7 +218,7 @@ for update of s`
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -290,7 +283,7 @@ where user_id = $1 and id = $2 and status = 'provisioning'`
 
 func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, sessionID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -305,7 +298,7 @@ limit 1`
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID, sessionID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,

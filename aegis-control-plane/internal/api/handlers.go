@@ -125,11 +125,12 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 			log.Printf("relay_start: failed setting initial provision step session_id=%s err=%v", sess.ID, err)
 		}
 		sess.ProvisionStep = model.StepLaunchingInstance
+		sessCopy := *sess
 		s.wg.Add(1)
-		go func() {
+		go func(sess model.Session) {
 			defer s.wg.Done()
-			s.runProvisionPipeline(s.appCtx, sess.ID, sess.UserID, sess.Region)
-		}()
+			s.runProvisionPipeline(s.appCtx, &sess)
+		}(sessCopy)
 	}
 
 	status := http.StatusOK
@@ -153,9 +154,10 @@ func (s *Server) compensateRelayStartProvisioned(ctx context.Context, sess *mode
 	}
 }
 
-func (s *Server) runProvisionPipeline(appCtx context.Context, sessionID, userID, region string) {
+func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Session) {
 	ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
 	defer cancel()
+	sessionID, userID, region := sess.ID, sess.UserID, sess.Region
 
 	probe := s.probeReady
 	if probe == nil {
@@ -172,9 +174,10 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sessionID, userID,
 
 	provisionStart := time.Now()
 	prov, err := s.provisioner.Provision(ctx, relay.ProvisionRequest{
-		SessionID: sessionID,
-		UserID:    userID,
-		Region:    region,
+		SessionID:   sessionID,
+		UserID:      userID,
+		Region:      region,
+		StreamToken: sess.StreamToken,
 	})
 	durMS := float64(time.Since(provisionStart).Milliseconds())
 	labels := map[string]string{
@@ -592,6 +595,7 @@ func toSessionResponse(sess *model.Session) map[string]any {
 		"credentials": map[string]any{
 			"pair_token":     sess.PairToken,
 			"relay_ws_token": sess.RelayWSToken,
+			"stream_token":   sess.StreamToken,
 		},
 		"timers": map[string]any{
 			"grace_window_seconds": sess.GraceWindowSeconds,

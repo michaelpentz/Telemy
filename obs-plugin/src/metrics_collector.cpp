@@ -457,6 +457,9 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << ",\"srt_port\":" << relay_session->srt_port;
         os << ",\"grace_window_seconds\":" << relay_session->grace_window_seconds;
         os << ",\"max_session_seconds\":" << relay_session->max_session_seconds;
+        if (!relay_session->stream_token.empty()) {
+            os << ",\"stream_token\":\"" << JsonEscape(relay_session->stream_token) << "\"";
+        }
     }
     os << "},";
 
@@ -466,6 +469,9 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << "\"relay_srt_port\":" << relay_session->srt_port << ",";
         if (!relay_session->relay_hostname.empty()) {
             os << "\"relay_hostname\":\"" << JsonEscape(relay_session->relay_hostname) << "\",";
+        }
+        if (!relay_session->stream_token.empty()) {
+            os << "\"relay_stream_token\":\"" << JsonEscape(relay_session->stream_token) << "\",";
         }
     }
 

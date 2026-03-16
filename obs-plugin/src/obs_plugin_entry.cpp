@@ -212,8 +212,11 @@ std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session) {
     }
     detail << ",\"grace_window_seconds\":" << session.grace_window_seconds
            << ",\"max_session_seconds\":" << session.max_session_seconds
-           << ",\"provision_step\":\"" << JsonEscape(session.provision_step) << "\""
-           << "}";
+           << ",\"provision_step\":\"" << JsonEscape(session.provision_step) << "\"";
+    if (!session.stream_token.empty()) {
+        detail << ",\"stream_token\":\"" << JsonEscape(session.stream_token) << "\"";
+    }
+    detail << "}";
     return detail.str();
 }
 
