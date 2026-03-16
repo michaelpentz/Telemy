@@ -326,6 +326,7 @@
           publicIp: relay.public_ip || snap.relay_public_ip || null,
           srtPort: relay.srt_port || snap.relay_srt_port || 5000,
           relayHostname: relay.relay_hostname || snap.relay_hostname || null,
+          streamToken: relay.stream_token || snap.relay_stream_token || null,
           ingestUrl: (relay.relay_hostname || snap.relay_hostname || relay.public_ip || snap.relay_public_ip)
             ? ("srtla://" + (relay.relay_hostname || snap.relay_hostname || relay.public_ip || snap.relay_public_ip) + ":" + String(relay.srt_port || snap.relay_srt_port || 5000))
             : null,
@@ -505,6 +506,7 @@
               relay_hostname: d.relay_hostname || null,
               grace_window_seconds: d.grace_window_seconds || null,
               max_session_seconds: d.max_session_seconds || null,
+              stream_token: d.stream_token || null,
             };
           }
         }
