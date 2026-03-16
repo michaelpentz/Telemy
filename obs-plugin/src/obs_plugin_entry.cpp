@@ -779,7 +779,10 @@ bool obs_module_load(void) {
     g_config.LoadFromDisk();
     const std::optional<std::string> relay_shared_key = g_vault.Get("relay_shared_key");
 
-    if (!g_config.relay_api_host.empty()) {
+    if (aegis::IsExplicitInsecureHttpHost(g_config.relay_api_host)) {
+        blog(LOG_WARNING,
+             "[aegis-obs-plugin] relay client skipped: relay_api_host uses insecure http://");
+    } else if (!g_config.relay_api_host.empty()) {
         g_relay = std::make_unique<aegis::RelayClient>(
             g_http, g_config.relay_api_host, relay_shared_key.value_or(""));
         blog(LOG_INFO,
