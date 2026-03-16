@@ -518,11 +518,15 @@ export default function AegisDock() {
     });
   }, [relay.perLinkAvailable, relay.links, relayBondedKbps]);
   // Relay connection URLs (for copy-to-clipboard)
+  const streamToken = relay.streamToken;
+  const publishStreamId = streamToken ? "live_" + streamToken : "live_aegis";
+  const playStreamId = streamToken ? "play_" + streamToken : "play_aegis";
+
   const relayIngestHost = relay.relayHostname || relay.publicIp;
   const relayIngestUrl = relayIngestHost ? "srtla://" + relayIngestHost + ":" + (relay.srtPort || 5000) : null;
-  const relayObsPlayUrl = relayIngestHost ? "srt://" + relayIngestHost + ":4000?streamid=play_aegis" : null;
+  const relayObsPlayUrl = relayIngestHost ? "srt://" + relayIngestHost + ":4000?streamid=" + playStreamId : null;
   const relayDirectIngestUrl = relay.publicIp && relay.relayHostname ? "srtla://" + relay.publicIp + ":" + (relay.srtPort || 5000) : null;
-  const relayDirectPlayUrl = relay.publicIp && relay.relayHostname ? "srt://" + relay.publicIp + ":4000?streamid=play_aegis" : null;
+  const relayDirectPlayUrl = relay.publicIp && relay.relayHostname ? "srt://" + relay.publicIp + ":4000?streamid=" + playStreamId : null;
   // Encoders & Uploads — per-output grouped data
   const encoderOutputs = ds.outputs || { groups: [], hidden: [] };
   const allEncoderItems = encoderOutputs.groups?.flatMap(g => g.items) || [];
@@ -1599,8 +1603,8 @@ export default function AegisDock() {
                       <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px",
                         cursor: "pointer", fontFamily: "monospace",
                         borderBottom: "1px solid var(--theme-border, #1e2028)" }}
-                        onClick={function() { cefCopyToClipboard("live_aegis"); }}>
-                        {"Stream  live_aegis  \u29C9"}
+                        onClick={function() { cefCopyToClipboard(publishStreamId); }}>
+                        {"Stream  " + publishStreamId + "  \u29C9"}
                       </div>
                       <div style={{ fontSize: 9, color: "var(--theme-text, #e0e2e8)", padding: "3px 10px",
                         cursor: "pointer", fontFamily: "monospace",

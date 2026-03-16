@@ -145,7 +145,7 @@ else
   STREAM_RESP=$(curl -s -X POST http://localhost:8090/api/stream-ids \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${APIKEY}" \
-    -d '{"publisher":"live_aegis","player":"play_aegis","description":"aegis-relay"}')
+    -d '{"publisher":"live_STREAM_TOKEN","player":"play_STREAM_TOKEN","description":"aegis-relay"}')
   echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') stream create response: ${STREAM_RESP}"
 
   # Fetch the created stream to get publish/play keys

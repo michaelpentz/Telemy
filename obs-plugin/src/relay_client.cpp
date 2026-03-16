@@ -82,6 +82,7 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     // Credentials.
     QJsonObject creds = obj["credentials"].toObject();
     session.pair_token = creds["pair_token"].toString().toStdString();
+    session.stream_token = creds["stream_token"].toString().toStdString();
 
     // Timers.
     QJsonObject timers = obj["timers"].toObject();
@@ -412,7 +413,15 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
     // Build wide host string with SLS stats port (plaintext — relay-local endpoint).
     std::string host_port = "http://" + relay_ip + ":8090";
     std::wstring host_w(host_port.begin(), host_port.end());
-    std::wstring path_w = L"/stats/play_aegis?legacy=1";
+    std::string stream_token;
+    {
+        std::lock_guard<std::mutex> lk(session_mutex_);
+        if (current_session_)
+            stream_token = current_session_->stream_token;
+    }
+    std::string play_id = "play_" + (stream_token.empty() ? std::string("aegis") : stream_token);
+    std::wstring play_id_w(play_id.begin(), play_id.end());
+    std::wstring path_w = L"/stats/" + play_id_w + L"?legacy=1";
 
     HttpResponse resp;
     try {

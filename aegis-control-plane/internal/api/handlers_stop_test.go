@@ -283,6 +283,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 		UserID:             "usr_1",
 		Status:             model.SessionProvisioning,
 		Region:             "us-east-1",
+		StreamToken:        "streamtok",
 		SRTPort:            5000,
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
@@ -297,6 +298,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 		SRTPort:            5000,
 		PairToken:          "PAIR1234",
 		RelayWSToken:       "ws_token",
+		StreamToken:        "streamtok",
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
 	}
@@ -370,6 +372,7 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 		SRTPort:            5000,
 		PairToken:          "EXIST123",
 		RelayWSToken:       "existing_ws_token",
+		StreamToken:        "streamtok",
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
 	}
@@ -424,6 +427,7 @@ func TestRelayStart_ProvisionFailureCompensatesByStoppingSession(t *testing.T) {
 		UserID:             "usr_1",
 		Status:             model.SessionProvisioning,
 		Region:             "us-east-1",
+		StreamToken:        "streamtok",
 		SRTPort:            5000,
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
@@ -458,6 +462,7 @@ func TestRelayStart_ActivationFailureCompensatesByDeprovisionAndStoppingSession(
 		UserID:             "usr_1",
 		Status:             model.SessionProvisioning,
 		Region:             "us-east-1",
+		StreamToken:        "streamtok",
 		SRTPort:            5000,
 		GraceWindowSeconds: 600,
 		MaxSessionSeconds:  57600,
@@ -650,7 +655,12 @@ func TestProvisionPipeline_ProvisionFailureCompensates(t *testing.T) {
 	}
 
 	s := newTestServer(ms, mp)
-	s.runProvisionPipeline(context.Background(), "ses_prov_fail", "usr_1", "us-east-1")
+	s.runProvisionPipeline(context.Background(), &model.Session{
+		ID:          "ses_prov_fail",
+		UserID:      "usr_1",
+		Region:      "us-east-1",
+		StreamToken: "streamtok",
+	})
 
 	if stopCalls != 1 {
 		t.Fatalf("expected 1 stop compensation call, got %d", stopCalls)
@@ -676,7 +686,10 @@ func TestProvisionPipeline_ActivationFailureDeprovisions(t *testing.T) {
 		},
 	}
 	mp := &mockProvisioner{
-		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
+		provisionFn: func(_ context.Context, req relay.ProvisionRequest) (relay.ProvisionResult, error) {
+			if req.StreamToken != "streamtok" {
+				t.Errorf("unexpected stream token: %s", req.StreamToken)
+			}
 			return relay.ProvisionResult{
 				AWSInstanceID: "i-orphan-risk",
 				AMIID:         "ami-123",
@@ -695,7 +708,12 @@ func TestProvisionPipeline_ActivationFailureDeprovisions(t *testing.T) {
 	}
 
 	s := newTestServer(ms, mp)
-	s.runProvisionPipeline(context.Background(), "ses_act_fail", "usr_1", "us-east-1")
+	s.runProvisionPipeline(context.Background(), &model.Session{
+		ID:          "ses_act_fail",
+		UserID:      "usr_1",
+		Region:      "us-east-1",
+		StreamToken: "streamtok",
+	})
 
 	if activateCalls != 1 {
 		t.Fatalf("expected 1 activation call, got %d", activateCalls)
@@ -733,7 +751,10 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 		},
 	}
 	mp := &mockProvisioner{
-		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
+		provisionFn: func(_ context.Context, req relay.ProvisionRequest) (relay.ProvisionResult, error) {
+			if req.StreamToken != "streamtok" {
+				t.Errorf("unexpected stream token: %s", req.StreamToken)
+			}
 			return relay.ProvisionResult{
 				AWSInstanceID: "i-leak-risk",
 				AMIID:         "ami-123",
@@ -752,7 +773,12 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 	}
 
 	s := newTestServer(ms, mp)
-	s.runProvisionPipeline(context.Background(), "ses_final_fail", "usr_1", "us-east-1")
+	s.runProvisionPipeline(context.Background(), &model.Session{
+		ID:          "ses_final_fail",
+		UserID:      "usr_1",
+		Region:      "us-east-1",
+		StreamToken: "streamtok",
+	})
 
 	if finalActivateCalls != 1 {
 		t.Fatalf("expected 1 final activate call, got %d", finalActivateCalls)
@@ -768,7 +794,7 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 func TestRelayHealth_MissingInstanceIDReturns400(t *testing.T) {
 	_, router := NewRouter(testConfig(), &mockStore{}, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/health", jsonBody(map[string]any{
-		"session_id":   "ses_1",
+		"session_id":    "ses_1",
 		"ingest_active": true,
 		// instance_id omitted intentionally
 	}))

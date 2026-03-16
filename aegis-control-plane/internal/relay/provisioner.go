@@ -3,9 +3,10 @@ package relay
 import "context"
 
 type ProvisionRequest struct {
-	SessionID string
-	UserID    string
-	Region    string
+	SessionID   string
+	UserID      string
+	Region      string
+	StreamToken string
 }
 
 type ProvisionResult struct {
