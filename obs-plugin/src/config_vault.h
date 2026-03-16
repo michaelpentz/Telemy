@@ -12,6 +12,10 @@
 
 namespace aegis {
 
+// Returns true when a host string explicitly opts out of TLS via an
+// "http://" prefix. Bare hosts and "https://" hosts return false.
+bool IsExplicitInsecureHttpHost(const std::string& value);
+
 // ---------------------------------------------------------------------------
 // Vault — DPAPI-encrypted secret store persisted to %APPDATA%/Telemy/vault.json
 // ---------------------------------------------------------------------------

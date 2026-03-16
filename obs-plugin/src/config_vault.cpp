@@ -20,6 +20,7 @@
 #include <QJsonValue>
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <functional>
 
@@ -28,6 +29,27 @@
 #pragma comment(lib, "crypt32.lib")
 
 namespace aegis {
+
+bool IsExplicitInsecureHttpHost(const std::string& value)
+{
+    size_t start = 0;
+    while (start < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[start]))) {
+        start += 1;
+    }
+    if (value.size() - start < 7) {
+        return false;
+    }
+
+    static const char kHttpPrefix[] = "http://";
+    for (size_t i = 0; i < 7; ++i) {
+        const unsigned char ch = static_cast<unsigned char>(value[start + i]);
+        if (std::tolower(ch) != kHttpPrefix[i]) {
+            return false;
+        }
+    }
+    return true;
+}
 
 // ===== Vault helpers =======================================================
 
@@ -398,6 +420,10 @@ bool PluginConfig::LoadFromDisk()
     // Read known fields; missing keys silently keep their defaults.
     if (obj.contains("relay_api_host") && obj["relay_api_host"].isString())
         relay_api_host = obj["relay_api_host"].toString().toStdString();
+    if (IsExplicitInsecureHttpHost(relay_api_host)) {
+        blog(LOG_WARNING,
+             "config: relay_api_host uses insecure http://; update to https:// or a bare host");
+    }
 
     if (obj.contains("relay_heartbeat_interval_sec") &&
         obj["relay_heartbeat_interval_sec"].isDouble())

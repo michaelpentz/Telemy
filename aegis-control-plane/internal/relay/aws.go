@@ -53,6 +53,8 @@ services:
     image: ghcr.io/openirl/sls-management-ui@sha256:2cd2c4ea05bd75144b3b30f735e62665dbb8c1352245e5b8f994790582cff007
     container_name: sls-management-ui
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       REACT_APP_BASE_URL: "${APP_URL}"
       REACT_APP_SRT_PLAYER_PORT: "${SRT_PLAYER_PORT:-4000}"
@@ -71,6 +73,8 @@ services:
     image: ghcr.io/michaelpentz/srtla-receiver:latest
     container_name: srtla-receiver
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${SLS_STATS_PORT}:8080/tcp"
       - "${SRTLA_PORT}:5000/udp"
