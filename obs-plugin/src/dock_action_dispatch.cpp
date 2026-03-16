@@ -1077,6 +1077,19 @@ bool DispatchDockAction(const std::string& action_json,
         (void)TryExtractJsonStringField(action_json, "grafana_otlp_endpoint",
                                          &grafana_otlp_endpoint);
 
+        if (IsExplicitInsecureHttpHost(relay_api_host)) {
+            blog(LOG_WARNING,
+                "[aegis-obs-plugin] dock action rejected: type=save_config request_id=%s error=insecure_relay_api_host",
+                request_id.c_str());
+            EmitDockActionResult(
+                action_type,
+                request_id,
+                "rejected",
+                false,
+                "insecure_relay_api_host",
+                "{\"message\":\"relay_api_host must use https:// or omit the scheme\"}");
+            return true;
+        }
         if (!relay_api_host.empty()) {
             g_config.relay_api_host = relay_api_host;
         }

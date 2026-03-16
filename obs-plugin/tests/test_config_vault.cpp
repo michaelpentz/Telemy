@@ -137,3 +137,14 @@ TEST_CASE("Vault: skipped on non-Windows", "[vault][!mayfail]") {
     SUCCEED("Vault tests are Windows-only (DPAPI)");
 }
 #endif
+
+TEST_CASE("Config: explicit http relay host is rejected", "[config][host]") {
+    CHECK(aegis::IsExplicitInsecureHttpHost("http://relay.telemyapp.com"));
+    CHECK(aegis::IsExplicitInsecureHttpHost(" HTTP://relay.telemyapp.com:443"));
+}
+
+TEST_CASE("Config: https and bare relay hosts remain allowed", "[config][host]") {
+    CHECK_FALSE(aegis::IsExplicitInsecureHttpHost(""));
+    CHECK_FALSE(aegis::IsExplicitInsecureHttpHost("relay.telemyapp.com"));
+    CHECK_FALSE(aegis::IsExplicitInsecureHttpHost("https://relay.telemyapp.com"));
+}
