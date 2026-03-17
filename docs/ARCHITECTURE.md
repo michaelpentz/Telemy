@@ -57,6 +57,14 @@ Two files at `%APPDATA%/Telemy/`:
 - **`config.json`** — non-sensitive settings (relay API host, preferences). Read/write via `QJsonDocument`.
 - **`vault.json`** — secrets (JWT tokens, API keys). Must be a **flat JSON format** (not nested). Encrypted with Windows DPAPI (`CryptProtectData`/`CryptUnprotectData`), stored as base64 blobs.
 
+Product auth model:
+- The recommended relay-access UX is account login in the plugin, not manual transport secrets.
+- The plugin stores backend-issued control-plane auth in `vault.json`.
+- Relay entitlement is enforced by the backend on `relay/start`.
+- Publish/play access on the relay uses per-user stream IDs derived from `stream_token`.
+
+See also: `AUTH_ENTITLEMENT_MODEL.md`.
+
 ### HttpsClient (`src/https_client.cpp`)
 
 Windows-only WinHTTP wrapper:
@@ -101,7 +109,8 @@ NVML ───────┘                                       │         
 
 When a relay session is active, the plugin polls the relay's stats API for aggregate stream health:
 
-1. **Polling** — `PollRelayStats()` in `relay_client.cpp` executes every 2 seconds via a `WinHTTP` GET request to `:8090/stats/play_aegis?legacy=1`.
+1. **Polling** — `PollRelayStats()` in `relay_client.cpp` executes every 2 seconds via a `WinHTTP` GET request to `:8090/stats/play_{stream_token}?legacy=1`.
+   This path is derived from the authenticated user's `stream_token`.
 2. **Parsing** — The SLS legacy JSON format is parsed, specifically targeting the nested `publishers` object for the active stream.
 3. **Snapshot Injection** — Nine relay-prefixed fields (bitrate, RTT, loss, latency, drop, etc.) are injected into the top-level telemetry snapshot by `BuildStatusSnapshotJson`.
 4. **Bridge Delivery** — The JS bridge passes the snapshot to `getState().relay` in the Dock state.
@@ -195,8 +204,13 @@ EC2 relay instances run a dual-process stack via Docker Compose for bonded SRT:
 | Backend API | 8090 | TCP | srtla-receiver control API (restricted). |
 
 ### Connection Schemes
-- **Encoder (IRL Pro)**: `srtla://{relay_ip}:5000` with `streamid=live_aegis`.
-- **Player (OBS)**: `srt://{relay_ip}:4000?streamid=play_aegis`.
+- **Encoder (IRL Pro)**: `srtla://{relay_host}:5000` with `streamid=live_{stream_token}`.
+- **Player (OBS)**: `srt://{relay_host}:4000?streamid=play_{stream_token}`.
+
+Notes:
+- `relay_host` may be a relay IP or the user's relay hostname when available.
+- `stream_token` is permanent per user and is the sender-facing security boundary for SLS publish/play.
+- This is intentionally separate from plugin-to-backend authentication.
 
 The stack handles packet reordering and bonding overhead, resulting in ~5s E2E latency with high reliability over unstable cellular links.
 

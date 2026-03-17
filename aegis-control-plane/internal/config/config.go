@@ -5,39 +5,52 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
-	ListenAddr      string
-	DatabaseURL     string
-	JWTSecret       string
-	RelaySharedKey  string
-	DefaultRegion   string
-	SupportedRegion []string
-	RelayProvider   string
-	AWSAMIMap       map[string]string
-	AWSInstanceType string
-	AWSSubnetID     string
-	AWSSecurityIDs  []string
-	AWSKeyName      string
-	RelayDomain     string
+	ListenAddr                 string
+	DatabaseURL                string
+	JWTSecret                  string
+	RelaySharedKey             string
+	DefaultRegion              string
+	SupportedRegion            []string
+	RelayProvider              string
+	AWSAMIMap                  map[string]string
+	AWSInstanceType            string
+	AWSSubnetID                string
+	AWSSecurityIDs             []string
+	AWSKeyName                 string
+	RelayDomain                string
+	AuthAccessTTL              time.Duration
+	AuthRefreshTTL             time.Duration
+	AuthPublicBaseURL          string
+	PluginLoginAttemptTTL      time.Duration
+	PluginLoginPollIntervalSec int
+	PluginLoginCompleteKey     string
 }
 
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
-		ListenAddr:      envOrDefault("AEGIS_LISTEN_ADDR", ":8080"),
-		DatabaseURL:     os.Getenv("AEGIS_DATABASE_URL"),
-		JWTSecret:       os.Getenv("AEGIS_JWT_SECRET"),
-		RelaySharedKey:  os.Getenv("AEGIS_RELAY_SHARED_KEY"),
-		DefaultRegion:   envOrDefault("AEGIS_DEFAULT_REGION", "us-east-1"),
-		SupportedRegion: splitCSV(envOrDefault("AEGIS_SUPPORTED_REGIONS", "us-east-1,eu-west-1")),
-		RelayProvider:   envOrDefault("AEGIS_RELAY_PROVIDER", "fake"),
-		AWSAMIMap:       parseKVMap(os.Getenv("AEGIS_AWS_AMI_MAP")),
-		AWSInstanceType: envOrDefault("AEGIS_AWS_INSTANCE_TYPE", "t4g.small"),
-		AWSSubnetID:     os.Getenv("AEGIS_AWS_SUBNET_ID"),
-		AWSSecurityIDs:  splitCSV(os.Getenv("AEGIS_AWS_SECURITY_GROUP_IDS")),
-		AWSKeyName:      os.Getenv("AEGIS_AWS_KEY_NAME"),
-		RelayDomain:     envOrDefault("CLOUDFLARE_RELAY_DOMAIN", "relay.telemyapp.com"),
+		ListenAddr:                 envOrDefault("AEGIS_LISTEN_ADDR", ":8080"),
+		DatabaseURL:                os.Getenv("AEGIS_DATABASE_URL"),
+		JWTSecret:                  os.Getenv("AEGIS_JWT_SECRET"),
+		RelaySharedKey:             os.Getenv("AEGIS_RELAY_SHARED_KEY"),
+		DefaultRegion:              envOrDefault("AEGIS_DEFAULT_REGION", "us-east-1"),
+		SupportedRegion:            splitCSV(envOrDefault("AEGIS_SUPPORTED_REGIONS", "us-east-1,eu-west-1")),
+		RelayProvider:              envOrDefault("AEGIS_RELAY_PROVIDER", "fake"),
+		AWSAMIMap:                  parseKVMap(os.Getenv("AEGIS_AWS_AMI_MAP")),
+		AWSInstanceType:            envOrDefault("AEGIS_AWS_INSTANCE_TYPE", "t4g.small"),
+		AWSSubnetID:                os.Getenv("AEGIS_AWS_SUBNET_ID"),
+		AWSSecurityIDs:             splitCSV(os.Getenv("AEGIS_AWS_SECURITY_GROUP_IDS")),
+		AWSKeyName:                 os.Getenv("AEGIS_AWS_KEY_NAME"),
+		RelayDomain:                envOrDefault("CLOUDFLARE_RELAY_DOMAIN", "relay.telemyapp.com"),
+		AuthAccessTTL:              time.Duration(ParsePositiveIntEnv("AEGIS_AUTH_ACCESS_TOKEN_MINUTES", 15)) * time.Minute,
+		AuthRefreshTTL:             time.Duration(ParsePositiveIntEnv("AEGIS_AUTH_REFRESH_TOKEN_DAYS", 30)) * 24 * time.Hour,
+		AuthPublicBaseURL:          envOrDefault("AEGIS_AUTH_PUBLIC_BASE_URL", "https://telemyapp.com"),
+		PluginLoginAttemptTTL:      time.Duration(ParsePositiveIntEnv("AEGIS_PLUGIN_LOGIN_ATTEMPT_MINUTES", 10)) * time.Minute,
+		PluginLoginPollIntervalSec: ParsePositiveIntEnv("AEGIS_PLUGIN_LOGIN_POLL_INTERVAL_SECONDS", 3),
+		PluginLoginCompleteKey:     os.Getenv("AEGIS_PLUGIN_LOGIN_COMPLETE_KEY"),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -48,6 +61,9 @@ func LoadFromEnv() (Config, error) {
 	}
 	if cfg.RelaySharedKey == "" {
 		return Config{}, fmt.Errorf("AEGIS_RELAY_SHARED_KEY is required")
+	}
+	if cfg.PluginLoginCompleteKey == "" {
+		return Config{}, fmt.Errorf("AEGIS_PLUGIN_LOGIN_COMPLETE_KEY is required")
 	}
 	if cfg.RelayProvider != "fake" && cfg.RelayProvider != "aws" {
 		return Config{}, fmt.Errorf("AEGIS_RELAY_PROVIDER must be one of fake|aws")

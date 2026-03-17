@@ -177,7 +177,8 @@ static HttpResponse read_response(HINTERNET request)
 // ---------------------------------------------------------------------------
 HttpResponse HttpsClient::Get(const std::wstring& host,
                                const std::wstring& path,
-                               const std::wstring& bearer_token)
+                               const std::wstring& bearer_token,
+                               const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers)
 {
     auto hp = parse_host_port(host);
 
@@ -217,6 +218,20 @@ HttpResponse HttpsClient::Get(const std::wstring& host,
                 static_cast<DWORD>(-1L),
                 WINHTTP_ADDREQ_FLAG_ADD)) {
             throw_winhttp_error("WinHttpAddRequestHeaders(Authorization/GET)", GetLastError());
+        }
+    }
+
+    for (const auto& kv : extra_headers) {
+        if (kv.first.empty()) {
+            continue;
+        }
+        std::wstring header_line = kv.first + L": " + kv.second;
+        if (!WinHttpAddRequestHeaders(
+                reinterpret_cast<HINTERNET>(request.h),
+                header_line.c_str(),
+                static_cast<DWORD>(-1L),
+                WINHTTP_ADDREQ_FLAG_ADD)) {
+            throw_winhttp_error("WinHttpAddRequestHeaders(Extra/GET)", GetLastError());
         }
     }
 

@@ -97,6 +97,7 @@ export default function AegisDock() {
   const conns   = ds.connections?.items || [];
   const bitrate = ds.bitrate || {};
   const relay   = ds.relay || {};
+  const auth    = ds.auth || {};
   const failover = ds.failover || {};
   const settings = ds.settings?.items || [];
   const events  = ds.events || [];
@@ -108,15 +109,31 @@ export default function AegisDock() {
   const isLive = live.isLive || false;
   const elapsedSec = live.elapsedSec || 0;
 
+  const authLogin = auth.login || {};
+  const authUser = auth.user || {};
+  const authEntitlement = auth.entitlement || {};
+  const authUsage = auth.usage || {};
+  const authAuthenticated = auth.authenticated === true;
+  const authHasTokens = auth.hasTokens === true;
+  const authPending = authLogin.pending === true;
+  const authPollIntervalSeconds = Math.max(2, Number(authLogin.poll_interval_seconds || 3));
+  const authReasonCode = authEntitlement.reason_code || auth.lastErrorCode || null;
+  const authErrorMessage = auth.lastErrorMessage || authReasonCode || null;
+  const authEntitled = authEntitlement.relay_access_status === "enabled";
+  const authStateKnown = authAuthenticated || authPending || authHasTokens || !!authUser.id || !!authEntitlement.relay_access_status || !!auth.lastErrorCode;
+  const relayLicensed = authStateKnown ? authEntitled : (relay.licensed !== false);
+  const authDisplayName = authUser.display_name || authUser.email || authUser.id || "Account";
+  const authPlanLabel = authEntitlement.plan_tier || "starter";
+
   // Relay-derived state (replaces explicit mode gating)
   const relayActive = relay.active === true;
-  const relayLicensed = relay.licensed !== false; // default true for backward compat
   const derivedMode = relayActive && conns.length > 0 ? "irl" : "studio";
 
   // Relay activation UI state
   const [relayActivating, setRelayActivating] = useState(false);
   const [relayDeactivating, setRelayDeactivating] = useState(false);
   const [relayError, setRelayError] = useState(null);
+  const authRefreshRequestedRef = useRef(false);
 
   // Clear activating spinner when relay becomes active
   useEffect(() => {
@@ -132,6 +149,23 @@ export default function AegisDock() {
       setRelayDeactivating(false);
     }
   }, [relayActive, relayDeactivating]);
+
+  useEffect(() => {
+    if (!useBridge) return;
+    if (authRefreshRequestedRef.current) return;
+    if (!authHasTokens || authPending) return;
+    authRefreshRequestedRef.current = true;
+    sendAction({ type: "auth_refresh" });
+  }, [useBridge, authHasTokens, authPending, sendAction]);
+
+  useEffect(() => {
+    if (!useBridge) return;
+    if (!authPending) return;
+    const timer = setInterval(() => {
+      sendAction({ type: "auth_login_poll" });
+    }, authPollIntervalSeconds * 1000);
+    return () => clearInterval(timer);
+  }, [useBridge, authPending, authPollIntervalSeconds, sendAction]);
 
   // Handle failed relay action results — read from bridge state (relay.lastError)
   // and also listen for DOM events as a backup
@@ -573,6 +607,10 @@ export default function AegisDock() {
   // handleModeChange removed — mode is now derived from relay state
   const handleRelayToggle = () => {
     if (relayActivating || relayDeactivating) return;
+    if (!authAuthenticated) {
+      setRelayError("Login required before relay activation");
+      return;
+    }
     if (relayActive) {
       setRelayDeactivating(true);
       sendAction({ type: "relay_stop" });
@@ -607,6 +645,24 @@ export default function AegisDock() {
       }, 500);
     }
   };
+
+  const handleAuthLogin = useCallback(() => {
+    if (!tryEnterUiActionGate("auth_login_start", 1000)) return;
+    sendAction({ type: "auth_login_start", deviceName: "OBS Desktop" });
+  }, [sendAction, tryEnterUiActionGate]);
+
+  const handleAuthLogout = useCallback(() => {
+    if (!tryEnterUiActionGate("auth_logout", 1000)) return;
+    sendAction({ type: "auth_logout" });
+    setRelayError(null);
+    setRelayActivating(false);
+    setRelayDeactivating(false);
+  }, [sendAction, tryEnterUiActionGate]);
+
+  const handleAuthOpenBrowser = useCallback(() => {
+    if (!authLogin.authorize_url) return;
+    sendAction({ type: "auth_open_browser", authorizeUrl: authLogin.authorize_url });
+  }, [sendAction, authLogin.authorize_url]);
 
   const handleSettingChange = (key, newValue) => {
     if (!tryEnterUiActionGate(`set_setting:${key}`, UI_ACTION_COOLDOWNS_MS.setSetting)) return;
@@ -1410,25 +1466,126 @@ export default function AegisDock() {
             <span style={{ color: pipeColor, fontWeight: 700 }}>{pipeLabel}</span>
           </div>
 
-          {/* --- UNLICENSED state --- */}
-          {!relayLicensed && (
+          {/* --- AUTH state --- */}
+          {!authAuthenticated && (
             <div style={{
               background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "10px 10px",
-              border: "1px solid var(--theme-border, #2a2d35)", textAlign: "center",
+              border: "1px solid var(--theme-border, #2a2d35)", marginBottom: 6,
             }}>
-              <div style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 6 }}>
-                Relay is a Pro feature
+              <div style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontWeight: 600, marginBottom: 4 }}>
+                Login required
               </div>
-              <a href="https://telemyapp.com" target="_blank" rel="noopener noreferrer" style={{
-                fontSize: 9, color: "#5ba3f5", textDecoration: "none", fontWeight: 600,
-              }}>
-                Upgrade at telemyapp.com &rarr;
-              </a>
+              <div style={{ fontSize: 9, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 8, lineHeight: 1.5 }}>
+                Sign in through telemyapp.com to unlock relay activation for your account.
+              </div>
+              {authErrorMessage && (
+                <div style={{
+                  fontSize: 9, color: "#d29922", marginBottom: 8,
+                  padding: "6px 8px", borderRadius: 4, border: "1px solid #d2992240",
+                  background: "rgba(210, 153, 34, 0.08)",
+                }}>
+                  {authErrorMessage}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={handleAuthLogin} disabled={authPending} style={{
+                  flex: 1, padding: "7px 0", border: "1px solid var(--theme-border, #2a2d35)",
+                  borderRadius: 4, background: "var(--theme-panel, #20232b)", cursor: authPending ? "not-allowed" : "pointer",
+                  color: "#5ba3f5", fontSize: 10, fontWeight: 600,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                  letterSpacing: "0.04em", opacity: authPending ? 0.7 : 1,
+                }}>
+                  {authPending ? "Waiting For Browser..." : "Login"}
+                </button>
+                {authPending && authLogin.authorize_url && (
+                  <button onClick={handleAuthOpenBrowser} style={{
+                    padding: "7px 8px", border: "1px solid var(--theme-border, #2a2d35)",
+                    borderRadius: 4, background: "var(--theme-surface, #13151a)", cursor: "pointer",
+                    color: "var(--theme-text-muted, #8b8f98)", fontSize: 9, fontWeight: 600,
+                    fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                  }}>
+                    Open Browser
+                  </button>
+                )}
+              </div>
+              {authPending && (
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 9, color: "var(--theme-text-muted, #8b8f98)" }}>
+                  <span>Polling every {authPollIntervalSeconds}s</span>
+                  <span>{authLogin.login_attempt_id || "pending"}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* --- ENTITLEMENT state --- */}
+          {authAuthenticated && !relayLicensed && (
+            <div style={{
+              background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "10px 10px",
+              border: "1px solid var(--theme-border, #2a2d35)", textAlign: "center", marginBottom: 6,
+            }}>
+              <div style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontWeight: 600, marginBottom: 4 }}>
+                Relay access unavailable
+              </div>
+              <div style={{ fontSize: 9, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 8, lineHeight: 1.5 }}>
+                {authReasonCode === "subscription_required" ? "Upgrade your account to enable relay activation." :
+                  authReasonCode === "subscription_inactive" ? "Your subscription is inactive. Renew it to reactivate relay access." :
+                  "This account is not currently entitled to relay activation."}
+              </div>
+              <div style={{ fontSize: 9, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 8 }}>
+                Signed in as <span style={{ color: "var(--theme-text, #e0e2e8)" }}>{authDisplayName}</span>
+                {" · "}
+                {authPlanLabel}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <a href="https://telemyapp.com/login" target="_blank" rel="noopener noreferrer" style={{
+                  flex: 1, padding: "7px 0", border: "1px solid var(--theme-border, #2a2d35)",
+                  borderRadius: 4, background: "var(--theme-panel, #20232b)",
+                  color: "#5ba3f5", fontSize: 10, fontWeight: 600,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                  letterSpacing: "0.04em", textDecoration: "none",
+                }}>
+                  Manage Account
+                </a>
+                <button onClick={handleAuthLogout} style={{
+                  padding: "7px 8px", border: "1px solid var(--theme-border, #2a2d35)",
+                  borderRadius: 4, background: "var(--theme-surface, #13151a)", cursor: "pointer",
+                  color: "var(--theme-text-muted, #8b8f98)", fontSize: 9, fontWeight: 600,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                }}>
+                  Logout
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* --- AUTHENTICATED summary --- */}
+          {authAuthenticated && relayLicensed && (
+            <div style={{
+              background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
+              border: "1px solid var(--theme-border, #2a2d35)", marginBottom: 6,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 10 }}>
+                <span style={{ color: "var(--theme-text-muted, #8b8f98)" }}>Signed in</span>
+                <button onClick={handleAuthLogout} style={{
+                  border: "none", background: "transparent", color: "var(--theme-text-muted, #8b8f98)",
+                  fontSize: 9, cursor: "pointer", padding: 0,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                }}>
+                  Logout
+                </button>
+              </div>
+              <div style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontWeight: 600, marginBottom: 4 }}>
+                {authDisplayName}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--theme-text-muted, #8b8f98)" }}>
+                <span>{authPlanLabel}</span>
+                <span>{typeof authUsage.remaining_seconds === "number" ? `${formatTime(authUsage.remaining_seconds)}` : "Relay enabled"}</span>
+              </div>
             </div>
           )}
 
           {/* --- IDLE state (licensed, not active, not provisioning) --- */}
-          {relayLicensed && !relayActive && !relayActivating && !relayError && relay.status !== "provisioning" && (
+          {authAuthenticated && relayLicensed && !relayActive && !relayActivating && !relayError && relay.status !== "provisioning" && (
             <div style={{
               background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
               border: "1px solid var(--theme-border, #2a2d35)",
@@ -1452,12 +1609,12 @@ export default function AegisDock() {
           )}
 
           {/* --- ACTIVATING state (explicit activating OR bridge reports provisioning) --- */}
-          {relayLicensed && (relayActivating || relay.status === "provisioning") && !relayActive && (
+          {authAuthenticated && relayLicensed && (relayActivating || relay.status === "provisioning") && !relayActive && (
             <RelayProvisionProgress step={relay.relayProvisionStep} />
           )}
 
           {/* --- ERROR state --- */}
-          {relayLicensed && relayError && !relayActive && !relayActivating && (
+          {authAuthenticated && relayLicensed && relayError && !relayActive && !relayActivating && (
             <div style={{
               background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
               border: "1px solid #da363340",
@@ -1480,7 +1637,7 @@ export default function AegisDock() {
           )}
 
           {/* --- ACTIVE state --- */}
-          {relayLicensed && relayActive && (
+          {authAuthenticated && relayLicensed && relayActive && (
             <>
               <div style={{
                 background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",

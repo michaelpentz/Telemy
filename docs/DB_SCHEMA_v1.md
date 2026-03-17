@@ -37,6 +37,7 @@ Columns:
 - `id` text primary key
 - `email` text not null unique
 - `display_name` text null
+- `stream_token` text not null unique
 - `plan_tier` text not null default `starter`
 - `plan_status` text not null default `active`
 - `cycle_start_at` timestamptz not null
@@ -48,6 +49,7 @@ Columns:
 - `updated_at` timestamptz not null default now()
 
 Notes:
+- `stream_token`: Permanent per-user stream identifier used to derive relay SLS stream IDs (`live_{stream_token}` / `play_{stream_token}`).
 - `eip_allocation_id` / `eip_public_ip`: Per-user Elastic IP for stable relay addresses. Allocated on first relay provision, reused for all subsequent provisions. Single-region (us-west-2) for now.
 
 Checks:
@@ -55,12 +57,61 @@ Checks:
 - `plan_status in ('active','past_due','canceled','trial')`
 - `included_seconds >= 0`
 
-## 3.2 `api_keys`
+## 3.2 `auth_sessions`
+
+Purpose:
+- Session-backed control-plane auth for plugin-issued `cp_access_jwt` and refresh-token rotation.
+
+Columns:
+- `id` text primary key
+- `user_id` text not null references `users(id)` on delete cascade
+- `refresh_token_hash` text not null unique
+- `client_platform` text not null
+- `client_version` text null
+- `device_name` text null
+- `created_at` timestamptz not null default now()
+- `last_seen_at` timestamptz not null default now()
+- `expires_at` timestamptz not null
+- `revoked_at` timestamptz null
+
+Notes:
+- `cp_access_jwt` is short-lived and carries `uid` plus session id (`sid`) claims.
+- `refresh_token_hash` stores the server-side hash of the opaque refresh token.
+- `revoked_at` immediately invalidates session-backed JWTs that present the matching `sid`.
+
+## 3.3 `api_keys`
 
 Purpose:
 - API key metadata for bootstrap auth and key management.
 
-## 3.3 `relay_instances`
+## 3.4 `plugin_login_attempts`
+
+Purpose:
+- Track short-lived browser login attempts for the OBS plugin.
+
+Columns:
+- `id` text primary key
+- `poll_token_hash` text not null unique
+- `status` text not null
+- `user_id` text null references `users(id)` on delete set null
+- `completed_session_id` text null references `auth_sessions(id)` on delete set null
+- `client_platform` text not null
+- `client_version` text null
+- `device_name` text null
+- `deny_reason_code` text null
+- `expires_at` timestamptz not null
+- `completed_at` timestamptz null
+- `created_at` timestamptz not null default now()
+
+Checks:
+- `status in ('pending','completed','denied','expired')`
+
+Notes:
+- `poll_token_hash` stores the server-side hash of the opaque plugin poll token.
+- `completed_session_id` is set once a completed attempt is claimed into an `auth_session`.
+- A claimed attempt is not reusable; the plugin is expected to stop polling after the first `200 completed`.
+
+## 3.5 `relay_instances`
 
 Purpose:
 - Track actual cloud relay infrastructure lifecycle.
@@ -84,7 +135,7 @@ Columns:
 Checks:
 - `state in ('provisioning','running','terminating','terminated','error')`
 
-## 3.4 `sessions`
+## 3.6 `sessions`
 
 Purpose:
 - Authoritative relay session lifecycle and usage anchors.
@@ -111,7 +162,7 @@ Columns:
 Checks:
 - `status in ('provisioning','active','grace','stopped')`
 
-## 3.5 `idempotency_records`
+## 3.7 `idempotency_records`
 
 Purpose:
 - Store dedupe semantics for `POST /relay/start`.

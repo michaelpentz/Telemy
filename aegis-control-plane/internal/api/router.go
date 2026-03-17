@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"sync"
@@ -29,7 +30,20 @@ type Store interface {
 	StopSession(rctx context.Context, userID, sessionID string) (*model.Session, error)
 	UpdateProvisionStep(rctx context.Context, sessionID, step string) error
 	FinalActivateSession(ctx context.Context, sessionID string) error
+	GetUser(ctx context.Context, userID string) (*model.User, error)
 	GetUsageCurrent(rctx context.Context, userID string) (*model.UsageCurrent, error)
+	GetRelayEntitlement(rctx context.Context, userID string) (*model.RelayEntitlement, error)
+	CreateAuthSession(ctx context.Context, in store.CreateAuthSessionInput) (*model.AuthSession, error)
+	GetAuthSession(ctx context.Context, sessionID string) (*model.AuthSession, error)
+	GetAuthSessionByRefreshHash(ctx context.Context, refreshTokenHash string) (*model.AuthSession, error)
+	RotateAuthSession(ctx context.Context, sessionID, refreshTokenHash string, expiresAt time.Time) (*model.AuthSession, error)
+	RevokeAuthSession(ctx context.Context, sessionID string) error
+	CreatePluginLoginAttempt(ctx context.Context, in store.CreatePluginLoginAttemptInput) (*model.PluginLoginAttempt, error)
+	GetPluginLoginAttempt(ctx context.Context, attemptID string) (*model.PluginLoginAttempt, error)
+	GetPluginLoginAttemptByPollToken(ctx context.Context, attemptID, pollTokenHash string) (*model.PluginLoginAttempt, error)
+	FinalizePluginLoginAttempt(ctx context.Context, in store.FinalizePluginLoginAttemptInput) error
+	MarkPluginLoginAttemptExpired(ctx context.Context, attemptID string) error
+	ClaimCompletedPluginLoginAttempt(ctx context.Context, attemptID, pollTokenHash string, authIn store.CreateAuthSessionInput) (*model.PluginLoginAttempt, *model.AuthSession, error)
 	RecordRelayHealth(rctx context.Context, in store.RelayHealthInput) error
 	ListRelayManifest(rctx context.Context) ([]model.RelayManifestEntry, error)
 	GetUserRelaySlug(ctx context.Context, userID string) (string, error)
@@ -70,7 +84,9 @@ func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *d
 	r.Get("/metrics", metrics.Default().Handler().ServeHTTP)
 
 	r.Route("/api/v1", func(v1 chi.Router) {
-		v1.With(auth.Middleware(cfg.JWTSecret)).Group(func(authed chi.Router) {
+		v1.With(auth.Middleware(cfg.JWTSecret, s.validateAuthSession)).Group(func(authed chi.Router) {
+			authed.Get("/auth/session", s.handleAuthSession)
+			authed.Post("/auth/logout", s.handleAuthLogout)
 			authed.Post("/relay/start", s.handleRelayStart)
 			authed.Get("/relay/active", s.handleRelayActive)
 			authed.Post("/relay/stop", s.handleRelayStop)
@@ -78,6 +94,10 @@ func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *d
 			authed.Get("/usage/current", s.handleUsageCurrent)
 		})
 
+		v1.Post("/auth/plugin/login/start", s.handlePluginLoginStart)
+		v1.Post("/auth/plugin/login/poll", s.handlePluginLoginPoll)
+		v1.Post("/auth/refresh", s.handleAuthRefresh)
+		v1.With(s.pluginLoginSharedAuth).Post("/auth/plugin/login/complete", s.handlePluginLoginComplete)
 		v1.With(s.relaySharedAuth).Post("/relay/health", s.handleRelayHealth)
 	})
 
@@ -120,18 +140,34 @@ func (s *Server) relaySharedAuth(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) pluginLoginSharedAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Plugin-Login-Auth") != s.cfg.PluginLoginCompleteKey {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "invalid plugin login auth")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type apiError struct {
 	Error struct {
 		Code      string `json:"code"`
 		Message   string `json:"message"`
+		Reason    string `json:"reason_code,omitempty"`
 		RequestID string `json:"request_id,omitempty"`
 	} `json:"error"`
 }
 
 func writeAPIError(w http.ResponseWriter, status int, code, message string) {
+	writeAPIErrorWithReason(w, status, code, message, "")
+}
+
+func writeAPIErrorWithReason(w http.ResponseWriter, status int, code, message, reason string) {
 	var payload apiError
 	payload.Error.Code = code
 	payload.Error.Message = message
+	payload.Error.Reason = reason
 	writeJSON(w, status, payload)
 }
 
@@ -158,4 +194,18 @@ func maxBodySize(n int64) func(http.Handler) http.Handler {
 
 func parseIdempotencyKey(h string) (uuid.UUID, error) {
 	return uuid.Parse(h)
+}
+
+func (s *Server) validateAuthSession(ctx context.Context, sessionID, userID string) error {
+	sess, err := s.store.GetAuthSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if sess.UserID != userID {
+		return errors.New("session user mismatch")
+	}
+	if !sess.IsActive(time.Now().UTC()) {
+		return errors.New("session inactive")
+	}
+	return nil
 }

@@ -21,17 +21,30 @@ import (
 )
 
 type mockStore struct {
-	getSessionByIDFn         func(context.Context, string, string) (*model.Session, error)
-	stopSessionFn            func(context.Context, string, string) (*model.Session, error)
-	startOrGetSessionFn      func(context.Context, store.StartInput) (*model.Session, bool, error)
-	activateSessionFn        func(context.Context, store.ActivateProvisionedSessionInput) (*model.Session, error)
-	getActiveSessionFn       func(context.Context, string) (*model.Session, error)
-	getUsageCurrentFn        func(context.Context, string) (*model.UsageCurrent, error)
-	recordRelayHealthEventFn func(context.Context, store.RelayHealthInput) error
-	listRelayManifestFn      func(context.Context) ([]model.RelayManifestEntry, error)
-	updateProvisionStepFn    func(context.Context, string, string) error
-	getUserRelaySlugFn       func(context.Context, string) (string, error)
-	finalActivateSessionFn   func(context.Context, string) error
+	getSessionByIDFn           func(context.Context, string, string) (*model.Session, error)
+	stopSessionFn              func(context.Context, string, string) (*model.Session, error)
+	startOrGetSessionFn        func(context.Context, store.StartInput) (*model.Session, bool, error)
+	activateSessionFn          func(context.Context, store.ActivateProvisionedSessionInput) (*model.Session, error)
+	createAuthSessionFn        func(context.Context, store.CreateAuthSessionInput) (*model.AuthSession, error)
+	getAuthSessionFn           func(context.Context, string) (*model.AuthSession, error)
+	getAuthSessionByHashFn     func(context.Context, string) (*model.AuthSession, error)
+	rotateAuthSessionFn        func(context.Context, string, string, time.Time) (*model.AuthSession, error)
+	revokeAuthSessionFn        func(context.Context, string) error
+	createPluginLoginAttemptFn func(context.Context, store.CreatePluginLoginAttemptInput) (*model.PluginLoginAttempt, error)
+	getPluginLoginAttemptFn    func(context.Context, string) (*model.PluginLoginAttempt, error)
+	getPluginLoginByPollFn     func(context.Context, string, string) (*model.PluginLoginAttempt, error)
+	finalizePluginLoginFn      func(context.Context, store.FinalizePluginLoginAttemptInput) error
+	markPluginLoginExpiredFn   func(context.Context, string) error
+	claimPluginLoginFn         func(context.Context, string, string, store.CreateAuthSessionInput) (*model.PluginLoginAttempt, *model.AuthSession, error)
+	getUserFn                  func(context.Context, string) (*model.User, error)
+	getActiveSessionFn         func(context.Context, string) (*model.Session, error)
+	getUsageCurrentFn          func(context.Context, string) (*model.UsageCurrent, error)
+	getRelayEntitlementFn      func(context.Context, string) (*model.RelayEntitlement, error)
+	recordRelayHealthEventFn   func(context.Context, store.RelayHealthInput) error
+	listRelayManifestFn        func(context.Context) ([]model.RelayManifestEntry, error)
+	updateProvisionStepFn      func(context.Context, string, string) error
+	getUserRelaySlugFn         func(context.Context, string) (string, error)
+	finalActivateSessionFn     func(context.Context, string) error
 }
 
 func (m *mockStore) StartOrGetSession(ctx context.Context, in store.StartInput) (*model.Session, bool, error) {
@@ -46,6 +59,94 @@ func (m *mockStore) ActivateProvisionedSession(ctx context.Context, in store.Act
 		return m.activateSessionFn(ctx, in)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) CreateAuthSession(ctx context.Context, in store.CreateAuthSessionInput) (*model.AuthSession, error) {
+	if m.createAuthSessionFn != nil {
+		return m.createAuthSessionFn(ctx, in)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) GetAuthSession(ctx context.Context, sessionID string) (*model.AuthSession, error) {
+	if m.getAuthSessionFn != nil {
+		return m.getAuthSessionFn(ctx, sessionID)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) GetAuthSessionByRefreshHash(ctx context.Context, refreshTokenHash string) (*model.AuthSession, error) {
+	if m.getAuthSessionByHashFn != nil {
+		return m.getAuthSessionByHashFn(ctx, refreshTokenHash)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) RotateAuthSession(ctx context.Context, sessionID, refreshTokenHash string, expiresAt time.Time) (*model.AuthSession, error) {
+	if m.rotateAuthSessionFn != nil {
+		return m.rotateAuthSessionFn(ctx, sessionID, refreshTokenHash, expiresAt)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) RevokeAuthSession(ctx context.Context, sessionID string) error {
+	if m.revokeAuthSessionFn != nil {
+		return m.revokeAuthSessionFn(ctx, sessionID)
+	}
+	return store.ErrNotFound
+}
+
+func (m *mockStore) CreatePluginLoginAttempt(ctx context.Context, in store.CreatePluginLoginAttemptInput) (*model.PluginLoginAttempt, error) {
+	if m.createPluginLoginAttemptFn != nil {
+		return m.createPluginLoginAttemptFn(ctx, in)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) GetPluginLoginAttempt(ctx context.Context, attemptID string) (*model.PluginLoginAttempt, error) {
+	if m.getPluginLoginAttemptFn != nil {
+		return m.getPluginLoginAttemptFn(ctx, attemptID)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) GetPluginLoginAttemptByPollToken(ctx context.Context, attemptID, pollTokenHash string) (*model.PluginLoginAttempt, error) {
+	if m.getPluginLoginByPollFn != nil {
+		return m.getPluginLoginByPollFn(ctx, attemptID, pollTokenHash)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) FinalizePluginLoginAttempt(ctx context.Context, in store.FinalizePluginLoginAttemptInput) error {
+	if m.finalizePluginLoginFn != nil {
+		return m.finalizePluginLoginFn(ctx, in)
+	}
+	return store.ErrNotFound
+}
+
+func (m *mockStore) MarkPluginLoginAttemptExpired(ctx context.Context, attemptID string) error {
+	if m.markPluginLoginExpiredFn != nil {
+		return m.markPluginLoginExpiredFn(ctx, attemptID)
+	}
+	return store.ErrNotFound
+}
+
+func (m *mockStore) ClaimCompletedPluginLoginAttempt(ctx context.Context, attemptID, pollTokenHash string, authIn store.CreateAuthSessionInput) (*model.PluginLoginAttempt, *model.AuthSession, error) {
+	if m.claimPluginLoginFn != nil {
+		return m.claimPluginLoginFn(ctx, attemptID, pollTokenHash, authIn)
+	}
+	return nil, nil, store.ErrNotFound
+}
+
+func (m *mockStore) GetUser(ctx context.Context, userID string) (*model.User, error) {
+	if m.getUserFn != nil {
+		return m.getUserFn(ctx, userID)
+	}
+	return &model.User{
+		ID:          userID,
+		Email:       userID + "@example.com",
+		DisplayName: "test-user",
+	}, nil
 }
 
 func (m *mockStore) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
@@ -74,6 +175,13 @@ func (m *mockStore) GetUsageCurrent(ctx context.Context, userID string) (*model.
 		return m.getUsageCurrentFn(ctx, userID)
 	}
 	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) GetRelayEntitlement(ctx context.Context, userID string) (*model.RelayEntitlement, error) {
+	if m.getRelayEntitlementFn != nil {
+		return m.getRelayEntitlementFn(ctx, userID)
+	}
+	return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
 }
 
 func (m *mockStore) RecordRelayHealth(ctx context.Context, in store.RelayHealthInput) error {
@@ -309,6 +417,12 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 	//            with the current session state (active after provisioning completes).
 	startCalls := 0
 	ms := &mockStore{
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
+		},
 		startOrGetSessionFn: func(_ context.Context, in store.StartInput) (*model.Session, bool, error) {
 			startCalls++
 			if in.IdempotencyKey.String() != idem {
@@ -379,6 +493,12 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 
 	activateCalls := 0
 	ms := &mockStore{
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
+		},
 		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
 			return activeSession, false, nil
 		},
@@ -433,6 +553,12 @@ func TestRelayStart_ProvisionFailureCompensatesByStoppingSession(t *testing.T) {
 		MaxSessionSeconds:  57600,
 	}
 	ms := &mockStore{
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
+		},
 		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
 			return createdSession, true, nil
 		},
@@ -468,6 +594,12 @@ func TestRelayStart_ActivationFailureCompensatesByDeprovisionAndStoppingSession(
 		MaxSessionSeconds:  57600,
 	}
 	ms := &mockStore{
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
+		},
 		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
 			return createdSession, true, nil
 		},
@@ -486,6 +618,139 @@ func TestRelayStart_ActivationFailureCompensatesByDeprovisionAndStoppingSession(
 
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for new provisioning session, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRelayStart_UnknownUserDeniedByEntitlementCheck(t *testing.T) {
+	ms := &mockStore{
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			if userID != "usr_missing" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return nil, store.ErrNotFound
+		},
+		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
+			t.Fatal("start should not be called for unknown user")
+			return nil, false, nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
+		"region_preference": "us-east-1",
+		"client_context":    map[string]any{"requested_by": "dashboard"},
+	}))
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_missing"))
+	req.Header.Set("Idempotency-Key", "364b871c-0992-4ff1-b0ee-8ffbb8b44926")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Error struct {
+			Code   string `json:"code"`
+			Reason string `json:"reason_code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Error.Code != "entitlement_denied" || resp.Error.Reason != "user_not_found" {
+		t.Fatalf("unexpected error payload: %+v", resp.Error)
+	}
+}
+
+func TestRelayStart_StarterPlanDeniedByEntitlementCheck(t *testing.T) {
+	ms := &mockStore{
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.RelayEntitlement{
+				PlanTier:   "starter",
+				PlanStatus: "active",
+				Allowed:    false,
+				ReasonCode: "subscription_required",
+			}, nil
+		},
+		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
+			t.Fatal("start should not be called when entitlement is denied")
+			return nil, false, nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
+		"region_preference": "us-east-1",
+		"client_context":    map[string]any{"requested_by": "dashboard"},
+	}))
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
+	req.Header.Set("Idempotency-Key", "09763662-96c0-4827-aac2-a17e3dd01315")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Error struct {
+			Code   string `json:"code"`
+			Reason string `json:"reason_code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Error.Code != "entitlement_denied" || resp.Error.Reason != "subscription_required" {
+		t.Fatalf("unexpected error payload: %+v", resp.Error)
+	}
+}
+
+func TestRelayStart_ActivePaidPlanAllowsProvisioning(t *testing.T) {
+	startCalls := 0
+	ms := &mockStore{
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.RelayEntitlement{
+				PlanTier:   "pro",
+				PlanStatus: "active",
+				Allowed:    true,
+			}, nil
+		},
+		startOrGetSessionFn: func(_ context.Context, in store.StartInput) (*model.Session, bool, error) {
+			startCalls++
+			return &model.Session{
+				ID:                 "ses_paid",
+				UserID:             in.UserID,
+				Status:             model.SessionProvisioning,
+				Region:             in.Region,
+				StreamToken:        "streamtok",
+				SRTPort:            5000,
+				GraceWindowSeconds: 600,
+				MaxSessionSeconds:  57600,
+			}, true, nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
+		"region_preference": "eu-west-1",
+		"client_context":    map[string]any{"requested_by": "dashboard"},
+	}))
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
+	req.Header.Set("Idempotency-Key", "9f136f6c-9f2e-45cf-8398-ac25a96ecf91")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if startCalls != 1 {
+		t.Fatalf("expected start to be called once, got %d", startCalls)
 	}
 }
 
@@ -838,11 +1103,17 @@ func TestRelayHealth_InstanceIDMismatchRejects(t *testing.T) {
 
 func testConfig() config.Config {
 	return config.Config{
-		JWTSecret:       "test-secret",
-		RelaySharedKey:  "relay-key",
-		DefaultRegion:   "us-east-1",
-		SupportedRegion: []string{"us-east-1", "eu-west-1"},
-		AWSInstanceType: "t4g.small",
+		JWTSecret:                  "test-secret",
+		RelaySharedKey:             "relay-key",
+		DefaultRegion:              "us-east-1",
+		SupportedRegion:            []string{"us-east-1", "eu-west-1"},
+		AWSInstanceType:            "t4g.small",
+		AuthAccessTTL:              15 * time.Minute,
+		AuthRefreshTTL:             30 * 24 * time.Hour,
+		AuthPublicBaseURL:          "https://telemyapp.com",
+		PluginLoginAttemptTTL:      10 * time.Minute,
+		PluginLoginPollIntervalSec: 3,
+		PluginLoginCompleteKey:     "plugin-login-key",
 	}
 }
 

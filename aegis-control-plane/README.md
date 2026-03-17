@@ -13,6 +13,8 @@ $env:AEGIS_LISTEN_ADDR=":8080"
 $env:AEGIS_DATABASE_URL="postgres://postgres:postgres@localhost:5432/aegis?sslmode=disable"
 $env:AEGIS_JWT_SECRET="dev-secret-change-me"
 $env:AEGIS_RELAY_SHARED_KEY="relay-dev-key"
+$env:AEGIS_PLUGIN_LOGIN_COMPLETE_KEY="plugin-login-dev-key"
+$env:AEGIS_AUTH_PUBLIC_BASE_URL="https://telemyapp.com"
 $env:AEGIS_DEFAULT_REGION="us-east-1"
 $env:AEGIS_SUPPORTED_REGIONS="us-east-1,eu-west-1"
 $env:AEGIS_RELAY_PROVIDER="fake"
@@ -34,6 +36,12 @@ go run ./cmd/jobs
 
 - `GET /healthz`
 - `GET /metrics` (Prometheus exposition format)
+- `POST /api/v1/auth/plugin/login/start`
+- `POST /api/v1/auth/plugin/login/poll`
+- `POST /api/v1/auth/plugin/login/complete` (shared-key auth for web/backend completion)
+- `GET /api/v1/auth/session`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
 - `POST /api/v1/relay/start`
 - `GET /api/v1/relay/active`
 - `POST /api/v1/relay/stop`
@@ -56,8 +64,9 @@ go run ./cmd/jobs
 ## Notes
 
 - Client endpoints require `Authorization: Bearer <cp_access_jwt>`.
+- `POST /api/v1/auth/plugin/login/complete` requires `X-Plugin-Login-Auth`.
 - `POST /api/v1/relay/start` requires `Idempotency-Key` header.
-- SQL migrations live in `migrations/` (currently `0001_init.sql`, `0002_relay_manifest.sql`).
+- SQL migrations live in `migrations/` (latest include `0008_auth_sessions.sql`, `0009_plugin_login_attempts.sql`).
 - Relay provider modes:
   - `fake` (default, local dev)
   - `aws` (EC2 provisioning)
