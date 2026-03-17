@@ -26,6 +26,7 @@ var (
 	ErrNotFound            = errors.New("not found")
 	ErrIdempotencyMismatch = errors.New("idempotency mismatch")
 	ErrRelayHealthRejected = errors.New("relay health rejected")
+	ErrConflict            = errors.New("conflict")
 )
 
 type Store struct {
@@ -69,6 +70,32 @@ type ActivateProvisionedSessionInput struct {
 	SRTPort       int
 	PairToken     string
 	RelayWSToken  string
+}
+
+type CreateAuthSessionInput struct {
+	ID               string
+	UserID           string
+	RefreshTokenHash string
+	ClientPlatform   string
+	ClientVersion    string
+	DeviceName       string
+	ExpiresAt        time.Time
+}
+
+type CreatePluginLoginAttemptInput struct {
+	ID             string
+	PollTokenHash  string
+	ClientPlatform string
+	ClientVersion  string
+	DeviceName     string
+	ExpiresAt      time.Time
+}
+
+type FinalizePluginLoginAttemptInput struct {
+	AttemptID      string
+	Status         model.PluginLoginAttemptStatus
+	UserID         string
+	DenyReasonCode string
 }
 
 func New(db DB, relayDomain ...string) *Store {
@@ -396,6 +423,7 @@ func (s *Store) GetUsageCurrent(ctx context.Context, userID string) (*model.Usag
 	const q = `
 select
   u.plan_tier,
+  u.plan_status,
   u.cycle_start_at,
   u.cycle_end_at,
   u.included_seconds,
@@ -406,10 +434,10 @@ left join usage_records ur
  and ur.cycle_start_at = u.cycle_start_at
  and ur.cycle_end_at = u.cycle_end_at
 where u.id = $1
-group by u.plan_tier, u.cycle_start_at, u.cycle_end_at, u.included_seconds`
+group by u.plan_tier, u.plan_status, u.cycle_start_at, u.cycle_end_at, u.included_seconds`
 	var out model.UsageCurrent
 	if err := s.db.QueryRow(ctx, q, userID).Scan(
-		&out.PlanTier, &out.CycleStart, &out.CycleEnd, &out.IncludedSeconds, &out.ConsumedSeconds,
+		&out.PlanTier, &out.PlanStatus, &out.CycleStart, &out.CycleEnd, &out.IncludedSeconds, &out.ConsumedSeconds,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -419,6 +447,282 @@ group by u.plan_tier, u.cycle_start_at, u.cycle_end_at, u.included_seconds`
 	out.RemainingSeconds = max(out.IncludedSeconds-out.ConsumedSeconds, 0)
 	out.OverageSeconds = max(out.ConsumedSeconds-out.IncludedSeconds, 0)
 	return &out, nil
+}
+
+func (s *Store) GetUser(ctx context.Context, userID string) (*model.User, error) {
+	var out model.User
+	err := s.db.QueryRow(ctx, `select id, email, coalesce(display_name, '') from users where id = $1`, userID).
+		Scan(&out.ID, &out.Email, &out.DisplayName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *Store) GetRelayEntitlement(ctx context.Context, userID string) (*model.RelayEntitlement, error) {
+	usage, err := s.GetUsageCurrent(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &model.RelayEntitlement{
+		PlanTier:         usage.PlanTier,
+		PlanStatus:       usage.PlanStatus,
+		IncludedSeconds:  usage.IncludedSeconds,
+		ConsumedSeconds:  usage.ConsumedSeconds,
+		RemainingSeconds: usage.RemainingSeconds,
+		OverageSeconds:   usage.OverageSeconds,
+	}
+
+	switch usage.PlanStatus {
+	case "active", "trial":
+	default:
+		out.ReasonCode = "subscription_inactive"
+		return out, nil
+	}
+
+	if usage.PlanTier == "starter" || usage.PlanTier == "" {
+		out.ReasonCode = "subscription_required"
+		return out, nil
+	}
+
+	out.Allowed = true
+	return out, nil
+}
+
+func (s *Store) CreateAuthSession(ctx context.Context, in CreateAuthSessionInput) (*model.AuthSession, error) {
+	const q = `
+insert into auth_sessions
+  (id, user_id, refresh_token_hash, client_platform, client_version, device_name, created_at, last_seen_at, expires_at)
+values
+  ($1, $2, $3, $4, $5, $6, now(), now(), $7)`
+	if _, err := s.db.Exec(ctx, q, in.ID, in.UserID, in.RefreshTokenHash, in.ClientPlatform, in.ClientVersion, in.DeviceName, in.ExpiresAt); err != nil {
+		return nil, err
+	}
+	return s.GetAuthSession(ctx, in.ID)
+}
+
+func (s *Store) GetAuthSession(ctx context.Context, sessionID string) (*model.AuthSession, error) {
+	const q = `
+select id, user_id, refresh_token_hash, client_platform, coalesce(client_version, ''), coalesce(device_name, ''), created_at, last_seen_at, expires_at, revoked_at
+from auth_sessions
+where id = $1`
+	var out model.AuthSession
+	if err := s.db.QueryRow(ctx, q, sessionID).Scan(
+		&out.ID, &out.UserID, &out.RefreshTokenHash, &out.ClientPlatform, &out.ClientVersion, &out.DeviceName,
+		&out.CreatedAt, &out.LastSeenAt, &out.ExpiresAt, &out.RevokedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *Store) GetAuthSessionByRefreshHash(ctx context.Context, refreshTokenHash string) (*model.AuthSession, error) {
+	const q = `
+select id, user_id, refresh_token_hash, client_platform, coalesce(client_version, ''), coalesce(device_name, ''), created_at, last_seen_at, expires_at, revoked_at
+from auth_sessions
+where refresh_token_hash = $1`
+	var out model.AuthSession
+	if err := s.db.QueryRow(ctx, q, refreshTokenHash).Scan(
+		&out.ID, &out.UserID, &out.RefreshTokenHash, &out.ClientPlatform, &out.ClientVersion, &out.DeviceName,
+		&out.CreatedAt, &out.LastSeenAt, &out.ExpiresAt, &out.RevokedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *Store) RotateAuthSession(ctx context.Context, sessionID, refreshTokenHash string, expiresAt time.Time) (*model.AuthSession, error) {
+	const q = `
+update auth_sessions
+set refresh_token_hash = $2,
+    expires_at = $3,
+    last_seen_at = now()
+where id = $1
+  and revoked_at is null
+  and expires_at > now()`
+	tag, err := s.db.Exec(ctx, q, sessionID, refreshTokenHash, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetAuthSession(ctx, sessionID)
+}
+
+func (s *Store) RevokeAuthSession(ctx context.Context, sessionID string) error {
+	tag, err := s.db.Exec(ctx, `update auth_sessions set revoked_at = coalesce(revoked_at, now()), last_seen_at = now() where id = $1`, sessionID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) CreatePluginLoginAttempt(ctx context.Context, in CreatePluginLoginAttemptInput) (*model.PluginLoginAttempt, error) {
+	const q = `
+insert into plugin_login_attempts
+  (id, poll_token_hash, status, client_platform, client_version, device_name, expires_at, created_at)
+values
+  ($1, $2, 'pending', $3, $4, $5, $6, now())`
+	if _, err := s.db.Exec(ctx, q, in.ID, in.PollTokenHash, in.ClientPlatform, in.ClientVersion, in.DeviceName, in.ExpiresAt); err != nil {
+		return nil, err
+	}
+	return s.GetPluginLoginAttempt(ctx, in.ID)
+}
+
+func (s *Store) GetPluginLoginAttempt(ctx context.Context, attemptID string) (*model.PluginLoginAttempt, error) {
+	const q = `
+select id, poll_token_hash, status, user_id, completed_session_id, client_platform, coalesce(client_version, ''), coalesce(device_name, ''),
+       coalesce(deny_reason_code, ''), expires_at, completed_at, created_at
+from plugin_login_attempts
+where id = $1`
+	var out model.PluginLoginAttempt
+	if err := s.db.QueryRow(ctx, q, attemptID).Scan(
+		&out.ID, &out.PollTokenHash, &out.Status, &out.UserID, &out.CompletedSessionID, &out.ClientPlatform, &out.ClientVersion, &out.DeviceName,
+		&out.DenyReasonCode, &out.ExpiresAt, &out.CompletedAt, &out.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *Store) GetPluginLoginAttemptByPollToken(ctx context.Context, attemptID, pollTokenHash string) (*model.PluginLoginAttempt, error) {
+	const q = `
+select id, poll_token_hash, status, user_id, completed_session_id, client_platform, coalesce(client_version, ''), coalesce(device_name, ''),
+       coalesce(deny_reason_code, ''), expires_at, completed_at, created_at
+from plugin_login_attempts
+where id = $1 and poll_token_hash = $2`
+	var out model.PluginLoginAttempt
+	if err := s.db.QueryRow(ctx, q, attemptID, pollTokenHash).Scan(
+		&out.ID, &out.PollTokenHash, &out.Status, &out.UserID, &out.CompletedSessionID, &out.ClientPlatform, &out.ClientVersion, &out.DeviceName,
+		&out.DenyReasonCode, &out.ExpiresAt, &out.CompletedAt, &out.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *Store) FinalizePluginLoginAttempt(ctx context.Context, in FinalizePluginLoginAttemptInput) error {
+	if in.Status != model.PluginLoginCompleted && in.Status != model.PluginLoginDenied {
+		return fmt.Errorf("invalid plugin login attempt status: %s", in.Status)
+	}
+	const q = `
+update plugin_login_attempts
+set status = $2,
+    user_id = case when $2 = 'completed' then $3 else null end,
+    deny_reason_code = case when $2 = 'denied' then $4 else null end,
+    completed_at = now()
+where id = $1
+  and status = 'pending'
+  and expires_at > now()`
+	tag, err := s.db.Exec(ctx, q, in.AttemptID, in.Status, nullableString(in.UserID), nullableString(in.DenyReasonCode))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) MarkPluginLoginAttemptExpired(ctx context.Context, attemptID string) error {
+	tag, err := s.db.Exec(ctx, `update plugin_login_attempts set status = 'expired' where id = $1 and status = 'pending'`, attemptID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) ClaimCompletedPluginLoginAttempt(ctx context.Context, attemptID, pollTokenHash string, authIn CreateAuthSessionInput) (*model.PluginLoginAttempt, *model.AuthSession, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	const selectQ = `
+select id, poll_token_hash, status, user_id, completed_session_id, client_platform, coalesce(client_version, ''), coalesce(device_name, ''),
+       coalesce(deny_reason_code, ''), expires_at, completed_at, created_at
+from plugin_login_attempts
+where id = $1 and poll_token_hash = $2
+for update`
+	var attempt model.PluginLoginAttempt
+	if err := tx.QueryRow(ctx, selectQ, attemptID, pollTokenHash).Scan(
+		&attempt.ID, &attempt.PollTokenHash, &attempt.Status, &attempt.UserID, &attempt.CompletedSessionID, &attempt.ClientPlatform, &attempt.ClientVersion, &attempt.DeviceName,
+		&attempt.DenyReasonCode, &attempt.ExpiresAt, &attempt.CompletedAt, &attempt.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, ErrNotFound
+		}
+		return nil, nil, err
+	}
+	if attempt.CompletedSessionID != nil {
+		return &attempt, nil, ErrConflict
+	}
+	if attempt.Status != model.PluginLoginCompleted || attempt.UserID == nil {
+		return &attempt, nil, ErrConflict
+	}
+
+	const insertSession = `
+insert into auth_sessions
+  (id, user_id, refresh_token_hash, client_platform, client_version, device_name, created_at, last_seen_at, expires_at)
+values
+  ($1, $2, $3, $4, $5, $6, now(), now(), $7)`
+	if _, err := tx.Exec(ctx, insertSession, authIn.ID, authIn.UserID, authIn.RefreshTokenHash, authIn.ClientPlatform, authIn.ClientVersion, authIn.DeviceName, authIn.ExpiresAt); err != nil {
+		return nil, nil, err
+	}
+
+	const claimQ = `
+update plugin_login_attempts
+set completed_session_id = $2
+where id = $1 and completed_session_id is null`
+	tag, err := tx.Exec(ctx, claimQ, attemptID, authIn.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return &attempt, nil, ErrConflict
+	}
+	attempt.CompletedSessionID = strPtr(authIn.ID)
+
+	const getSessionQ = `
+select id, user_id, refresh_token_hash, client_platform, coalesce(client_version, ''), coalesce(device_name, ''), created_at, last_seen_at, expires_at, revoked_at
+from auth_sessions
+where id = $1`
+	var sess model.AuthSession
+	if err := tx.QueryRow(ctx, getSessionQ, authIn.ID).Scan(
+		&sess.ID, &sess.UserID, &sess.RefreshTokenHash, &sess.ClientPlatform, &sess.ClientVersion, &sess.DeviceName,
+		&sess.CreatedAt, &sess.LastSeenAt, &sess.ExpiresAt, &sess.RevokedAt,
+	); err != nil {
+		return nil, nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, err
+	}
+	return &attempt, &sess, nil
 }
 
 func (s *Store) RecordRelayHealth(ctx context.Context, in RelayHealthInput) error {
@@ -624,4 +928,11 @@ func strPtr(v string) *string {
 		return nil
 	}
 	return &v
+}
+
+func nullableString(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }

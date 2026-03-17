@@ -156,6 +156,7 @@
       prevPktLoss: 0,   // previous pktLoss for delta rate calculation
       prevPktLossTs: 0, // timestamp of previous pktLoss sample
       lossRate: 0,      // packets lost per second (smoothed)
+      authState: null,
     };
 
     // Event ring buffer
@@ -258,6 +259,10 @@
 
       // Mode
       var mode = snap.mode || "studio";
+      var auth = (snap.auth && typeof snap.auth === "object") ? Object.assign({}, snap.auth) : {};
+      if ((!auth || Object.keys(auth).length === 0) && plugin.authState && typeof plugin.authState === "object") {
+        auth = Object.assign({}, plugin.authState);
+      }
 
       // Failover transition tracking — detect state changes
       var currentFailoverState = snap.state_mode || (mode === "irl" ? "IRL_ACTIVE" : "STUDIO");
@@ -373,6 +378,17 @@
               asn_org: l.asn_org || "",
             };
           }),
+        },
+        auth: {
+          authenticated: auth.authenticated === true,
+          hasTokens: auth.has_tokens === true,
+          user: auth.user || null,
+          entitlement: auth.entitlement || null,
+          usage: auth.usage || null,
+          activeRelay: auth.active_relay || null,
+          login: auth.login || { pending: false, poll_interval_seconds: 3 },
+          lastErrorCode: auth.last_error_code || null,
+          lastErrorMessage: auth.last_error_message || null,
         },
         failover: {
           health: health,
@@ -515,6 +531,47 @@
           plugin.relayCache = null;
         }
 
+        if (result.actionType && result.actionType.indexOf("auth_") === 0) {
+          if (result.detail) {
+            var authDetail = result.detail;
+            if (typeof authDetail === "string") {
+              try { authDetail = JSON.parse(authDetail); } catch (_e) { authDetail = null; }
+            }
+            if (authDetail && typeof authDetail === "object") {
+              if (result.actionType === "auth_login_start" && result.ok) {
+                var currentAuth = (plugin.authState && typeof plugin.authState === "object") ? plugin.authState : {};
+                var currentLogin = (currentAuth.login && typeof currentAuth.login === "object") ? currentAuth.login : {};
+                plugin.authState = Object.assign({}, currentAuth, {
+                  login: Object.assign({}, currentLogin, {
+                    pending: true,
+                    login_attempt_id: authDetail.login_attempt_id || currentLogin.login_attempt_id || "",
+                    authorize_url: authDetail.authorize_url || currentLogin.authorize_url || "",
+                    expires_at: authDetail.expires_at || currentLogin.expires_at || "",
+                    poll_interval_seconds: authDetail.poll_interval_seconds || currentLogin.poll_interval_seconds || 3,
+                  }),
+                  last_error_code: null,
+                  last_error_message: null,
+                });
+              } else {
+                plugin.authState = authDetail;
+              }
+            }
+          }
+          if (result.actionType === "auth_logout" && result.ok) {
+            plugin.authState = {
+              authenticated: false,
+              has_tokens: false,
+              user: null,
+              entitlement: null,
+              usage: null,
+              active_relay: null,
+              login: { pending: false, poll_interval_seconds: 3 },
+              last_error_code: null,
+              last_error_message: null,
+            };
+          }
+        }
+
         emit();
       },
 
@@ -563,7 +620,7 @@
           emit();
           return true;
         }
-        if (action.type === "relay_start" || action.type === "relay_stop") {
+        if (action.type === "relay_start" || action.type === "relay_stop" || (action.type && action.type.indexOf("auth_") === 0)) {
           addEvent("info", "Relay action forwarded to native: " + String(action.type));
           emit();
           return true;

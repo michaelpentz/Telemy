@@ -71,7 +71,8 @@ public:
     // -----------------------------------------------------------------------
     HttpResponse Get(const std::wstring& host,
                      const std::wstring& path,
-                     const std::wstring& bearer_token = L"");
+                     const std::wstring& bearer_token = L"",
+                     const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers = {});
 
     // -----------------------------------------------------------------------
     // Synchronous POST to https://<host><path> with a JSON body.

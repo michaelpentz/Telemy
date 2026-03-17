@@ -70,6 +70,24 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	entitlement, err := s.store.GetRelayEntitlement(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIErrorWithReason(w, http.StatusForbidden, "entitlement_denied", "relay access is not enabled for this account", "user_not_found")
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to verify relay entitlement")
+		return
+	}
+	if !entitlement.Allowed {
+		reason := entitlement.ReasonCode
+		if reason == "" {
+			reason = "entitlement_denied"
+		}
+		writeAPIErrorWithReason(w, http.StatusForbidden, "entitlement_denied", "relay access is not enabled for this account", reason)
+		return
+	}
+
 	idemRaw := r.Header.Get("Idempotency-Key")
 	if idemRaw == "" {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "Idempotency-Key is required")

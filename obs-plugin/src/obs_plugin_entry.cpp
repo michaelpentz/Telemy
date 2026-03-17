@@ -15,6 +15,7 @@
 #include <obs-frontend-api.h>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
@@ -65,10 +66,150 @@ aegis::Vault       g_vault;
 aegis::PluginConfig g_config;
 aegis::HttpsClient g_http;
 std::unique_ptr<aegis::RelayClient> g_relay;
+std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
 std::mutex g_relay_worker_mu;
 std::thread g_relay_start_worker;
 std::thread g_relay_stop_worker;
 std::atomic<bool> g_relay_start_cancel{false};
+std::mutex g_auth_state_mu;
+aegis::PluginAuthState g_auth_state;
+
+namespace {
+
+constexpr const char* kPluginAuthVaultKey = "plugin_auth_state";
+constexpr const char* kLegacyRelayJwtVaultKey = "relay_jwt";
+
+std::string CurrentControlPlaneJwt() {
+    {
+        std::lock_guard<std::mutex> lock(g_auth_state_mu);
+        if (!g_auth_state.tokens.cp_access_jwt.empty()) {
+            return g_auth_state.tokens.cp_access_jwt;
+        }
+    }
+
+    const auto legacy = g_vault.Get(kLegacyRelayJwtVaultKey);
+    return legacy.value_or("");
+}
+
+bool SavePluginAuthStateToVaultLocked() {
+    const bool ok = g_vault.Set(kPluginAuthVaultKey, g_auth_state.ToVaultJson());
+    if (!ok) {
+        blog(LOG_WARNING, "[aegis-obs-plugin] auth state persist failed");
+    }
+    if (!g_auth_state.tokens.cp_access_jwt.empty()) {
+        (void)g_vault.Set(kLegacyRelayJwtVaultKey, g_auth_state.tokens.cp_access_jwt);
+    }
+    return ok;
+}
+
+void PersistPluginAuthState() {
+    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+    SavePluginAuthStateToVaultLocked();
+}
+
+void ClearPluginAuthState(bool clear_legacy_jwt) {
+    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+    g_auth_state = aegis::PluginAuthState{};
+    (void)g_vault.Remove(kPluginAuthVaultKey);
+    if (clear_legacy_jwt) {
+        (void)g_vault.Remove(kLegacyRelayJwtVaultKey);
+    }
+}
+
+void LoadPluginAuthStateFromVault() {
+    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+    g_auth_state = aegis::PluginAuthState{};
+    const auto raw = g_vault.Get(kPluginAuthVaultKey);
+    if (!raw) {
+        return;
+    }
+    const auto parsed = aegis::PluginAuthState::FromVaultJson(*raw);
+    if (!parsed) {
+        blog(LOG_WARNING, "[aegis-obs-plugin] auth state parse failed");
+        return;
+    }
+    g_auth_state = *parsed;
+}
+
+QJsonObject BuildAuthSnapshotJson() {
+    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+
+    QJsonObject authObj;
+    authObj.insert(QStringLiteral("authenticated"), g_auth_state.authenticated);
+    authObj.insert(QStringLiteral("has_tokens"), !g_auth_state.tokens.Empty());
+
+    QJsonObject userObj;
+    userObj.insert(QStringLiteral("id"), QString::fromStdString(g_auth_state.session.user.id));
+    userObj.insert(QStringLiteral("email"), QString::fromStdString(g_auth_state.session.user.email));
+    userObj.insert(QStringLiteral("display_name"), QString::fromStdString(g_auth_state.session.user.display_name));
+    authObj.insert(QStringLiteral("user"), userObj);
+
+    QJsonObject entitlementObj;
+    entitlementObj.insert(QStringLiteral("relay_access_status"), QString::fromStdString(g_auth_state.session.entitlement.relay_access_status));
+    entitlementObj.insert(QStringLiteral("reason_code"), QString::fromStdString(g_auth_state.session.entitlement.reason_code));
+    entitlementObj.insert(QStringLiteral("plan_tier"), QString::fromStdString(g_auth_state.session.entitlement.plan_tier));
+    entitlementObj.insert(QStringLiteral("plan_status"), QString::fromStdString(g_auth_state.session.entitlement.plan_status));
+    authObj.insert(QStringLiteral("entitlement"), entitlementObj);
+
+    QJsonObject usageObj;
+    usageObj.insert(QStringLiteral("included_seconds"), g_auth_state.session.usage.included_seconds);
+    usageObj.insert(QStringLiteral("consumed_seconds"), g_auth_state.session.usage.consumed_seconds);
+    usageObj.insert(QStringLiteral("remaining_seconds"), g_auth_state.session.usage.remaining_seconds);
+    usageObj.insert(QStringLiteral("overage_seconds"), g_auth_state.session.usage.overage_seconds);
+    authObj.insert(QStringLiteral("usage"), usageObj);
+
+    if (g_auth_state.session.active_relay) {
+        QJsonObject activeRelay;
+        activeRelay.insert(QStringLiteral("session_id"), QString::fromStdString(g_auth_state.session.active_relay->session_id));
+        activeRelay.insert(QStringLiteral("status"), QString::fromStdString(g_auth_state.session.active_relay->status));
+        authObj.insert(QStringLiteral("active_relay"), activeRelay);
+    } else {
+        authObj.insert(QStringLiteral("active_relay"), QJsonValue(QJsonValue::Null));
+    }
+
+    QJsonObject loginObj;
+    const bool loginPending = !g_auth_state.login_attempt.Empty();
+    loginObj.insert(QStringLiteral("pending"), loginPending);
+    loginObj.insert(QStringLiteral("login_attempt_id"), QString::fromStdString(g_auth_state.login_attempt.login_attempt_id));
+    loginObj.insert(QStringLiteral("authorize_url"), QString::fromStdString(g_auth_state.login_attempt.authorize_url));
+    loginObj.insert(QStringLiteral("expires_at"), QString::fromStdString(g_auth_state.login_attempt.expires_at));
+    loginObj.insert(QStringLiteral("poll_interval_seconds"), g_auth_state.login_attempt.poll_interval_seconds);
+    authObj.insert(QStringLiteral("login"), loginObj);
+
+    authObj.insert(QStringLiteral("last_error_code"), QString::fromStdString(g_auth_state.last_error_code));
+    authObj.insert(QStringLiteral("last_error_message"), QString::fromStdString(g_auth_state.last_error_message));
+    return authObj;
+}
+
+bool OpenBrowserUrl(const std::string& url_text) {
+    if (url_text.empty()) {
+        return false;
+    }
+    const QUrl url(QString::fromStdString(url_text));
+    if (!url.isValid()) {
+        return false;
+    }
+    return QDesktopServices::openUrl(url);
+}
+
+void ApplyCompletedAuthResult(const aegis::AuthPollResult& result) {
+    if (!result.session) {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(g_auth_state_mu);
+        g_auth_state.tokens = result.tokens;
+        g_auth_state.session = *result.session;
+        g_auth_state.authenticated = true;
+        g_auth_state.login_attempt.Clear();
+        g_auth_state.last_error_code.clear();
+        g_auth_state.last_error_message.clear();
+        SavePluginAuthStateToVaultLocked();
+    }
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Shared utility functions — called from dock_replay_cache.cpp and
@@ -311,6 +452,7 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
     if (doc.isObject()) {
         QJsonObject payload = doc.object();
         payload.insert(QStringLiteral("settings"), BuildDockSettingsJsonFromConfig());
+        payload.insert(QStringLiteral("auth"), BuildAuthSnapshotJson());
         json = QJsonDocument(payload).toJson(QJsonDocument::Compact).toStdString();
     }
     json = AugmentSnapshotJsonWithTheme(json);
@@ -777,12 +919,14 @@ bool obs_module_load(void) {
 
     g_vault.Load();
     g_config.LoadFromDisk();
+    LoadPluginAuthStateFromVault();
     const std::optional<std::string> relay_shared_key = g_vault.Get("relay_shared_key");
 
     if (aegis::IsExplicitInsecureHttpHost(g_config.relay_api_host)) {
         blog(LOG_WARNING,
              "[aegis-obs-plugin] relay client skipped: relay_api_host uses insecure http://");
     } else if (!g_config.relay_api_host.empty()) {
+        g_auth = std::make_unique<aegis::ControlPlaneAuthClient>(g_http, g_config.relay_api_host);
         g_relay = std::make_unique<aegis::RelayClient>(
             g_http, g_config.relay_api_host, relay_shared_key.value_or(""));
         blog(LOG_INFO,
@@ -853,12 +997,12 @@ void obs_module_unload(void) {
     // Emergency relay teardown
     if (g_relay && g_relay->HasActiveSession()) {
         blog(LOG_INFO, "[aegis-obs-plugin] relay emergency stop on unload");
-        auto jwt = g_vault.Get("relay_jwt");
-        if (jwt) {
-            g_relay->EmergencyRelayStop(*jwt);
+        const std::string jwt = CurrentControlPlaneJwt();
+        if (!jwt.empty()) {
+            g_relay->EmergencyRelayStop(jwt);
         } else {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] relay emergency stop skipped: no relay_jwt in vault");
+                "[aegis-obs-plugin] relay emergency stop skipped: no control-plane jwt available");
         }
     }
     // Signal cancellation and join any outstanding relay worker threads
@@ -877,6 +1021,7 @@ void obs_module_unload(void) {
     }
     // Destroy g_relay before g_http -- RelayClient holds a reference to g_http.
     g_relay.reset();
+    g_auth.reset();
     blog(LOG_INFO, "[aegis-obs-plugin] relay client destroyed");
 }
 

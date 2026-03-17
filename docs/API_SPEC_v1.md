@@ -23,14 +23,29 @@ Transport:
 
 ## 2. Authentication Model
 
+Recommended product model:
+- End users authenticate through a browser-based account login flow in the plugin.
+- The backend determines whether the user is entitled to the paid relay feature.
+- The plugin stores only backend-issued auth material locally and uses that for control-plane calls.
+- Sender apps authenticate to the relay's SLS layer with per-user stream IDs derived from `stream_token`, not with control-plane credentials.
+
+See also: `AUTH_ENTITLEMENT_MODEL.md`.
+
 Credentials:
 1. `cp_access_jwt`:
 - Used by the C++ plugin for control-plane API calls.
 - Sent as `Authorization: Bearer <jwt>`.
 - Stored in DPAPI-encrypted vault on the client. Never exposed to the dock JS layer.
+- Short-lived bearer JWT. Current backend issuance path is session-backed with `sid` validation when present.
+
+2. `refresh_token`:
+- Opaque token used to rotate `cp_access_jwt`.
+- Sent only to `POST /api/v1/auth/refresh`.
+- Stored in DPAPI-encrypted vault on the client. Never exposed to the dock JS layer.
 
 Hard rule:
 - Only `cp_access_jwt` is valid for control-plane endpoints.
+- Relay activation entitlement is enforced server-side even if the plugin UI already hides or disables controls.
 
 ---
 
@@ -80,7 +95,187 @@ Optional tracing:
 
 ## 5. Endpoints
 
-## 5.1 POST `/api/v1/relay/start`
+## 5.1 GET `/api/v1/auth/session`
+
+Return the current signed-in user, relay entitlement, usage snapshot, and active relay state.
+
+Response `200`:
+```json
+{
+  "user": {
+    "id": "usr_01J...",
+    "email": "user@example.com",
+    "display_name": "telemy-user"
+  },
+  "entitlement": {
+    "relay_access_status": "enabled|disabled",
+    "reason_code": "ok|subscription_required|subscription_inactive|user_not_found",
+    "plan_tier": "starter|standard|pro",
+    "plan_status": "trial|active|past_due|canceled"
+  },
+  "usage": {
+    "included_seconds": 14400,
+    "consumed_seconds": 3900,
+    "remaining_seconds": 10500,
+    "overage_seconds": 0
+  },
+  "active_relay": {
+    "session_id": "ses_01J...",
+    "status": "active"
+  }
+}
+```
+
+Error responses:
+- `401` invalid/expired auth session
+- `500` internal error
+
+## 5.2 POST `/api/v1/auth/plugin/login/start`
+
+Create a short-lived plugin login attempt and return the browser URL plus poll token.
+
+Current rollout note:
+- Today the returned `authorize_url` lands on the temporary operator-assisted Pages flow at `telemyapp.com/login/plugin?attempt=...`.
+- That page completes the attempt against an existing Telemy `user_id` through `POST /api/v1/auth/plugin/login/complete`.
+
+Request body:
+```json
+{
+  "client": {
+    "platform": "windows",
+    "plugin_version": "0.0.4",
+    "device_name": "OBS Desktop"
+  }
+}
+```
+
+Response `201`:
+```json
+{
+  "login_attempt_id": "pla_01J...",
+  "authorize_url": "https://telemyapp.com/login/plugin?attempt=pla_01J...",
+  "poll_token": "<opaque>",
+  "expires_at": "2026-03-16T22:10:00Z",
+  "poll_interval_seconds": 3
+}
+```
+
+Error responses:
+- `400` invalid payload
+- `500` internal error
+
+## 5.3 POST `/api/v1/auth/plugin/login/poll`
+
+Poll the status of a plugin login attempt.
+
+Request body:
+```json
+{
+  "login_attempt_id": "pla_01J...",
+  "poll_token": "<opaque>"
+}
+```
+
+Response `202` pending:
+```json
+{
+  "status": "pending"
+}
+```
+
+Response `200` completed:
+```json
+{
+  "status": "completed",
+  "auth": {
+    "cp_access_jwt": "<jwt>",
+    "refresh_token": "<opaque>"
+  },
+  "user": {
+    "id": "usr_01J...",
+    "email": "user@example.com",
+    "display_name": "telemy-user"
+  },
+  "entitlement": {
+    "relay_access_status": "enabled|disabled",
+    "reason_code": "ok|subscription_required|subscription_inactive|user_not_found",
+    "plan_tier": "starter|standard|pro",
+    "plan_status": "trial|active|past_due|canceled"
+  },
+  "usage": {
+    "included_seconds": 14400,
+    "consumed_seconds": 3900,
+    "remaining_seconds": 10500,
+    "overage_seconds": 0
+  },
+  "active_relay": null
+}
+```
+
+Error responses:
+- `400` invalid payload
+- `403` login denied
+- `404` login attempt not found
+- `409` login attempt already claimed
+- `410` login attempt expired
+- `500` internal error
+
+## 5.4 POST `/api/v1/auth/refresh`
+
+Rotate refresh token and issue a new `cp_access_jwt`.
+
+Request body:
+```json
+{
+  "refresh_token": "<opaque>"
+}
+```
+
+Response `200`:
+```json
+{
+  "auth": {
+    "cp_access_jwt": "<jwt>",
+    "refresh_token": "<new_opaque>"
+  },
+  "user": {
+    "id": "usr_01J...",
+    "email": "user@example.com",
+    "display_name": "telemy-user"
+  },
+  "entitlement": {
+    "relay_access_status": "enabled|disabled",
+    "reason_code": "ok|subscription_required|subscription_inactive|user_not_found",
+    "plan_tier": "starter|standard|pro",
+    "plan_status": "trial|active|past_due|canceled"
+  },
+  "usage": {
+    "included_seconds": 14400,
+    "consumed_seconds": 3900,
+    "remaining_seconds": 10500,
+    "overage_seconds": 0
+  }
+}
+```
+
+Error responses:
+- `400` invalid payload
+- `401` invalid refresh token
+- `410` auth session expired
+- `500` internal error
+
+## 5.5 POST `/api/v1/auth/logout`
+
+Revoke the current auth session.
+
+Response:
+- `204 No Content`
+
+Error responses:
+- `401` invalid/expired auth session
+- `500` internal error
+
+## 5.6 POST `/api/v1/relay/start`
 
 Start or return an active relay session for the authenticated user.
 
@@ -132,7 +327,18 @@ Error responses:
 - `429` rate limited
 - `500` internal error
 
-## 5.2 GET `/api/v1/relay/active`
+Example `403 entitlement_denied`:
+```json
+{
+  "error": {
+    "code": "entitlement_denied",
+    "message": "relay access is not enabled for this account",
+    "reason_code": "subscription_required|subscription_inactive|user_not_found"
+  }
+}
+```
+
+## 5.7 GET `/api/v1/relay/active`
 
 Return active or provisioning session for authenticated user.
 
@@ -164,7 +370,7 @@ Example `200`:
 }
 ```
 
-## 5.3 POST `/api/v1/relay/stop`
+## 5.8 POST `/api/v1/relay/stop`
 
 Idempotently stop a relay session.
 
@@ -189,7 +395,7 @@ Response `200`:
 }
 ```
 
-## 5.4 GET `/api/v1/relay/manifest`
+## 5.9 GET `/api/v1/relay/manifest`
 
 Return launchable region and AMI metadata for relay provisioning.
 
@@ -276,6 +482,7 @@ Canonical error codes:
 - `invalid_transition`
 - `idempotency_mismatch`
 - `rate_limited`
+- `session_expired`
 - `internal_error`
 
 ---
@@ -290,6 +497,7 @@ Response `200`:
 ```json
 {
   "plan_tier": "starter|standard|pro",
+  "plan_status": "trial|active|past_due|canceled",
   "cycle_start": "2026-02-01T00:00:00Z",
   "cycle_end": "2026-03-01T00:00:00Z",
   "included_seconds": 54000,
