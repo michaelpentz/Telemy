@@ -11,10 +11,454 @@
 // Link: rpcrt4.lib — added in CMakeLists.txt alongside winhttp and crypt32.
 
 #include <chrono>
+#include <utility>
 #include <stdexcept>
 #include <string>
 
 namespace aegis {
+
+namespace {
+
+std::string JsonStringify(const QJsonObject& obj)
+{
+    return QJsonDocument(obj).toJson(QJsonDocument::Compact).toStdString();
+}
+
+QJsonObject ParseJsonObject(const std::string& json)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(json));
+    if (!doc.isObject()) {
+        return QJsonObject();
+    }
+    return doc.object();
+}
+
+AuthUser ParseAuthUser(const QJsonObject& obj)
+{
+    AuthUser user;
+    user.id = obj.value("id").toString().toStdString();
+    user.email = obj.value("email").toString().toStdString();
+    user.display_name = obj.value("display_name").toString().toStdString();
+    return user;
+}
+
+RelayEntitlement ParseRelayEntitlement(const QJsonObject& obj)
+{
+    RelayEntitlement entitlement;
+    entitlement.relay_access_status = obj.value("relay_access_status").toString().toStdString();
+    entitlement.reason_code = obj.value("reason_code").toString().toStdString();
+    entitlement.plan_tier = obj.value("plan_tier").toString().toStdString();
+    entitlement.plan_status = obj.value("plan_status").toString().toStdString();
+    return entitlement;
+}
+
+UsageSnapshot ParseUsageSnapshot(const QJsonObject& obj)
+{
+    UsageSnapshot usage;
+    usage.included_seconds = obj.value("included_seconds").toInt(0);
+    usage.consumed_seconds = obj.value("consumed_seconds").toInt(0);
+    usage.remaining_seconds = obj.value("remaining_seconds").toInt(0);
+    usage.overage_seconds = obj.value("overage_seconds").toInt(0);
+    return usage;
+}
+
+QJsonObject SerializeAuthUser(const AuthUser& user)
+{
+    QJsonObject obj;
+    obj["id"] = QString::fromStdString(user.id);
+    obj["email"] = QString::fromStdString(user.email);
+    obj["display_name"] = QString::fromStdString(user.display_name);
+    return obj;
+}
+
+QJsonObject SerializeRelayEntitlement(const RelayEntitlement& entitlement)
+{
+    QJsonObject obj;
+    obj["relay_access_status"] = QString::fromStdString(entitlement.relay_access_status);
+    obj["reason_code"] = QString::fromStdString(entitlement.reason_code);
+    obj["plan_tier"] = QString::fromStdString(entitlement.plan_tier);
+    obj["plan_status"] = QString::fromStdString(entitlement.plan_status);
+    return obj;
+}
+
+QJsonObject SerializeUsageSnapshot(const UsageSnapshot& usage)
+{
+    QJsonObject obj;
+    obj["included_seconds"] = usage.included_seconds;
+    obj["consumed_seconds"] = usage.consumed_seconds;
+    obj["remaining_seconds"] = usage.remaining_seconds;
+    obj["overage_seconds"] = usage.overage_seconds;
+    return obj;
+}
+
+std::optional<AuthSessionSnapshot> ParseAuthSessionSnapshotObject(const QJsonObject& root)
+{
+    if (root.isEmpty()) {
+        return std::nullopt;
+    }
+
+    AuthSessionSnapshot snapshot;
+    snapshot.user = ParseAuthUser(root.value("user").toObject());
+    snapshot.entitlement = ParseRelayEntitlement(root.value("entitlement").toObject());
+    snapshot.usage = ParseUsageSnapshot(root.value("usage").toObject());
+
+    const QJsonValue activeRelayValue = root.value("active_relay");
+    if (activeRelayValue.isObject()) {
+        ActiveRelaySummary activeRelay;
+        const QJsonObject activeRelayObj = activeRelayValue.toObject();
+        activeRelay.session_id = activeRelayObj.value("session_id").toString().toStdString();
+        activeRelay.status = activeRelayObj.value("status").toString().toStdString();
+        snapshot.active_relay = activeRelay;
+    }
+
+    if (snapshot.user.id.empty()) {
+        return std::nullopt;
+    }
+
+    return snapshot;
+}
+
+}  // namespace
+
+bool AuthTokens::Empty() const
+{
+    return cp_access_jwt.empty() && refresh_token.empty();
+}
+
+void AuthTokens::Clear()
+{
+    cp_access_jwt.clear();
+    refresh_token.clear();
+}
+
+std::string AuthTokens::ToVaultJson() const
+{
+    QJsonObject obj;
+    obj["cp_access_jwt"] = QString::fromStdString(cp_access_jwt);
+    obj["refresh_token"] = QString::fromStdString(refresh_token);
+    return JsonStringify(obj);
+}
+
+std::optional<AuthTokens> AuthTokens::FromVaultJson(const std::string& json)
+{
+    const QJsonObject obj = ParseJsonObject(json);
+    if (obj.isEmpty()) {
+        return std::nullopt;
+    }
+
+    AuthTokens tokens;
+    tokens.cp_access_jwt = obj.value("cp_access_jwt").toString().toStdString();
+    tokens.refresh_token = obj.value("refresh_token").toString().toStdString();
+    if (tokens.Empty()) {
+        return std::nullopt;
+    }
+    return tokens;
+}
+
+std::string AuthSessionSnapshot::ToVaultJson() const
+{
+    QJsonObject obj;
+    obj["user"] = SerializeAuthUser(user);
+    obj["entitlement"] = SerializeRelayEntitlement(entitlement);
+    obj["usage"] = SerializeUsageSnapshot(usage);
+    if (active_relay) {
+        QJsonObject activeRelay;
+        activeRelay["session_id"] = QString::fromStdString(active_relay->session_id);
+        activeRelay["status"] = QString::fromStdString(active_relay->status);
+        obj["active_relay"] = activeRelay;
+    } else {
+        obj["active_relay"] = QJsonValue(QJsonValue::Null);
+    }
+    return JsonStringify(obj);
+}
+
+std::optional<AuthSessionSnapshot> AuthSessionSnapshot::FromVaultJson(const std::string& json)
+{
+    return ParseAuthSessionSnapshotObject(ParseJsonObject(json));
+}
+
+bool PluginLoginAttempt::Empty() const
+{
+    return login_attempt_id.empty() && authorize_url.empty() && poll_token.empty();
+}
+
+void PluginLoginAttempt::Clear()
+{
+    login_attempt_id.clear();
+    authorize_url.clear();
+    poll_token.clear();
+    expires_at.clear();
+    poll_interval_seconds = 3;
+}
+
+void PluginAuthState::ClearAuthMaterial()
+{
+    tokens.Clear();
+    authenticated = false;
+}
+
+void PluginAuthState::ClearLoginAttempt()
+{
+    login_attempt.Clear();
+    last_error_code.clear();
+    last_error_message.clear();
+}
+
+std::string PluginAuthState::ToVaultJson() const
+{
+    QJsonObject obj;
+    obj["authenticated"] = authenticated;
+    obj["tokens"] = ParseJsonObject(tokens.ToVaultJson());
+    obj["session"] = ParseJsonObject(session.ToVaultJson());
+
+    QJsonObject loginAttempt;
+    loginAttempt["login_attempt_id"] = QString::fromStdString(login_attempt.login_attempt_id);
+    loginAttempt["authorize_url"] = QString::fromStdString(login_attempt.authorize_url);
+    loginAttempt["poll_token"] = QString::fromStdString(login_attempt.poll_token);
+    loginAttempt["expires_at"] = QString::fromStdString(login_attempt.expires_at);
+    loginAttempt["poll_interval_seconds"] = login_attempt.poll_interval_seconds;
+    obj["login_attempt"] = loginAttempt;
+
+    obj["last_error_code"] = QString::fromStdString(last_error_code);
+    obj["last_error_message"] = QString::fromStdString(last_error_message);
+    return JsonStringify(obj);
+}
+
+std::optional<PluginAuthState> PluginAuthState::FromVaultJson(const std::string& json)
+{
+    const QJsonObject obj = ParseJsonObject(json);
+    if (obj.isEmpty()) {
+        return std::nullopt;
+    }
+
+    PluginAuthState state;
+    state.authenticated = obj.value("authenticated").toBool(false);
+    if (obj.value("tokens").isObject()) {
+        const auto tokens = AuthTokens::FromVaultJson(JsonStringify(obj.value("tokens").toObject()));
+        if (tokens) {
+            state.tokens = *tokens;
+        }
+    }
+    if (obj.value("session").isObject()) {
+        const auto session = AuthSessionSnapshot::FromVaultJson(JsonStringify(obj.value("session").toObject()));
+        if (session) {
+            state.session = *session;
+        }
+    }
+    if (obj.value("login_attempt").isObject()) {
+        const QJsonObject loginAttempt = obj.value("login_attempt").toObject();
+        state.login_attempt.login_attempt_id = loginAttempt.value("login_attempt_id").toString().toStdString();
+        state.login_attempt.authorize_url = loginAttempt.value("authorize_url").toString().toStdString();
+        state.login_attempt.poll_token = loginAttempt.value("poll_token").toString().toStdString();
+        state.login_attempt.expires_at = loginAttempt.value("expires_at").toString().toStdString();
+        state.login_attempt.poll_interval_seconds = loginAttempt.value("poll_interval_seconds").toInt(3);
+    }
+    state.last_error_code = obj.value("last_error_code").toString().toStdString();
+    state.last_error_message = obj.value("last_error_message").toString().toStdString();
+    return state;
+}
+
+ControlPlaneAuthClient::ControlPlaneAuthClient(HttpsClient& http, const std::string& api_host)
+    : http_(http)
+    , api_host_w_(api_host.begin(), api_host.end())
+{
+}
+
+void ControlPlaneAuthClient::Reconfigure(const std::string& api_host)
+{
+    api_host_w_ = std::wstring(api_host.begin(), api_host.end());
+}
+
+std::vector<std::pair<std::wstring, std::wstring>> ControlPlaneAuthClient::CommonClientHeaders()
+{
+    return {
+        {L"X-Aegis-Client-Version", L"0.0.4"},
+        {L"X-Aegis-Client-Platform", L"windows"},
+    };
+}
+
+std::optional<AuthSessionSnapshot> ControlPlaneAuthClient::ParseAuthSessionSnapshot(const std::string& json)
+{
+    return ParseAuthSessionSnapshotObject(ParseJsonObject(json));
+}
+
+std::optional<AuthSessionSnapshot> ControlPlaneAuthClient::GetSession(const std::string& cp_access_jwt)
+{
+    std::wstring wideJwt(cp_access_jwt.begin(), cp_access_jwt.end());
+    HttpResponse resp;
+    try {
+        resp = http_.Get(api_host_w_, L"/api/v1/auth/session", wideJwt, CommonClientHeaders());
+    } catch (const std::exception& e) {
+        blog(LOG_WARNING, "auth: GetSession network error: %s", e.what());
+        return std::nullopt;
+    }
+
+    if (!resp.ok()) {
+        blog(LOG_WARNING, "auth: GetSession failed, HTTP %lu: %s", resp.status_code, resp.body.c_str());
+        return std::nullopt;
+    }
+    return ParseAuthSessionSnapshot(resp.body);
+}
+
+std::optional<PluginLoginAttempt> ControlPlaneAuthClient::StartPluginLogin(const std::string& device_name,
+                                                                            const std::string& plugin_version,
+                                                                            const std::string& platform)
+{
+    QJsonObject clientObj;
+    clientObj["platform"] = QString::fromStdString(platform);
+    clientObj["plugin_version"] = QString::fromStdString(plugin_version);
+    clientObj["device_name"] = QString::fromStdString(device_name);
+
+    QJsonObject bodyObj;
+    bodyObj["client"] = clientObj;
+
+    HttpResponse resp;
+    try {
+        resp = http_.Post(api_host_w_, L"/api/v1/auth/plugin/login/start", JsonStringify(bodyObj), L"", CommonClientHeaders());
+    } catch (const std::exception& e) {
+        blog(LOG_WARNING, "auth: StartPluginLogin network error: %s", e.what());
+        return std::nullopt;
+    }
+
+    if (!resp.ok()) {
+        blog(LOG_WARNING, "auth: StartPluginLogin failed, HTTP %lu: %s", resp.status_code, resp.body.c_str());
+        return std::nullopt;
+    }
+
+    const QJsonObject obj = ParseJsonObject(resp.body);
+    if (obj.isEmpty()) {
+        return std::nullopt;
+    }
+
+    PluginLoginAttempt attempt;
+    attempt.login_attempt_id = obj.value("login_attempt_id").toString().toStdString();
+    attempt.authorize_url = obj.value("authorize_url").toString().toStdString();
+    attempt.poll_token = obj.value("poll_token").toString().toStdString();
+    attempt.expires_at = obj.value("expires_at").toString().toStdString();
+    attempt.poll_interval_seconds = obj.value("poll_interval_seconds").toInt(3);
+    if (attempt.login_attempt_id.empty() || attempt.poll_token.empty()) {
+        return std::nullopt;
+    }
+    return attempt;
+}
+
+std::optional<AuthPollResult> ControlPlaneAuthClient::PollPluginLogin(const std::string& login_attempt_id,
+                                                                      const std::string& poll_token)
+{
+    QJsonObject bodyObj;
+    bodyObj["login_attempt_id"] = QString::fromStdString(login_attempt_id);
+    bodyObj["poll_token"] = QString::fromStdString(poll_token);
+
+    HttpResponse resp;
+    try {
+        resp = http_.Post(api_host_w_, L"/api/v1/auth/plugin/login/poll", JsonStringify(bodyObj), L"", CommonClientHeaders());
+    } catch (const std::exception& e) {
+        blog(LOG_WARNING, "auth: PollPluginLogin network error: %s", e.what());
+        return std::nullopt;
+    }
+
+    AuthPollResult result;
+    if (resp.status_code == 202) {
+        result.status = AuthPollStatus::Pending;
+        return result;
+    }
+    if (resp.status_code == 410) {
+        const QJsonObject obj = ParseJsonObject(resp.body);
+        result.status = AuthPollStatus::Expired;
+        result.reason_code = obj.value("error").toObject().value("code").toString().toStdString();
+        if (result.reason_code.empty()) {
+            result.reason_code = "login_attempt_expired";
+        }
+        return result;
+    }
+    if (resp.status_code == 403) {
+        result.status = AuthPollStatus::Denied;
+    } else if (!resp.ok()) {
+        blog(LOG_WARNING, "auth: PollPluginLogin failed, HTTP %lu: %s", resp.status_code, resp.body.c_str());
+        return std::nullopt;
+    }
+
+    const QJsonObject obj = ParseJsonObject(resp.body);
+    if (obj.isEmpty()) {
+        return std::nullopt;
+    }
+
+    if (result.status == AuthPollStatus::Denied) {
+        const QJsonObject errorObj = obj.value("error").toObject();
+        result.reason_code = errorObj.value("reason_code").toString().toStdString();
+        if (result.reason_code.empty()) {
+            result.reason_code = errorObj.value("code").toString().toStdString();
+        }
+        if (result.reason_code.empty()) {
+            result.reason_code = "login_denied";
+        }
+        return result;
+    }
+
+    result.status = AuthPollStatus::Completed;
+    const QJsonObject authObj = obj.value("auth").toObject();
+    result.tokens.cp_access_jwt = authObj.value("cp_access_jwt").toString().toStdString();
+    result.tokens.refresh_token = authObj.value("refresh_token").toString().toStdString();
+    result.session = ParseAuthSessionSnapshotObject(obj);
+    if (result.tokens.Empty() || !result.session) {
+        return std::nullopt;
+    }
+    return result;
+}
+
+std::optional<AuthPollResult> ControlPlaneAuthClient::Refresh(const std::string& refresh_token)
+{
+    QJsonObject bodyObj;
+    bodyObj["refresh_token"] = QString::fromStdString(refresh_token);
+
+    HttpResponse resp;
+    try {
+        resp = http_.Post(api_host_w_, L"/api/v1/auth/refresh", JsonStringify(bodyObj), L"", CommonClientHeaders());
+    } catch (const std::exception& e) {
+        blog(LOG_WARNING, "auth: Refresh network error: %s", e.what());
+        return std::nullopt;
+    }
+
+    if (!resp.ok()) {
+        blog(LOG_WARNING, "auth: Refresh failed, HTTP %lu: %s", resp.status_code, resp.body.c_str());
+        return std::nullopt;
+    }
+
+    const QJsonObject obj = ParseJsonObject(resp.body);
+    if (obj.isEmpty()) {
+        return std::nullopt;
+    }
+
+    AuthPollResult result;
+    result.status = AuthPollStatus::Completed;
+    const QJsonObject authObj = obj.value("auth").toObject();
+    result.tokens.cp_access_jwt = authObj.value("cp_access_jwt").toString().toStdString();
+    result.tokens.refresh_token = authObj.value("refresh_token").toString().toStdString();
+    result.session = ParseAuthSessionSnapshotObject(obj);
+    if (result.tokens.Empty() || !result.session) {
+        return std::nullopt;
+    }
+    return result;
+}
+
+bool ControlPlaneAuthClient::Logout(const std::string& cp_access_jwt)
+{
+    std::wstring wideJwt(cp_access_jwt.begin(), cp_access_jwt.end());
+    HttpResponse resp;
+    try {
+        resp = http_.Post(api_host_w_, L"/api/v1/auth/logout", "{}", wideJwt, CommonClientHeaders());
+    } catch (const std::exception& e) {
+        blog(LOG_WARNING, "auth: Logout network error: %s", e.what());
+        return false;
+    }
+
+    if (resp.status_code == 204 || resp.ok()) {
+        return true;
+    }
+
+    blog(LOG_WARNING, "auth: Logout failed, HTTP %lu: %s", resp.status_code, resp.body.c_str());
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 // Construction / Destruction

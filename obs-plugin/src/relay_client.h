@@ -53,6 +53,116 @@ struct PerLinkSnapshot {
     std::vector<PerLinkStats> links;
 };
 
+struct AuthTokens {
+    std::string cp_access_jwt;
+    std::string refresh_token;
+
+    bool Empty() const;
+    void Clear();
+    std::string ToVaultJson() const;
+    static std::optional<AuthTokens> FromVaultJson(const std::string& json);
+};
+
+struct AuthUser {
+    std::string id;
+    std::string email;
+    std::string display_name;
+};
+
+struct RelayEntitlement {
+    std::string relay_access_status;
+    std::string reason_code;
+    std::string plan_tier;
+    std::string plan_status;
+
+    bool RelayEnabled() const { return relay_access_status == "enabled"; }
+};
+
+struct UsageSnapshot {
+    int included_seconds = 0;
+    int consumed_seconds = 0;
+    int remaining_seconds = 0;
+    int overage_seconds = 0;
+};
+
+struct ActiveRelaySummary {
+    std::string session_id;
+    std::string status;
+};
+
+struct AuthSessionSnapshot {
+    AuthUser user;
+    RelayEntitlement entitlement;
+    UsageSnapshot usage;
+    std::optional<ActiveRelaySummary> active_relay;
+
+    std::string ToVaultJson() const;
+    static std::optional<AuthSessionSnapshot> FromVaultJson(const std::string& json);
+};
+
+enum class AuthPollStatus {
+    Pending,
+    Completed,
+    Denied,
+    Expired,
+    Failed,
+};
+
+struct PluginLoginAttempt {
+    std::string login_attempt_id;
+    std::string authorize_url;
+    std::string poll_token;
+    std::string expires_at;
+    int poll_interval_seconds = 3;
+
+    bool Empty() const;
+    void Clear();
+};
+
+struct PluginAuthState {
+    AuthTokens tokens;
+    AuthSessionSnapshot session;
+    PluginLoginAttempt login_attempt;
+    bool authenticated = false;
+    std::string last_error_code;
+    std::string last_error_message;
+
+    void ClearAuthMaterial();
+    void ClearLoginAttempt();
+    std::string ToVaultJson() const;
+    static std::optional<PluginAuthState> FromVaultJson(const std::string& json);
+};
+
+struct AuthPollResult {
+    AuthPollStatus status = AuthPollStatus::Failed;
+    std::string reason_code;
+    AuthTokens tokens;
+    std::optional<AuthSessionSnapshot> session;
+};
+
+class ControlPlaneAuthClient {
+public:
+    ControlPlaneAuthClient(HttpsClient& http, const std::string& api_host);
+
+    void Reconfigure(const std::string& api_host);
+
+    std::optional<AuthSessionSnapshot> GetSession(const std::string& cp_access_jwt);
+    std::optional<PluginLoginAttempt> StartPluginLogin(const std::string& device_name,
+                                                       const std::string& plugin_version = "0.0.4",
+                                                       const std::string& platform = "windows");
+    std::optional<AuthPollResult> PollPluginLogin(const std::string& login_attempt_id,
+                                                  const std::string& poll_token);
+    std::optional<AuthPollResult> Refresh(const std::string& refresh_token);
+    bool Logout(const std::string& cp_access_jwt);
+
+private:
+    HttpsClient& http_;
+    std::wstring api_host_w_;
+
+    static std::vector<std::pair<std::wstring, std::wstring>> CommonClientHeaders();
+    static std::optional<AuthSessionSnapshot> ParseAuthSessionSnapshot(const std::string& json);
+};
+
 class RelayClient {
 public:
     // api_host is just the hostname, e.g. "api.aegis.example.com"

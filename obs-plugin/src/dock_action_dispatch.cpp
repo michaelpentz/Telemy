@@ -8,9 +8,11 @@
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <QDir>
+#include <QDesktopServices>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QUrl>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -46,6 +48,9 @@ void LogSceneSnapshot(const char* reason);
 extern aegis::HttpsClient g_http;
 extern aegis::Vault       g_vault;
 extern aegis::PluginConfig g_config;
+extern std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
+extern std::mutex g_auth_state_mu;
+extern aegis::PluginAuthState g_auth_state;
 extern std::unique_ptr<aegis::RelayClient> g_relay;
 extern std::mutex g_relay_worker_mu;
 extern std::thread g_relay_start_worker;
@@ -70,6 +75,111 @@ static constexpr std::chrono::milliseconds kDockActionDuplicateWindowMs(1500);
 static std::uint64_t g_local_dock_action_seq = 0;
 static std::mutex g_recent_dock_actions_mu;
 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_recent_dock_actions;
+
+namespace {
+
+constexpr const char* kPluginAuthVaultKey = "plugin_auth_state";
+constexpr const char* kLegacyRelayJwtVaultKey = "relay_jwt";
+
+bool PersistAuthStateLocked() {
+    const bool ok = g_vault.Set(kPluginAuthVaultKey, g_auth_state.ToVaultJson());
+    if (!g_auth_state.tokens.cp_access_jwt.empty()) {
+        (void)g_vault.Set(kLegacyRelayJwtVaultKey, g_auth_state.tokens.cp_access_jwt);
+    }
+    return ok;
+}
+
+std::string CurrentControlPlaneJwtForActions() {
+    {
+        std::lock_guard<std::mutex> lock(g_auth_state_mu);
+        if (!g_auth_state.tokens.cp_access_jwt.empty()) {
+            return g_auth_state.tokens.cp_access_jwt;
+        }
+    }
+    return g_vault.Get(kLegacyRelayJwtVaultKey).value_or("");
+}
+
+std::string CurrentRefreshTokenForActions() {
+    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+    return g_auth_state.tokens.refresh_token;
+}
+
+void ClearAuthStateAndPersist(bool clear_legacy_jwt) {
+    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+    g_auth_state = aegis::PluginAuthState{};
+    (void)g_vault.Remove(kPluginAuthVaultKey);
+    if (clear_legacy_jwt) {
+        (void)g_vault.Remove(kLegacyRelayJwtVaultKey);
+    }
+}
+
+void ApplyCompletedAuthResultAndPersist(const aegis::AuthPollResult& result) {
+    if (!result.session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+    g_auth_state.tokens = result.tokens;
+    g_auth_state.session = *result.session;
+    g_auth_state.authenticated = true;
+    g_auth_state.login_attempt.Clear();
+    g_auth_state.last_error_code.clear();
+    g_auth_state.last_error_message.clear();
+    PersistAuthStateLocked();
+}
+
+std::string BuildAuthStateDetailJson() {
+    QJsonObject authObj;
+    {
+        std::lock_guard<std::mutex> lock(g_auth_state_mu);
+        authObj["authenticated"] = g_auth_state.authenticated;
+        authObj["has_tokens"] = !g_auth_state.tokens.Empty();
+
+        QJsonObject userObj;
+        userObj["id"] = QString::fromStdString(g_auth_state.session.user.id);
+        userObj["email"] = QString::fromStdString(g_auth_state.session.user.email);
+        userObj["display_name"] = QString::fromStdString(g_auth_state.session.user.display_name);
+        authObj["user"] = userObj;
+
+        QJsonObject entitlementObj;
+        entitlementObj["relay_access_status"] = QString::fromStdString(g_auth_state.session.entitlement.relay_access_status);
+        entitlementObj["reason_code"] = QString::fromStdString(g_auth_state.session.entitlement.reason_code);
+        entitlementObj["plan_tier"] = QString::fromStdString(g_auth_state.session.entitlement.plan_tier);
+        entitlementObj["plan_status"] = QString::fromStdString(g_auth_state.session.entitlement.plan_status);
+        authObj["entitlement"] = entitlementObj;
+
+        QJsonObject usageObj;
+        usageObj["included_seconds"] = g_auth_state.session.usage.included_seconds;
+        usageObj["consumed_seconds"] = g_auth_state.session.usage.consumed_seconds;
+        usageObj["remaining_seconds"] = g_auth_state.session.usage.remaining_seconds;
+        usageObj["overage_seconds"] = g_auth_state.session.usage.overage_seconds;
+        authObj["usage"] = usageObj;
+
+        QJsonObject loginObj;
+        loginObj["pending"] = !g_auth_state.login_attempt.Empty();
+        loginObj["login_attempt_id"] = QString::fromStdString(g_auth_state.login_attempt.login_attempt_id);
+        loginObj["authorize_url"] = QString::fromStdString(g_auth_state.login_attempt.authorize_url);
+        loginObj["expires_at"] = QString::fromStdString(g_auth_state.login_attempt.expires_at);
+        loginObj["poll_interval_seconds"] = g_auth_state.login_attempt.poll_interval_seconds;
+        authObj["login"] = loginObj;
+
+        authObj["last_error_code"] = QString::fromStdString(g_auth_state.last_error_code);
+        authObj["last_error_message"] = QString::fromStdString(g_auth_state.last_error_message);
+    }
+    return QJsonDocument(authObj).toJson(QJsonDocument::Compact).toStdString();
+}
+
+bool TryOpenBrowserUrl(const std::string& url_text) {
+    if (url_text.empty()) {
+        return false;
+    }
+    const QUrl url(QString::fromStdString(url_text));
+    if (!url.isValid()) {
+        return false;
+    }
+    return QDesktopServices::openUrl(url);
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Pending action accessors (cross-module)
@@ -826,6 +936,216 @@ bool DispatchDockAction(const std::string& action_json,
         return true;
     }
 
+    if (action_type == "auth_request_status") {
+        EmitCurrentStatusSnapshotToDock("auth_request_status", false);
+        EmitDockActionResult(action_type, request_id, "completed", true, "", BuildAuthStateDetailJson());
+        return true;
+    }
+
+    if (action_type == "auth_login_start") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action auth_login_start: request_id=%s",
+             request_id.c_str());
+        if (!g_auth) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
+            return false;
+        }
+
+        std::string device_name = "OBS Desktop";
+        (void)TryExtractJsonStringField(action_json, "deviceName", &device_name);
+        if (device_name.empty()) {
+            device_name = "OBS Desktop";
+        }
+
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        std::thread([req_id = request_id, device_name]() {
+            try {
+                auto attempt = g_auth->StartPluginLogin(device_name);
+                if (!attempt) {
+                    EmitDockActionResult("auth_login_start", req_id, "failed", false, "login_start_failed", "");
+                    return;
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                    g_auth_state.login_attempt = *attempt;
+                    g_auth_state.last_error_code.clear();
+                    g_auth_state.last_error_message.clear();
+                    PersistAuthStateLocked();
+                }
+
+                const bool browser_ok = TryOpenBrowserUrl(attempt->authorize_url);
+                QJsonObject detailObj;
+                detailObj["login_attempt_id"] = QString::fromStdString(attempt->login_attempt_id);
+                detailObj["authorize_url"] = QString::fromStdString(attempt->authorize_url);
+                detailObj["expires_at"] = QString::fromStdString(attempt->expires_at);
+                detailObj["poll_interval_seconds"] = attempt->poll_interval_seconds;
+                detailObj["browser_opened"] = browser_ok;
+                EmitCurrentStatusSnapshotToDock("auth_login_start", false);
+                EmitDockActionResult("auth_login_start", req_id, "completed", true, "",
+                                     QJsonDocument(detailObj).toJson(QJsonDocument::Compact).toStdString());
+            } catch (const std::exception& e) {
+                {
+                    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                    g_auth_state.last_error_code = "login_start_exception";
+                    g_auth_state.last_error_message = e.what();
+                    PersistAuthStateLocked();
+                }
+                EmitCurrentStatusSnapshotToDock("auth_login_start_exception", false);
+                EmitDockActionResult("auth_login_start", req_id, "failed", false, e.what(), "");
+            }
+        }).detach();
+        return true;
+    }
+
+    if (action_type == "auth_login_poll") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action auth_login_poll: request_id=%s",
+             request_id.c_str());
+        if (!g_auth) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
+            return false;
+        }
+
+        std::string login_attempt_id;
+        std::string poll_token;
+        {
+            std::lock_guard<std::mutex> lock(g_auth_state_mu);
+            login_attempt_id = g_auth_state.login_attempt.login_attempt_id;
+            poll_token = g_auth_state.login_attempt.poll_token;
+        }
+        (void)TryExtractJsonStringField(action_json, "loginAttemptId", &login_attempt_id);
+        (void)TryExtractJsonStringField(action_json, "pollToken", &poll_token);
+        if (login_attempt_id.empty() || poll_token.empty()) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_login_attempt", "");
+            return false;
+        }
+
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        std::thread([req_id = request_id, login_attempt_id, poll_token]() {
+            try {
+                auto result = g_auth->PollPluginLogin(login_attempt_id, poll_token);
+                if (!result) {
+                    EmitDockActionResult("auth_login_poll", req_id, "failed", false, "login_poll_failed", "");
+                    return;
+                }
+
+                if (result->status == aegis::AuthPollStatus::Pending) {
+                    EmitDockActionResult("auth_login_poll", req_id, "pending", true, "", "");
+                    return;
+                }
+
+                if (result->status == aegis::AuthPollStatus::Completed) {
+                    ApplyCompletedAuthResultAndPersist(*result);
+                    EmitCurrentStatusSnapshotToDock("auth_login_poll_completed", false);
+                    EmitDockActionResult("auth_login_poll", req_id, "completed", true, "",
+                                         BuildAuthStateDetailJson());
+                    return;
+                }
+
+                std::string reason = result->reason_code.empty() ? "login_denied" : result->reason_code;
+                {
+                    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                    g_auth_state.authenticated = false;
+                    g_auth_state.tokens.Clear();
+                    g_auth_state.login_attempt.Clear();
+                    g_auth_state.last_error_code = reason;
+                    g_auth_state.last_error_message = reason;
+                    PersistAuthStateLocked();
+                }
+                EmitCurrentStatusSnapshotToDock("auth_login_poll_terminal", false);
+                const char* status = result->status == aegis::AuthPollStatus::Expired ? "expired" : "denied";
+                EmitDockActionResult("auth_login_poll", req_id, status, false, reason, "");
+            } catch (const std::exception& e) {
+                EmitDockActionResult("auth_login_poll", req_id, "failed", false, e.what(), "");
+            }
+        }).detach();
+        return true;
+    }
+
+    if (action_type == "auth_refresh") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action auth_refresh: request_id=%s",
+             request_id.c_str());
+        if (!g_auth) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
+            return false;
+        }
+
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        std::thread([req_id = request_id]() {
+            try {
+                const std::string refresh_token = CurrentRefreshTokenForActions();
+                if (refresh_token.empty()) {
+                    const std::string jwt = CurrentControlPlaneJwtForActions();
+                    if (jwt.empty()) {
+                        EmitDockActionResult("auth_refresh", req_id, "failed", false, "no_auth_session", "");
+                        return;
+                    }
+                    auto session = g_auth->GetSession(jwt);
+                    if (!session) {
+                        EmitDockActionResult("auth_refresh", req_id, "failed", false, "session_refresh_failed", "");
+                        return;
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                        g_auth_state.session = *session;
+                        g_auth_state.authenticated = true;
+                        g_auth_state.last_error_code.clear();
+                        g_auth_state.last_error_message.clear();
+                        PersistAuthStateLocked();
+                    }
+                } else {
+                    auto result = g_auth->Refresh(refresh_token);
+                    if (!result || result->status != aegis::AuthPollStatus::Completed || !result->session) {
+                        EmitDockActionResult("auth_refresh", req_id, "failed", false, "session_refresh_failed", "");
+                        return;
+                    }
+                    ApplyCompletedAuthResultAndPersist(*result);
+                }
+                EmitCurrentStatusSnapshotToDock("auth_refresh", false);
+                EmitDockActionResult("auth_refresh", req_id, "completed", true, "", BuildAuthStateDetailJson());
+            } catch (const std::exception& e) {
+                EmitDockActionResult("auth_refresh", req_id, "failed", false, e.what(), "");
+            }
+        }).detach();
+        return true;
+    }
+
+    if (action_type == "auth_open_browser") {
+        std::string authorize_url;
+        {
+            std::lock_guard<std::mutex> lock(g_auth_state_mu);
+            authorize_url = g_auth_state.login_attempt.authorize_url;
+        }
+        (void)TryExtractJsonStringField(action_json, "authorizeUrl", &authorize_url);
+        if (authorize_url.empty()) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_authorize_url", "");
+            return false;
+        }
+        const bool opened = TryOpenBrowserUrl(authorize_url);
+        EmitDockActionResult(action_type, request_id, opened ? "completed" : "failed",
+                             opened, opened ? "" : "browser_open_failed", "");
+        return opened;
+    }
+
+    if (action_type == "auth_logout") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action auth_logout: request_id=%s",
+             request_id.c_str());
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        std::thread([req_id = request_id]() {
+            const std::string jwt = CurrentControlPlaneJwtForActions();
+            if (g_auth && !jwt.empty()) {
+                (void)g_auth->Logout(jwt);
+            }
+            ClearAuthStateAndPersist(true);
+            EmitCurrentStatusSnapshotToDock("auth_logout", false);
+            EmitDockActionResult("auth_logout", req_id, "completed", true, "", "");
+        }).detach();
+        return true;
+    }
+
     if (action_type == "relay_start") {
         blog(
             LOG_INFO,
@@ -838,16 +1158,15 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "failed", false, "relay_not_configured", "");
             return false;
         }
-        auto jwt_opt = g_vault.Get("relay_jwt");
-        if (!jwt_opt) {
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        if (jwt.empty()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_start request_id=%s error=no_relay_jwt",
+                "[aegis-obs-plugin] dock action failed: type=relay_start request_id=%s error=no_control_plane_auth",
                 request_id.c_str());
-            EmitDockActionResult(action_type, request_id, "failed", false, "no_relay_jwt", "");
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_control_plane_auth", "");
             return false;
         }
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        std::string jwt = *jwt_opt;
         std::string req_id = request_id;
         int heartbeat_interval = g_config.relay_heartbeat_interval_sec;
         {
@@ -995,9 +1314,8 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "failed", false, "no_active_session", "");
             return false;
         }
-        auto jwt_opt = g_vault.Get("relay_jwt");
         auto session = g_relay->CurrentSession();
-        std::string jwt = jwt_opt.value_or("");
+        std::string jwt = CurrentControlPlaneJwtForActions();
         std::string sid = session ? session->session_id : "";
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         std::string req_id = request_id;
@@ -1077,7 +1395,7 @@ bool DispatchDockAction(const std::string& action_json,
         (void)TryExtractJsonStringField(action_json, "grafana_otlp_endpoint",
                                          &grafana_otlp_endpoint);
 
-        if (IsExplicitInsecureHttpHost(relay_api_host)) {
+        if (aegis::IsExplicitInsecureHttpHost(relay_api_host)) {
             blog(LOG_WARNING,
                 "[aegis-obs-plugin] dock action rejected: type=save_config request_id=%s error=insecure_relay_api_host",
                 request_id.c_str());
