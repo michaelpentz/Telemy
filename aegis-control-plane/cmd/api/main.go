@@ -53,11 +53,14 @@ func main() {
 			SubnetID:      cfg.AWSSubnetID,
 			SecurityGroup: cfg.AWSSecurityIDs,
 			KeyName:       cfg.AWSKeyName,
+			EIPStore:      st,
 		})
 		if err != nil {
 			log.Fatalf("init aws provisioner: %v", err)
 		}
 		prov = awsProv
+	case "byor":
+		prov = relay.NewBYORProvisioner(st)
 	default:
 		prov = relay.NewFakeProvisioner()
 	}
@@ -95,7 +98,7 @@ func buildManifestEntries(cfg config.Config) []model.RelayManifestEntry {
 	manifestEntries := make([]model.RelayManifestEntry, 0, len(cfg.SupportedRegion))
 	for _, region := range cfg.SupportedRegion {
 		ami := cfg.AWSAMIMap[region]
-		if ami == "" && cfg.RelayProvider == "fake" {
+		if ami == "" && (cfg.RelayProvider == "fake" || cfg.RelayProvider == "byor") {
 			ami = "ami-fake-" + region
 		}
 		if ami == "" {

@@ -221,39 +221,9 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	// Minimum dwell so clients polling at 2s can see each step
 	dwell(ctx, 3*time.Second)
 
-	// Associate Elastic IP for a stable relay address (no DNS churn).
-	if awsProv, ok := s.provisioner.(*relay.AWSProvisioner); ok {
-		eipAllocID, eipIP, eipErr := s.store.GetUserEIP(ctx, userID)
-		if eipErr != nil && !errors.Is(eipErr, store.ErrNotFound) {
-			log.Printf("provision_pipeline: get_user_eip_failed session_id=%s err=%v", sessionID, eipErr)
-		}
-		if eipAllocID == "" {
-			// First provision — allocate a new EIP.
-			allocID, allocIP, allocErr := awsProv.AllocateElasticIP(ctx, region)
-			if allocErr != nil {
-				log.Printf("provision_pipeline: allocate_eip_failed session_id=%s err=%v (falling back to auto-assigned IP)", sessionID, allocErr)
-			} else {
-				eipAllocID = allocID
-				eipIP = allocIP
-				if setErr := s.store.SetUserEIP(ctx, userID, eipAllocID, eipIP); setErr != nil {
-					log.Printf("provision_pipeline: set_user_eip_failed session_id=%s err=%v — releasing orphaned EIP %s", sessionID, setErr, eipAllocID)
-					if relErr := awsProv.ReleaseElasticIP(ctx, region, eipAllocID); relErr != nil {
-						log.Printf("provision_pipeline: release_orphaned_eip_failed session_id=%s alloc=%s err=%v", sessionID, eipAllocID, relErr)
-					}
-					eipAllocID = ""
-					eipIP = ""
-				}
-			}
-		}
-		if eipAllocID != "" {
-			if assocErr := awsProv.AssociateElasticIP(ctx, region, eipAllocID, prov.InstanceID); assocErr != nil {
-				log.Printf("provision_pipeline: associate_eip_failed session_id=%s alloc=%s err=%v (falling back to auto-assigned IP)", sessionID, eipAllocID, assocErr)
-			} else {
-				log.Printf("provision_pipeline: eip_associated session_id=%s alloc=%s ip=%s", sessionID, eipAllocID, eipIP)
-				prov.PublicIP = eipIP
-			}
-		}
-	}
+	// EIP allocation/association is now handled internally by AWSProvisioner.Provision().
+	// The returned prov.PublicIP is already the stable EIP (if available) or the
+	// auto-assigned IP. No provider-specific logic needed here.
 
 	pairToken, err := generatePairToken(8)
 	if err != nil {
@@ -275,13 +245,26 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 		InstanceID:   prov.InstanceID,
 		AMIID:        prov.AMIID,
 		InstanceType: prov.InstanceType,
-		PublicIP:     prov.PublicIP,
+		PublicIP:     provisionedPublicIP(s.cfg.RelayProvider, prov.PublicIP),
 		SRTPort:      prov.SRTPort,
 		PairToken:    pairToken,
 		RelayWSToken: relayWSToken,
 	}); err != nil {
 		log.Printf("provision_pipeline: activate_failed session_id=%s err=%v", sessionID, err)
 		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+		return
+	}
+
+	if s.cfg.RelayProvider == "byor" {
+		if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepReady); err != nil {
+			log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepReady, err)
+		}
+		if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
+			log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
+			s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+			return
+		}
+		log.Printf("provision_pipeline: completed session_id=%s", sessionID)
 		return
 	}
 
@@ -326,7 +309,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 		}
 	}
 
-	// Final state transition: provisioning → active. If this fails, the live EC2 instance
+	// Final state transition: provisioning â†’ active. If this fails, the live EC2 instance
 	// must be terminated to prevent cost leakage from a permanently stuck session.
 	if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
 		log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
@@ -463,7 +446,7 @@ func (s *Server) handleRelayStop(w http.ResponseWriter, r *http.Request) {
 		metrics.Default().IncCounter("aegis_relay_deprovision_total", labels)
 		metrics.Default().ObserveHistogram("aegis_relay_deprovision_latency_ms", durMS, labels)
 
-		// DNS record is NOT deleted — EIP-backed records are permanent.
+		// DNS record is NOT deleted â€” EIP-backed records are permanent.
 		// The record stays pointed at the user's Elastic IP across provision cycles.
 	}
 
@@ -627,6 +610,13 @@ func toSessionResponse(sess *model.Session) map[string]any {
 		resp["instance_id"] = sess.RelayInstanceID
 	}
 	return resp
+}
+
+func provisionedPublicIP(provider, publicIP string) string {
+	if provider == "byor" {
+		return ""
+	}
+	return publicIP
 }
 
 func generatePairToken(length int) (string, error) {

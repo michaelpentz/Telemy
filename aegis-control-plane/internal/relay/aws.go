@@ -1,4 +1,4 @@
-package relay
+﻿package relay
 
 import (
 	"context"
@@ -203,6 +203,7 @@ type AWSProvisioner struct {
 	subnetID      string
 	securityGroup []string
 	keyName       string
+	eipStore      EIPStore // optional; nil disables EIP management
 }
 
 type AWSProvisionerOptions struct {
@@ -211,6 +212,7 @@ type AWSProvisionerOptions struct {
 	SubnetID      string
 	SecurityGroup []string
 	KeyName       string
+	EIPStore      EIPStore // optional; nil disables EIP management
 }
 
 func NewAWSProvisioner(opts AWSProvisionerOptions) (*AWSProvisioner, error) {
@@ -227,6 +229,7 @@ func NewAWSProvisioner(opts AWSProvisionerOptions) (*AWSProvisioner, error) {
 		subnetID:      strings.TrimSpace(opts.SubnetID),
 		securityGroup: opts.SecurityGroup,
 		keyName:       strings.TrimSpace(opts.KeyName),
+		eipStore:      opts.EIPStore,
 	}, nil
 }
 
@@ -320,17 +323,57 @@ func (p *AWSProvisioner) Provision(ctx context.Context, req ProvisionRequest) (P
 		return ProvisionResult{}, fmt.Errorf("instance %s has no public ip", instanceID)
 	}
 
+	// --- Elastic IP management (stable addressing across provision cycles) ---
+	// If an EIPStore is configured, try to allocate/associate an EIP for the user.
+	// On failure, fall back to the auto-assigned public IP — the relay still works,
+	// it just won't have a stable address for DNS.
+	if p.eipStore != nil {
+		eipAllocID, eipIP, eipErr := p.eipStore.GetUserEIP(ctx, req.UserID)
+		if eipErr != nil {
+			log.Printf("aws_provision: get_user_eip_failed session_id=%s err=%v", req.SessionID, eipErr)
+			// Treat as "no EIP yet" — fall through to allocation.
+			eipAllocID = ""
+			eipIP = ""
+		}
+		if eipAllocID == "" {
+			// First provision for this user — allocate a new EIP.
+			allocID, allocIP, allocErr := p.AllocateElasticIP(ctx, req.Region)
+			if allocErr != nil {
+				log.Printf("aws_provision: allocate_eip_failed session_id=%s err=%v (falling back to auto-assigned IP)", req.SessionID, allocErr)
+			} else {
+				eipAllocID = allocID
+				eipIP = allocIP
+				if setErr := p.eipStore.SetUserEIP(ctx, req.UserID, eipAllocID, eipIP); setErr != nil {
+					log.Printf("aws_provision: set_user_eip_failed session_id=%s err=%v — releasing orphaned EIP %s", req.SessionID, setErr, eipAllocID)
+					if relErr := p.ReleaseElasticIP(ctx, req.Region, eipAllocID); relErr != nil {
+						log.Printf("aws_provision: release_orphaned_eip_failed session_id=%s alloc=%s err=%v", req.SessionID, eipAllocID, relErr)
+					}
+					eipAllocID = ""
+					eipIP = ""
+				}
+			}
+		}
+		if eipAllocID != "" {
+			if assocErr := p.AssociateElasticIP(ctx, req.Region, eipAllocID, instanceID); assocErr != nil {
+				log.Printf("aws_provision: associate_eip_failed session_id=%s alloc=%s err=%v (falling back to auto-assigned IP)", req.SessionID, eipAllocID, assocErr)
+			} else {
+				log.Printf("aws_provision: eip_associated session_id=%s alloc=%s ip=%s", req.SessionID, eipAllocID, eipIP)
+				publicIP = eipIP
+			}
+		}
+	}
+
 	return ProvisionResult{
-		AWSInstanceID: instanceID,
-		AMIID:         amiID,
-		InstanceType:  p.instanceType,
-		PublicIP:      publicIP,
-		SRTPort:       5000,
+		InstanceID:   instanceID,
+		AMIID:        amiID,
+		InstanceType: p.instanceType,
+		PublicIP:     publicIP,
+		SRTPort:      5000,
 	}, nil
 }
 
 func (p *AWSProvisioner) Deprovision(ctx context.Context, req DeprovisionRequest) error {
-	if strings.TrimSpace(req.AWSInstanceID) == "" {
+	if strings.TrimSpace(req.InstanceID) == "" {
 		return nil
 	}
 	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(req.Region))
@@ -341,11 +384,11 @@ func (p *AWSProvisioner) Deprovision(ctx context.Context, req DeprovisionRequest
 	termStart := time.Now()
 	err = retryAWS(ctx, "terminate_instances", req.Region, func(callCtx context.Context) error {
 		_, termErr := client.TerminateInstances(callCtx, &ec2.TerminateInstancesInput{
-			InstanceIds: []string{req.AWSInstanceID},
+			InstanceIds: []string{req.InstanceID},
 		})
 		return termErr
 	})
-	log.Printf("metric=aws_terminate_instances_latency_ms region=%s session_id=%s instance_id=%s value=%d", req.Region, req.SessionID, req.AWSInstanceID, time.Since(termStart).Milliseconds())
+	log.Printf("metric=aws_terminate_instances_latency_ms region=%s session_id=%s instance_id=%s value=%d", req.Region, req.SessionID, req.InstanceID, time.Since(termStart).Milliseconds())
 	termDurMS := float64(time.Since(termStart).Milliseconds())
 	if err != nil {
 		if shouldIgnoreTerminateError(err) {
