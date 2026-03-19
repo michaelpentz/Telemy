@@ -1,12 +1,38 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to telemy-v0.0.4 will be documented in this file.
+
+## [0.0.4] — 2026-03-16
+
+### Added — Plugin Auth Flow
+
+- **Browser-handoff login** — Plugin login via browser handoff: `POST /api/v1/auth/plugin/login/start` initiates login and returns a browser URL + attempt ID; `POST /api/v1/auth/plugin/login/poll` polls for completion; `POST /api/v1/auth/plugin/login/complete` binds the attempt to a user and issues auth material (called by web tier, not plugin).
+- **Session management endpoints** — `GET /api/v1/auth/session` (validate session + entitlement), `POST /api/v1/auth/refresh` (rotate access token), `POST /api/v1/auth/logout` (invalidate session).
+- **Token regeneration** — `POST /api/v1/user/regenerate-token` allows authenticated users to regenerate their `stream_token`, invalidating previous `live_` / `play_` stream IDs.
+- **DPAPI vault auth persistence** — `cp_access_jwt` and `cp_refresh_token` stored in DPAPI-encrypted `vault.json`. Tokens are never exposed to dock JS.
+- **Temporary operator-assisted completion page** — `telemyapp.com/login/plugin?attempt=...` allows operator approval of plugin login attempts against existing user accounts. Placeholder for future self-service account flow.
+- **DB migration `0008_auth_sessions.sql`** — `auth_sessions` table for server-side session tracking (session ID, user ID, refresh token hash, expiry, revocation).
+- **DB migration `0009_plugin_login_attempts.sql`** — `plugin_login_attempts` table for browser-handoff flow (attempt ID, short code, status, expiry, bound user ID).
+
+### Added — Dock Auth Support
+
+- **Login action** — Dock sends `auth_login` action to trigger browser-handoff flow in C++.
+- **Browser launch** — Native `ShellExecuteW` opens the auth URL in the user's default browser.
+- **Login polling** — C++ polls backend on worker thread; dock receives status updates via `receiveDockActionResultJson`.
+- **Session refresh** — Automatic token refresh on C++ side; dock notified of auth state changes.
+- **Logout action** — `auth_logout` clears vault credentials and calls backend logout endpoint.
+- **Entitlement-aware relay gating** — Relay start/stop controls enabled/disabled based on `entitled` flag in telemetry snapshot.
+
+### Changed
+
+- **`POST /api/v1/relay/start`** — Now enforces entitlement server-side. Validates `cp_access_jwt`, checks user entitlement tier, rejects unentitled users before provisioning.
+
 
 ## [0.0.4] — 2026-03-05
 
 ### Validated
 
-- **E2E relay telemetry** — Validated live telemetry path: IRL Pro bonded stream → srtla_rec → SLS → C++ PollRelayStats → dock UI.
+- **E2E relay telemetry** — Validated live telemetry path: IRL Pro bonded stream â†’ srtla_rec â†’ SLS â†’ C++ PollRelayStats â†’ dock UI.
 - **Live relay stats** — Dock displays live relay stats (bitrate 4.6 Mbps, RTT 53ms, latency 1000ms, loss/drop).
 - **Validation-only session** — No code changes were made during this session.
 
@@ -67,10 +93,10 @@ All notable changes to telemy-v0.0.4 will be documented in this file.
 
 ### Changed
 
-- SRT relay port: 9000 → 5000 (SRTLA bonded ingest via srtla-receiver)
+- SRT relay port: 9000 â†’ 5000 (SRTLA bonded ingest via srtla-receiver)
 - Bridge JS: reducer/projection removed, now a thin pass-through
-- Config format: TOML (v0.0.3) → JSON (v0.0.4, Qt-native parsing)
-- HTTP client: libcurl (via Rust) → WinHTTP (native, zero external deps)
+- Config format: TOML (v0.0.3) â†’ JSON (v0.0.4, Qt-native parsing)
+- HTTP client: libcurl (via Rust) â†’ WinHTTP (native, zero external deps)
 
 ### Removed
 

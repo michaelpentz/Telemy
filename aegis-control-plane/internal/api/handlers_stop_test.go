@@ -23,6 +23,7 @@ import (
 type mockStore struct {
 	getSessionByIDFn           func(context.Context, string, string) (*model.Session, error)
 	stopSessionFn              func(context.Context, string, string) (*model.Session, error)
+	regenerateStreamTokenFn    func(context.Context, string) (string, error)
 	startOrGetSessionFn        func(context.Context, store.StartInput) (*model.Session, bool, error)
 	activateSessionFn          func(context.Context, store.ActivateProvisionedSessionInput) (*model.Session, error)
 	createAuthSessionFn        func(context.Context, store.CreateAuthSessionInput) (*model.AuthSession, error)
@@ -168,6 +169,13 @@ func (m *mockStore) StopSession(ctx context.Context, userID, sessionID string) (
 		return m.stopSessionFn(ctx, userID, sessionID)
 	}
 	return nil, store.ErrNotFound
+}
+
+func (m *mockStore) RegenerateStreamToken(ctx context.Context, userID string) (string, error) {
+	if m.regenerateStreamTokenFn != nil {
+		return m.regenerateStreamTokenFn(ctx, userID)
+	}
+	return "", store.ErrNotFound
 }
 
 func (m *mockStore) GetUsageCurrent(ctx context.Context, userID string) (*model.UsageCurrent, error) {
@@ -381,6 +389,58 @@ func TestRelayStop_DeprovisionFailureReturns500(t *testing.T) {
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestUserRegenerateToken_ReturnsUpdatedToken(t *testing.T) {
+	ms := &mockStore{
+		regenerateStreamTokenFn: func(_ context.Context, userID string) (string, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return "deadbeef", nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/regenerate-token", nil)
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var body struct {
+		StreamToken string `json:"stream_token"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.StreamToken != "deadbeef" {
+		t.Fatalf("expected regenerated token deadbeef, got %s", body.StreamToken)
+	}
+}
+
+func TestUserRegenerateToken_UserNotFoundReturns404(t *testing.T) {
+	ms := &mockStore{
+		regenerateStreamTokenFn: func(_ context.Context, userID string) (string, error) {
+			if userID != "usr_missing" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return "", store.ErrNotFound
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/regenerate-token", nil)
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_missing"))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 

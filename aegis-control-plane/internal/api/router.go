@@ -28,6 +28,7 @@ type Store interface {
 	GetActiveSession(rctx context.Context, userID string) (*model.Session, error)
 	GetSessionByID(rctx context.Context, userID, sessionID string) (*model.Session, error)
 	StopSession(rctx context.Context, userID, sessionID string) (*model.Session, error)
+	RegenerateStreamToken(ctx context.Context, userID string) (string, error)
 	UpdateProvisionStep(rctx context.Context, sessionID, step string) error
 	FinalActivateSession(ctx context.Context, sessionID string) error
 	GetUser(ctx context.Context, userID string) (*model.User, error)
@@ -87,6 +88,7 @@ func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *d
 		v1.With(auth.Middleware(cfg.JWTSecret, s.validateAuthSession)).Group(func(authed chi.Router) {
 			authed.Get("/auth/session", s.handleAuthSession)
 			authed.Post("/auth/logout", s.handleAuthLogout)
+			authed.Post("/user/regenerate-token", s.handleUserRegenerateToken)
 			authed.Post("/relay/start", s.handleRelayStart)
 			authed.Get("/relay/active", s.handleRelayActive)
 			authed.Post("/relay/stop", s.handleRelayStop)
