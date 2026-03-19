@@ -32,3 +32,6 @@ GEMINI_RELAY.md
 
 # Internal plans (kept locally, not pushed)
 docs/plans/
+
+aegis-control-plane/.gocache/
+aegis-control-plane/.gotmp/
