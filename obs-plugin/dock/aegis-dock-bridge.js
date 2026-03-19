@@ -322,6 +322,10 @@
           enabled: (mode === "irl") || !!(relay.status && relay.status !== "inactive"),
           active: !!(relay.status && relay.status !== "inactive" && relay.status !== "stopped" && relay.status !== "provisioning"),
           status: relay.status || "inactive",
+          byorEnabled: !!(snapSettings && snapSettings.byor_enabled === true),
+          byorRelayHost: (snapSettings && snapSettings.byor_relay_host != null) ? String(snapSettings.byor_relay_host) : "",
+          byorRelayPort: (snapSettings && snapSettings.byor_relay_port != null) ? Number(snapSettings.byor_relay_port) : 5000,
+          byorStreamId: (snapSettings && snapSettings.byor_stream_id != null) ? String(snapSettings.byor_stream_id) : "",
           region: relay.region || null,
           latencyMs: snap.relay_rtt_ms != null ? snap.relay_rtt_ms : (snap.rtt_ms != null ? snap.rtt_ms : null),
           graceRemainingSeconds: relay.grace_remaining_seconds != null
@@ -482,12 +486,12 @@
         addEvent(result.ok ? "success" : (result.status === "rejected" ? "warning" : "error"), msg);
 
         // Track relay errors in bridge state (dock reads via getState())
-        if (result.actionType === "relay_start" && !result.ok) {
+        if ((result.actionType === "relay_start" || result.actionType === "relay_connect_direct") && !result.ok) {
           plugin.relayError = result.error || result.status || "relay_start_failed";
           plugin.relayErrorTs = nowMs();
           plugin.relayProvisionStep = null;
         }
-        if (result.actionType === "relay_start" && result.ok) {
+        if ((result.actionType === "relay_start" || result.actionType === "relay_connect_direct") && result.ok) {
           plugin.relayError = null;
           plugin.relayErrorTs = 0;
           // Don't clear relayProvisionStep here — let it persist until relayActive hides the block
@@ -510,7 +514,7 @@
         }
 
         // Cache relay session data from relay_start result for immediate UI update
-        if (result.actionType === "relay_start" && result.ok && result.detail) {
+        if ((result.actionType === "relay_start" || result.actionType === "relay_connect_direct") && result.ok && result.detail) {
           var d = result.detail;
           if (typeof d === "string") { try { d = JSON.parse(d); } catch(_) { d = null; } }
           if (d) {
@@ -527,7 +531,7 @@
           }
         }
         // Clear relay cache on stop
-        if (result.actionType === "relay_stop") {
+        if (result.actionType === "relay_stop" || result.actionType === "relay_disconnect_direct") {
           plugin.relayCache = null;
         }
 
@@ -620,7 +624,13 @@
           emit();
           return true;
         }
-        if (action.type === "relay_start" || action.type === "relay_stop" || (action.type && action.type.indexOf("auth_") === 0)) {
+        if (
+          action.type === "relay_start" ||
+          action.type === "relay_stop" ||
+          action.type === "relay_connect_direct" ||
+          action.type === "relay_disconnect_direct" ||
+          (action.type && action.type.indexOf("auth_") === 0)
+        ) {
           addEvent("info", "Relay action forwarded to native: " + String(action.type));
           emit();
           return true;

@@ -120,8 +120,11 @@ export default function AegisDock() {
   const authReasonCode = authEntitlement.reason_code || auth.lastErrorCode || null;
   const authErrorMessage = auth.lastErrorMessage || authReasonCode || null;
   const authEntitled = authEntitlement.relay_access_status === "enabled";
+  const authRelayMode = authEntitlement.relay_mode || (authEntitled ? "managed" : "");
   const authStateKnown = authAuthenticated || authPending || authHasTokens || !!authUser.id || !!authEntitlement.relay_access_status || !!auth.lastErrorCode;
-  const relayLicensed = authStateKnown ? authEntitled : (relay.licensed !== false);
+  const relayLicensed = authStateKnown ? (authRelayMode === "byor" || authEntitled) : (relay.licensed !== false);
+  const relayModeIsByor = authRelayMode === "byor";
+  const relayModeIsManaged = authRelayMode === "managed" || (!authRelayMode && relayLicensed);
   const authDisplayName = authUser.display_name || authUser.email || authUser.id || "Account";
   const authPlanLabel = authEntitlement.plan_tier || "starter";
 
@@ -133,7 +136,27 @@ export default function AegisDock() {
   const [relayActivating, setRelayActivating] = useState(false);
   const [relayDeactivating, setRelayDeactivating] = useState(false);
   const [relayError, setRelayError] = useState(null);
+  const [byorEnabled, setByorEnabled] = useState(relay.byorEnabled === true);
+  const [byorRelayHost, setByorRelayHost] = useState(relay.byorRelayHost || "");
+  const [byorRelayPort, setByorRelayPort] = useState(String(relay.byorRelayPort || 5000));
+  const [byorStreamId, setByorStreamId] = useState(relay.byorStreamId || "");
   const authRefreshRequestedRef = useRef(false);
+
+  useEffect(() => {
+    setByorEnabled(relay.byorEnabled === true);
+  }, [relay.byorEnabled]);
+
+  useEffect(() => {
+    setByorRelayHost(relay.byorRelayHost || "");
+  }, [relay.byorRelayHost]);
+
+  useEffect(() => {
+    setByorRelayPort(String(relay.byorRelayPort || 5000));
+  }, [relay.byorRelayPort]);
+
+  useEffect(() => {
+    setByorStreamId(relay.byorStreamId || "");
+  }, [relay.byorStreamId]);
 
   // Clear activating spinner when relay becomes active
   useEffect(() => {
@@ -185,11 +208,11 @@ export default function AegisDock() {
     const handler = (e) => {
       const r = e.detail;
       if (!r) return;
-      if (r.actionType === "relay_start" && r.ok === false) {
+      if ((r.actionType === "relay_start" || r.actionType === "relay_connect_direct") && r.ok === false) {
         setRelayActivating(false);
         setRelayError(r.error || r.status || "Relay start failed");
       }
-      if (r.actionType === "relay_stop" && r.ok === false) {
+      if ((r.actionType === "relay_stop" || r.actionType === "relay_disconnect_direct") && r.ok === false) {
         setRelayError(r.error || "Relay stop failed");
       }
     };
@@ -561,6 +584,18 @@ export default function AegisDock() {
   const relayObsPlayUrl = relayIngestHost ? "srt://" + relayIngestHost + ":4000?streamid=" + playStreamId : null;
   const relayDirectIngestUrl = relay.publicIp && relay.relayHostname ? "srtla://" + relay.publicIp + ":" + (relay.srtPort || 5000) : null;
   const relayDirectPlayUrl = relay.publicIp && relay.relayHostname ? "srt://" + relay.publicIp + ":4000?streamid=" + playStreamId : null;
+  const relaySettingsInputStyle = {
+    width: "100%",
+    height: 21,
+    borderRadius: 3,
+    border: "1px solid var(--theme-border, #2a2d35)",
+    background: "var(--theme-panel, #20232b)",
+    color: "var(--theme-text, #e0e2e8)",
+    fontSize: 9,
+    padding: "0 6px",
+    fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+    boxSizing: "border-box",
+  };
   // Encoders & Uploads — per-output grouped data
   const encoderOutputs = ds.outputs || { groups: [], hidden: [] };
   const allEncoderItems = encoderOutputs.groups?.flatMap(g => g.items) || [];
@@ -578,6 +613,21 @@ export default function AegisDock() {
   const autoSwitchBitrateKbps = relayActive ? relayBondedKbps : bondedKbps;
 
   // --- Dispatch helpers ---
+  const persistByorConfig = useCallback((patch = {}) => {
+    const nextEnabled = patch.byor_enabled != null ? !!patch.byor_enabled : !!byorEnabled;
+    const nextHost = patch.byor_relay_host != null ? String(patch.byor_relay_host) : byorRelayHost;
+    const nextPortRaw = patch.byor_relay_port != null ? patch.byor_relay_port : byorRelayPort;
+    const nextStreamId = patch.byor_stream_id != null ? String(patch.byor_stream_id) : byorStreamId;
+    const parsedPort = Number.parseInt(String(nextPortRaw || "").trim(), 10);
+    sendAction({
+      type: "save_config",
+      byor_enabled: nextEnabled,
+      byor_relay_host: String(nextHost || "").trim(),
+      byor_relay_port: Number.isFinite(parsedPort) ? parsedPort : 5000,
+      byor_stream_id: String(nextStreamId || "").trim(),
+    });
+  }, [byorEnabled, byorRelayHost, byorRelayPort, byorStreamId, sendAction]);
+
   const handleSceneSwitch = (scene) => {
     if (!scene?.id) return;
     if (!tryEnterUiActionGate(`switch_scene:${scene.id}`, UI_ACTION_COOLDOWNS_MS.switchScene)) return;
@@ -605,6 +655,61 @@ export default function AegisDock() {
   };
 
   // handleModeChange removed — mode is now derived from relay state
+  const handleByorToggle = useCallback((nextValue) => {
+    setByorEnabled(nextValue);
+    persistByorConfig({ byor_enabled: nextValue });
+  }, [persistByorConfig]);
+
+  const handleByorRelayToggle = useCallback(() => {
+    if (relayActivating || relayDeactivating) return;
+    if (!byorEnabled) {
+      setRelayError("Enable BYOR mode before connecting");
+      return;
+    }
+    if (!String(byorRelayHost || "").trim()) {
+      setRelayError("Enter a relay host before connecting");
+      return;
+    }
+    const parsedPort = Number.parseInt(String(byorRelayPort || "").trim(), 10);
+    if (!Number.isFinite(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      setRelayError("Enter a valid relay port");
+      return;
+    }
+    if (relayActive) {
+      setRelayDeactivating(true);
+      sendAction({ type: "relay_disconnect_direct" });
+      return;
+    }
+    persistByorConfig();
+    setRelayActivating(true);
+    setRelayError(null);
+    sendAction({ type: "relay_connect_direct" });
+    if (!useBridge) return;
+    const pollStart = Date.now();
+    const pollId = setInterval(() => {
+      const native = window.aegisDockNative;
+      const s = native && typeof native.getState === "function" ? native.getState() : null;
+      const r = s && s.relay;
+      if (r && r.lastError) {
+        clearInterval(pollId);
+        setRelayActivating(false);
+        setRelayError(r.lastError);
+        return;
+      }
+      if (r && r.active) {
+        clearInterval(pollId);
+        setRelayActivating(false);
+        setRelayError(null);
+        return;
+      }
+      if (Date.now() - pollStart > 15000) {
+        clearInterval(pollId);
+        setRelayActivating(false);
+        setRelayError("Connection timed out");
+      }
+    }, 250);
+  }, [byorEnabled, byorRelayHost, byorRelayPort, persistByorConfig, relayActive, relayActivating, relayDeactivating, sendAction, useBridge]);
+
   const handleRelayToggle = () => {
     if (relayActivating || relayDeactivating) return;
     if (!authAuthenticated) {
@@ -1584,8 +1689,108 @@ export default function AegisDock() {
             </div>
           )}
 
+          {authAuthenticated && relayLicensed && relayModeIsByor && (
+            <div style={{
+              background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
+              border: "1px solid var(--theme-border, #2a2d35)", marginBottom: 6,
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: "var(--theme-text-muted, #8b8f98)", letterSpacing: "0.5px", marginBottom: 4 }}>
+                Bring Your Own Relay
+              </div>
+              <ToggleRow
+                label="BYOR Mode"
+                value={byorEnabled}
+                color="#5ba3f5"
+                onChange={handleByorToggle}
+              />
+              <div style={{ display: "grid", gap: 6, marginTop: 8, opacity: byorEnabled ? 1 : 0.72 }}>
+                <div>
+                  <div style={{ fontSize: 8, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.04em" }}>Relay Host</div>
+                  <input
+                    value={byorRelayHost}
+                    onChange={(e) => setByorRelayHost(e.target.value)}
+                    onBlur={() => persistByorConfig({ byor_relay_host: byorRelayHost })}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                    placeholder="relay.example.com"
+                    style={relaySettingsInputStyle}
+                  />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "70px minmax(0, 1fr)", gap: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 8, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.04em" }}>Port</div>
+                    <input
+                      value={byorRelayPort}
+                      onChange={(e) => setByorRelayPort(e.target.value.replace(/[^\d]/g, "").slice(0, 5))}
+                      onBlur={() => persistByorConfig({ byor_relay_port: byorRelayPort })}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      inputMode="numeric"
+                      placeholder="5000"
+                      style={relaySettingsInputStyle}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 8, color: "var(--theme-text-muted, #8b8f98)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.04em" }}>Stream ID</div>
+                    <input
+                      value={byorStreamId}
+                      onChange={(e) => setByorStreamId(e.target.value)}
+                      onBlur={() => persistByorConfig({ byor_stream_id: byorStreamId })}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      placeholder="live/my_stream"
+                      style={relaySettingsInputStyle}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, marginBottom: 6, fontSize: 9, color: "var(--theme-text-muted, #8b8f98)" }}>
+                <span>Mode</span>
+                <span style={{ color: relayActive ? "#2ea043" : "var(--theme-text, #e0e2e8)", fontWeight: 600 }}>
+                  {relayActive ? "Connected" : "Ready"}
+                </span>
+              </div>
+              {relayError && !relayActive && !relayActivating && (
+                <div style={{
+                  background: "rgba(218, 54, 51, 0.08)", borderRadius: 4, padding: "6px 8px",
+                  border: "1px solid #da363340", color: "#da3633", fontSize: 9, marginBottom: 6,
+                }}>
+                  {relayError}
+                </div>
+              )}
+              {relayActivating ? (
+                <div style={{
+                  width: "100%", padding: "5px 0", textAlign: "center",
+                  borderRadius: 3, background: "var(--theme-panel, #20232b)",
+                  border: "1px solid #d2992240",
+                  color: "#d29922", fontSize: 9, fontWeight: 600,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                }}>
+                  Connecting direct relay&hellip;
+                </div>
+              ) : relayDeactivating ? (
+                <div style={{
+                  width: "100%", padding: "5px 0", textAlign: "center",
+                  borderRadius: 3, background: "var(--theme-panel, #20232b)",
+                  border: "1px solid #d2992240",
+                  color: "#d29922", fontSize: 9, fontWeight: 600,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                }}>
+                  Disconnecting direct relay&hellip;
+                </div>
+              ) : (
+                <button onClick={handleByorRelayToggle} style={{
+                  width: "100%", padding: "7px 0", border: "1px solid var(--theme-border, #2a2d35)",
+                  borderRadius: 4, background: "var(--theme-panel, #20232b)", cursor: "pointer",
+                  color: relayActive ? "var(--theme-text-muted, #5a5f6d)" : "#5ba3f5", fontSize: 10, fontWeight: 600,
+                  fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+                  letterSpacing: "0.04em",
+                }}>
+                  {relayActive ? "Disconnect Relay" : "Connect Relay"}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* --- IDLE state (licensed, not active, not provisioning) --- */}
-          {authAuthenticated && relayLicensed && !relayActive && !relayActivating && !relayError && relay.status !== "provisioning" && (
+          {authAuthenticated && relayLicensed && relayModeIsManaged && !relayActive && !relayActivating && !relayError && relay.status !== "provisioning" && (
             <div style={{
               background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
               border: "1px solid var(--theme-border, #2a2d35)",
@@ -1609,12 +1814,12 @@ export default function AegisDock() {
           )}
 
           {/* --- ACTIVATING state (explicit activating OR bridge reports provisioning) --- */}
-          {authAuthenticated && relayLicensed && (relayActivating || relay.status === "provisioning") && !relayActive && (
+          {authAuthenticated && relayLicensed && relayModeIsManaged && (relayActivating || relay.status === "provisioning") && !relayActive && (
             <RelayProvisionProgress step={relay.relayProvisionStep} />
           )}
 
           {/* --- ERROR state --- */}
-          {authAuthenticated && relayLicensed && relayError && !relayActive && !relayActivating && (
+          {authAuthenticated && relayLicensed && relayModeIsManaged && relayError && !relayActive && !relayActivating && (
             <div style={{
               background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
               border: "1px solid #da363340",
@@ -1637,7 +1842,7 @@ export default function AegisDock() {
           )}
 
           {/* --- ACTIVE state --- */}
-          {authAuthenticated && relayLicensed && relayActive && (
+          {authAuthenticated && relayLicensed && relayModeIsManaged && relayActive && (
             <>
               <div style={{
                 background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",

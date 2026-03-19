@@ -6,13 +6,17 @@ import { genRequestId } from "./utils.js";
 // Simulation layer — produces exact bridge getState() shape
 // ---------------------------------------------------------------------------
 export function useSimulatedState() {
-  const [mode, setMode] = useState("irl");
-  const [simRelayActive, setSimRelayActive] = useState(true);
+  const [mode, setMode] = useState("studio");
+  const [simRelayActive, setSimRelayActive] = useState(false);
   const [simRelayData, setSimRelayData] = useState({
-    relayHostname: "k7mx2p.telemyapp.com",
-    ingestUrl: "srtla://k7mx2p.telemyapp.com:5000",
+    relayHostname: "byor.telemy.test",
+    ingestUrl: "srtla://byor.telemy.test:5000",
     pairToken: "ABCD-1234-EFGH",
-    region: "us-east-1",
+    region: "custom",
+    byorEnabled: true,
+    byorRelayHost: "byor.telemy.test",
+    byorRelayPort: 5000,
+    byorStreamId: "live/custom",
   });
   const [activeSceneId, setActiveSceneId] = useState("scene_1");
   const [pendingSceneId, setPendingSceneId] = useState(null);
@@ -82,6 +86,10 @@ export function useSimulatedState() {
       active: simRelayActive,
       enabled: simRelayActive, // backward compat
       status: simRelayActive ? "active" : "inactive",
+      byorEnabled: simRelayData.byorEnabled === true,
+      byorRelayHost: simRelayData.byorRelayHost || "",
+      byorRelayPort: simRelayData.byorRelayPort || 5000,
+      byorStreamId: simRelayData.byorStreamId || "",
       region: simRelayActive ? (simRelayData.region || "us-east-1") : "us-east-1",
       latencyMs: simRelayActive ? 42 : null,
       uptimeSec: simRelayActive ? elapsed : 0,
@@ -109,6 +117,32 @@ export function useSimulatedState() {
         { addr: "192.168.1.105:45032", bytes: Math.floor(sim1 * elapsed * 0.125), pkts: Math.floor(sim1 * elapsed * 0.125 / 1350), sharePct: sim1 / (sim1 + sim2) * 100, lastMsAgo: 12, uptimeS: elapsed },
         { addr: "198.51.100.99:38201", bytes: Math.floor(sim2 * elapsed * 0.125), pkts: Math.floor(sim2 * elapsed * 0.125 / 1350), sharePct: sim2 / (sim1 + sim2) * 100, lastMsAgo: 8, uptimeS: elapsed },
       ] : [],
+    },
+    auth: {
+      authenticated: true,
+      hasTokens: true,
+      user: {
+        id: "sim-user",
+        email: "preview@telemyapp.test",
+        display_name: "Preview Operator",
+      },
+      entitlement: {
+        relay_access_status: "disabled",
+        reason_code: "",
+        plan_tier: "starter",
+        plan_status: "active",
+        relay_mode: "byor",
+      },
+      usage: {
+        included_seconds: 0,
+        consumed_seconds: 0,
+        remaining_seconds: 0,
+        overage_seconds: 0,
+      },
+      activeRelay: null,
+      login: { pending: false, poll_interval_seconds: 3 },
+      lastErrorCode: null,
+      lastErrorMessage: null,
     },
     failover: {
       health: "healthy",
@@ -162,12 +196,41 @@ export function useSimulatedState() {
             ingestUrl: "srtla://k7mx2p.telemyapp.com:5000",
             pairToken: "ABCD-1234-EFGH",
             region: "us-east-1",
+            byorEnabled: true,
+            byorRelayHost: "byor.telemy.test",
+            byorRelayPort: 5000,
+            byorStreamId: "live/custom",
           });
+          setMode("irl");
         }, 1200);
         return { ok: true, requestId: action.requestId || genRequestId() };
       case "relay_stop":
         setSimRelayActive(false);
-        setSimRelayData({});
+        setMode("studio");
+        setSimRelayData((prev) => ({ ...prev }));
+        return { ok: true };
+      case "relay_connect_direct":
+        setTimeout(() => {
+          setSimRelayActive(true);
+          setMode("irl");
+        }, 400);
+        return { ok: true, requestId: action.requestId || genRequestId() };
+      case "relay_disconnect_direct":
+        setSimRelayActive(false);
+        setMode("studio");
+        return { ok: true };
+      case "save_config":
+        setSimRelayData((prev) => ({
+          ...prev,
+          byorEnabled: action.byor_enabled != null ? !!action.byor_enabled : prev.byorEnabled,
+          byorRelayHost: action.byor_relay_host != null ? String(action.byor_relay_host) : prev.byorRelayHost,
+          byorRelayPort: action.byor_relay_port != null ? Number(action.byor_relay_port) || 5000 : prev.byorRelayPort,
+          byorStreamId: action.byor_stream_id != null ? String(action.byor_stream_id) : prev.byorStreamId,
+          relayHostname: action.byor_relay_host != null ? String(action.byor_relay_host) : prev.relayHostname,
+          ingestUrl: action.byor_relay_host != null
+            ? `srtla://${String(action.byor_relay_host)}:${action.byor_relay_port != null ? (Number(action.byor_relay_port) || 5000) : (prev.byorRelayPort || 5000)}`
+            : prev.ingestUrl,
+        }));
         return { ok: true };
       case "request_status":
         return { ok: true };
