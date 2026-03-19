@@ -738,26 +738,36 @@ func TestRelayStart_UnknownUserDeniedByEntitlementCheck(t *testing.T) {
 	}
 }
 
-func TestRelayStart_StarterPlanDeniedByEntitlementCheck(t *testing.T) {
+func TestRelayStart_FreePlanWithoutBYORConfigReturns400(t *testing.T) {
 	ms := &mockStore{
 		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
 			if userID != "usr_1" {
 				t.Fatalf("unexpected user id: %s", userID)
 			}
 			return &model.RelayEntitlement{
-				PlanTier:   "starter",
+				PlanTier:   "free",
 				PlanStatus: "active",
-				Allowed:    false,
-				ReasonCode: "subscription_required",
+				Allowed:    true,
 			}, nil
 		},
+		getBYORConfigFn: func(_ context.Context, userID string) (*model.BYORConfig, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.BYORConfig{}, nil
+		},
 		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
-			t.Fatal("start should not be called when entitlement is denied")
+			t.Fatal("start should not be called without BYOR config")
 			return nil, false, nil
 		},
 	}
 
-	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{
+		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
+			t.Fatal("managed provisioner should not be called for free tier without BYOR config")
+			return relay.ProvisionResult{}, nil
+		},
+	}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "us-east-1",
 		"client_context":    map[string]any{"requested_by": "dashboard"},
@@ -767,8 +777,8 @@ func TestRelayStart_StarterPlanDeniedByEntitlementCheck(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
 	}
 	var resp struct {
 		Error struct {
@@ -779,23 +789,31 @@ func TestRelayStart_StarterPlanDeniedByEntitlementCheck(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Error.Code != "entitlement_denied" || resp.Error.Reason != "subscription_required" {
+	if resp.Error.Code != "byor_config_required" || resp.Error.Reason != "byor_config_missing" {
 		t.Fatalf("unexpected error payload: %+v", resp.Error)
 	}
 }
 
-func TestRelayStart_ActivePaidPlanAllowsProvisioning(t *testing.T) {
+func TestRelayStart_StarterPlanUsesManagedProvisioning(t *testing.T) {
 	startCalls := 0
+	byorLookupCalls := 0
 	ms := &mockStore{
 		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
 			if userID != "usr_1" {
 				t.Fatalf("unexpected user id: %s", userID)
 			}
 			return &model.RelayEntitlement{
-				PlanTier:   "pro",
+				PlanTier:   "starter",
 				PlanStatus: "active",
 				Allowed:    true,
 			}, nil
+		},
+		getBYORConfigFn: func(_ context.Context, userID string) (*model.BYORConfig, error) {
+			byorLookupCalls++
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.BYORConfig{}, nil
 		},
 		startOrGetSessionFn: func(_ context.Context, in store.StartInput) (*model.Session, bool, error) {
 			startCalls++
@@ -812,7 +830,7 @@ func TestRelayStart_ActivePaidPlanAllowsProvisioning(t *testing.T) {
 		},
 	}
 
-	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	appServer, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
 		"region_preference": "eu-west-1",
 		"client_context":    map[string]any{"requested_by": "dashboard"},
@@ -828,6 +846,10 @@ func TestRelayStart_ActivePaidPlanAllowsProvisioning(t *testing.T) {
 	if startCalls != 1 {
 		t.Fatalf("expected start to be called once, got %d", startCalls)
 	}
+	if byorLookupCalls != 1 {
+		t.Fatalf("expected one BYOR config lookup, got %d", byorLookupCalls)
+	}
+	appServer.Shutdown(time.Second)
 }
 
 func TestRelayManifest_ReturnsConfiguredEntries(t *testing.T) {
@@ -1001,7 +1023,7 @@ func TestProvisionPipeline_ProvisionFailureCompensates(t *testing.T) {
 		UserID:      "usr_1",
 		Region:      "us-east-1",
 		StreamToken: "streamtok",
-	})
+	}, mp, "fake")
 
 	if stopCalls != 1 {
 		t.Fatalf("expected 1 stop compensation call, got %d", stopCalls)
@@ -1054,7 +1076,7 @@ func TestProvisionPipeline_ActivationFailureDeprovisions(t *testing.T) {
 		UserID:      "usr_1",
 		Region:      "us-east-1",
 		StreamToken: "streamtok",
-	})
+	}, mp, "fake")
 
 	if activateCalls != 1 {
 		t.Fatalf("expected 1 activation call, got %d", activateCalls)
@@ -1119,7 +1141,7 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 		UserID:      "usr_1",
 		Region:      "us-east-1",
 		StreamToken: "streamtok",
-	})
+	}, mp, "fake")
 
 	if finalActivateCalls != 1 {
 		t.Fatalf("expected 1 final activate call, got %d", finalActivateCalls)

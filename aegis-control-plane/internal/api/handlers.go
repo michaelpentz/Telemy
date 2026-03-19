@@ -79,7 +79,31 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to verify relay entitlement")
 		return
 	}
-	if !entitlement.Allowed {
+	byorCfg, err := s.store.GetBYORConfig(r.Context(), userID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load relay config")
+		return
+	}
+
+	relayMode := relayModeForUser(entitlement, byorCfg)
+	var sessionProvisioner relay.Provisioner
+	var providerName string
+
+	switch relayMode {
+	case "byor":
+		sessionProvisioner = relay.NewBYORProvisioner(byorCfg)
+		providerName = "byor"
+	case "managed":
+		sessionProvisioner = s.provisioner
+		providerName = s.cfg.RelayProvider
+	default:
+		if entitlement.PlanTier == "free" && !hasBYORConfig(byorCfg) &&
+			(entitlement.PlanStatus == "active" || entitlement.PlanStatus == "trial") {
+			writeAPIErrorWithReason(w, http.StatusBadRequest, "byor_config_required",
+				"BYOR relay endpoint not configured. Set it via POST /api/v1/user/relay-config",
+				"byor_config_missing")
+			return
+		}
 		reason := entitlement.ReasonCode
 		if reason == "" {
 			reason = "entitlement_denied"
@@ -147,7 +171,7 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 		s.wg.Add(1)
 		go func(sess model.Session) {
 			defer s.wg.Done()
-			s.runProvisionPipeline(s.appCtx, &sess)
+			s.runProvisionPipeline(s.appCtx, &sess, sessionProvisioner, providerName)
 		}(sessCopy)
 	}
 
@@ -172,7 +196,7 @@ func (s *Server) compensateRelayStartProvisioned(ctx context.Context, sess *mode
 	}
 }
 
-func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Session) {
+func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Session, provisioner relay.Provisioner, providerName string) {
 	ctx, cancel := context.WithTimeout(appCtx, 5*time.Minute)
 	defer cancel()
 	sessionID, userID, region := sess.ID, sess.UserID, sess.Region
@@ -191,7 +215,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	}
 
 	provisionStart := time.Now()
-	prov, err := s.provisioner.Provision(ctx, relay.ProvisionRequest{
+	prov, err := provisioner.Provision(ctx, relay.ProvisionRequest{
 		SessionID:   sessionID,
 		UserID:      userID,
 		Region:      region,
@@ -199,7 +223,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	})
 	durMS := float64(time.Since(provisionStart).Milliseconds())
 	labels := map[string]string{
-		"provider": s.cfg.RelayProvider,
+		"provider": providerName,
 		"region":   region,
 	}
 	if err != nil {
@@ -207,7 +231,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 		labels["status"] = "error"
 		metrics.Default().IncCounter("aegis_relay_provision_total", labels)
 		metrics.Default().ObserveHistogram("aegis_relay_provision_latency_ms", durMS, labels)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, "")
+		s.deprovisionAndStop(ctx, sessionID, userID, region, "", provisioner)
 		return
 	}
 	log.Printf("metric=relay_provision_latency_ms session_id=%s user_id=%s region=%s value=%d status=ok", sessionID, userID, region, time.Since(provisionStart).Milliseconds())
@@ -228,13 +252,13 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	pairToken, err := generatePairToken(8)
 	if err != nil {
 		log.Printf("provision_pipeline: pair_token_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID, provisioner)
 		return
 	}
 	relayWSToken, err := generateRelayWSToken()
 	if err != nil {
 		log.Printf("provision_pipeline: relay_ws_token_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID, provisioner)
 		return
 	}
 
@@ -245,23 +269,23 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 		InstanceID:   prov.InstanceID,
 		AMIID:        prov.AMIID,
 		InstanceType: prov.InstanceType,
-		PublicIP:     provisionedPublicIP(s.cfg.RelayProvider, prov.PublicIP),
+		PublicIP:     provisionedPublicIP(providerName, prov.PublicIP),
 		SRTPort:      prov.SRTPort,
 		PairToken:    pairToken,
 		RelayWSToken: relayWSToken,
 	}); err != nil {
 		log.Printf("provision_pipeline: activate_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID, provisioner)
 		return
 	}
 
-	if s.cfg.RelayProvider == "byor" {
+	if providerName == "byor" {
 		if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepReady); err != nil {
 			log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepReady, err)
 		}
 		if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
 			log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
-			s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+			s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID, provisioner)
 			return
 		}
 		log.Printf("provision_pipeline: completed session_id=%s", sessionID)
@@ -275,7 +299,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	healthURL := fmt.Sprintf("http://%s:8090/health", prov.PublicIP)
 	if !probe(ctx, healthURL) {
 		log.Printf("provision_pipeline: health_probe_timeout session_id=%s", sessionID)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID, provisioner)
 		return
 	}
 
@@ -293,7 +317,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	// Probe /health again to confirm the backend is still responsive (no auth needed).
 	if !probe(ctx, healthURL) {
 		log.Printf("provision_pipeline: post_stream_health_probe_timeout session_id=%s", sessionID)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID, provisioner)
 		return
 	}
 
@@ -313,7 +337,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	// must be terminated to prevent cost leakage from a permanently stuck session.
 	if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
 		log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID, provisioner)
 		return
 	}
 	log.Printf("provision_pipeline: completed session_id=%s", sessionID)
@@ -352,9 +376,9 @@ func (s *Server) probeUntilReady(ctx context.Context, url string) bool {
 	}
 }
 
-func (s *Server) deprovisionAndStop(ctx context.Context, sessionID, userID, region, instanceID string) {
+func (s *Server) deprovisionAndStop(ctx context.Context, sessionID, userID, region, instanceID string, provisioner relay.Provisioner) {
 	if instanceID != "" {
-		if err := s.provisioner.Deprovision(ctx, relay.DeprovisionRequest{
+		if err := provisioner.Deprovision(ctx, relay.DeprovisionRequest{
 			SessionID:  sessionID,
 			UserID:     userID,
 			Region:     region,

@@ -523,12 +523,16 @@ func (s *Store) GetRelayEntitlement(ctx context.Context, userID string) (*model.
 		return out, nil
 	}
 
-	if usage.PlanTier == "starter" || usage.PlanTier == "" {
+	switch usage.PlanTier {
+	case "free", "starter", "standard", "pro":
+		out.Allowed = true
+		return out, nil
+	case "":
 		out.ReasonCode = "subscription_required"
 		return out, nil
 	}
 
-	out.Allowed = true
+	out.ReasonCode = "subscription_required"
 	return out, nil
 }
 

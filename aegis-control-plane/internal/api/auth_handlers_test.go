@@ -56,7 +56,8 @@ func TestAuthSession_ReturnsUserEntitlementUsageAndActiveRelay(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 	var resp struct {
-		User struct {
+		RelayMode string `json:"relay_mode"`
+		User      struct {
 			ID string `json:"id"`
 		} `json:"user"`
 		Entitlement struct {
@@ -73,6 +74,9 @@ func TestAuthSession_ReturnsUserEntitlementUsageAndActiveRelay(t *testing.T) {
 	}
 	if resp.User.ID != "usr_1" {
 		t.Fatalf("unexpected user id: %s", resp.User.ID)
+	}
+	if resp.RelayMode != "managed" {
+		t.Fatalf("unexpected relay mode: %s", resp.RelayMode)
 	}
 	if resp.Entitlement.RelayAccessStatus != "enabled" || resp.Entitlement.ReasonCode != "ok" {
 		t.Fatalf("unexpected entitlement: %+v", resp.Entitlement)
@@ -146,7 +150,8 @@ func TestAuthRefresh_RotatesRefreshTokenAndReturnsAuthContext(t *testing.T) {
 		t.Fatal("expected auth session rotation")
 	}
 	var resp struct {
-		Auth struct {
+		RelayMode string `json:"relay_mode"`
+		Auth      struct {
 			AccessToken  string `json:"cp_access_jwt"`
 			RefreshToken string `json:"refresh_token"`
 		} `json:"auth"`
@@ -159,6 +164,9 @@ func TestAuthRefresh_RotatesRefreshTokenAndReturnsAuthContext(t *testing.T) {
 	}
 	if resp.Auth.AccessToken == "" || resp.Auth.RefreshToken == "" || resp.Auth.RefreshToken == oldRefresh {
 		t.Fatalf("unexpected auth payload: %+v", resp.Auth)
+	}
+	if resp.RelayMode != "managed" {
+		t.Fatalf("unexpected relay mode: %s", resp.RelayMode)
 	}
 	if resp.Entitlement.RelayAccessStatus != "enabled" {
 		t.Fatalf("unexpected entitlement payload: %+v", resp.Entitlement)
@@ -460,8 +468,9 @@ func TestPluginLoginCompleteThenPoll_IssuesTokens(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", pollRR.Code, pollRR.Body.String())
 	}
 	var resp struct {
-		Status string `json:"status"`
-		Auth   struct {
+		Status    string `json:"status"`
+		RelayMode string `json:"relay_mode"`
+		Auth      struct {
 			AccessToken  string `json:"cp_access_jwt"`
 			RefreshToken string `json:"refresh_token"`
 		} `json:"auth"`
@@ -471,6 +480,59 @@ func TestPluginLoginCompleteThenPoll_IssuesTokens(t *testing.T) {
 	}
 	if resp.Status != "completed" || resp.Auth.AccessToken == "" || resp.Auth.RefreshToken == "" {
 		t.Fatalf("unexpected poll response: %+v", resp)
+	}
+	if resp.RelayMode != "managed" {
+		t.Fatalf("unexpected relay mode: %s", resp.RelayMode)
+	}
+}
+
+func TestAuthSession_FreeTierWithBYORConfigReturnsBYORRelayMode(t *testing.T) {
+	now := time.Now().UTC()
+	ms := &mockStore{
+		getAuthSessionFn: func(_ context.Context, sessionID string) (*model.AuthSession, error) {
+			return &model.AuthSession{
+				ID:        sessionID,
+				UserID:    "usr_1",
+				ExpiresAt: now.Add(30 * time.Minute),
+			}, nil
+		},
+		getUserFn: func(_ context.Context, userID string) (*model.User, error) {
+			return &model.User{ID: userID, Email: "user@example.com", DisplayName: "telemy-user"}, nil
+		},
+		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
+			return &model.RelayEntitlement{PlanTier: "free", PlanStatus: "active", Allowed: true}, nil
+		},
+		getUsageCurrentFn: func(_ context.Context, userID string) (*model.UsageCurrent, error) {
+			return &model.UsageCurrent{
+				PlanTier:         "free",
+				PlanStatus:       "active",
+				IncludedSeconds:  0,
+				ConsumedSeconds:  0,
+				RemainingSeconds: 0,
+			}, nil
+		},
+		getBYORConfigFn: func(_ context.Context, userID string) (*model.BYORConfig, error) {
+			return &model.BYORConfig{Host: "relay.example.com", Port: 5000, StreamID: "live_abc123"}, nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+	req.Header.Set("Authorization", "Bearer "+testSessionJWT(t, "test-secret", "usr_1", "aut_1"))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		RelayMode string `json:"relay_mode"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.RelayMode != "byor" {
+		t.Fatalf("unexpected relay mode: %s", resp.RelayMode)
 	}
 }
 

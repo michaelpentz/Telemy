@@ -423,7 +423,13 @@ func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, in
 		return nil, err
 	}
 
+	byorCfg, err := s.store.GetBYORConfig(ctx, userID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+
 	resp := map[string]any{
+		"relay_mode": relayModeForUser(entitlement, byorCfg),
 		"user": map[string]any{
 			"id":           user.ID,
 			"email":        user.Email,
@@ -479,6 +485,29 @@ func relayAccessReason(entitlement *model.RelayEntitlement) string {
 		return entitlement.ReasonCode
 	}
 	return "entitlement_denied"
+}
+
+func relayModeForUser(entitlement *model.RelayEntitlement, byorCfg *model.BYORConfig) string {
+	if entitlement == nil {
+		return "none"
+	}
+
+	switch entitlement.PlanTier {
+	case "free":
+		if (entitlement.PlanStatus == "active" || entitlement.PlanStatus == "trial") && hasBYORConfig(byorCfg) {
+			return "byor"
+		}
+	case "starter", "standard", "pro":
+		if entitlement.PlanStatus == "active" || entitlement.PlanStatus == "trial" {
+			return "managed"
+		}
+	}
+
+	return "none"
+}
+
+func hasBYORConfig(cfg *model.BYORConfig) bool {
+	return cfg != nil && cfg.Host != "" && cfg.StreamID != ""
 }
 
 func (s *Server) issueCompletedPluginLoginAttempt(ctx context.Context, attempt *model.PluginLoginAttempt, pollTokenHash, sessionID, refreshToken string) (*model.AuthSession, *model.PluginLoginAttempt, error) {

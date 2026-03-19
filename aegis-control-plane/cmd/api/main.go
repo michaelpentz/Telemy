@@ -60,7 +60,7 @@ func main() {
 		}
 		prov = awsProv
 	case "byor":
-		prov = relay.NewBYORProvisioner(st)
+		prov = relay.NewStoreBackedBYORProvisioner(st)
 	default:
 		prov = relay.NewFakeProvisioner()
 	}
