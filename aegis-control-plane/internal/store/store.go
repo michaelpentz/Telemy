@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -460,6 +461,35 @@ func (s *Store) GetUser(ctx context.Context, userID string) (*model.User, error)
 		return nil, err
 	}
 	return &out, nil
+}
+
+func (s *Store) RegenerateStreamToken(ctx context.Context, userID string) (string, error) {
+	const maxAttempts = 5
+	const q = `update users set stream_token = $2 where id = $1 returning stream_token`
+
+	for range maxAttempts {
+		streamToken, err := generateStreamToken()
+		if err != nil {
+			return "", err
+		}
+
+		var updatedToken string
+		err = s.db.QueryRow(ctx, q, userID, streamToken).Scan(&updatedToken)
+		if err == nil {
+			return updatedToken, nil
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			continue
+		}
+		return "", err
+	}
+
+	return "", ErrConflict
 }
 
 func (s *Store) GetRelayEntitlement(ctx context.Context, userID string) (*model.RelayEntitlement, error) {
@@ -935,4 +965,12 @@ func nullableString(v string) any {
 		return nil
 	}
 	return v
+}
+
+func generateStreamToken() (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

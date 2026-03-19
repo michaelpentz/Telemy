@@ -312,6 +312,28 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleUserRegenerateToken(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "missing user identity")
+		return
+	}
+
+	streamToken, err := s.store.RegenerateStreamToken(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to regenerate stream token")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"stream_token": streamToken,
+	})
+}
+
 func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, includeActiveRelay bool) (map[string]any, error) {
 	user, err := s.store.GetUser(ctx, userID)
 	if err != nil {
