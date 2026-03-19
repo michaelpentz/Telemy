@@ -41,6 +41,8 @@ type mockStore struct {
 	getActiveSessionFn         func(context.Context, string) (*model.Session, error)
 	getUsageCurrentFn          func(context.Context, string) (*model.UsageCurrent, error)
 	getRelayEntitlementFn      func(context.Context, string) (*model.RelayEntitlement, error)
+	saveBYORConfigFn           func(context.Context, string, string, int, string) error
+	getBYORConfigFn            func(context.Context, string) (*model.BYORConfig, error)
 	recordRelayHealthEventFn   func(context.Context, store.RelayHealthInput) error
 	listRelayManifestFn        func(context.Context) ([]model.RelayManifestEntry, error)
 	updateProvisionStepFn      func(context.Context, string, string) error
@@ -190,6 +192,20 @@ func (m *mockStore) GetRelayEntitlement(ctx context.Context, userID string) (*mo
 		return m.getRelayEntitlementFn(ctx, userID)
 	}
 	return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
+}
+
+func (m *mockStore) SaveBYORConfig(ctx context.Context, userID, host string, port int, streamID string) error {
+	if m.saveBYORConfigFn != nil {
+		return m.saveBYORConfigFn(ctx, userID, host, port, streamID)
+	}
+	return nil
+}
+
+func (m *mockStore) GetBYORConfig(ctx context.Context, userID string) (*model.BYORConfig, error) {
+	if m.getBYORConfigFn != nil {
+		return m.getBYORConfigFn(ctx, userID)
+	}
+	return nil, store.ErrNotFound
 }
 
 func (m *mockStore) RecordRelayHealth(ctx context.Context, in store.RelayHealthInput) error {
@@ -1165,6 +1181,7 @@ func testConfig() config.Config {
 	return config.Config{
 		JWTSecret:                  "test-secret",
 		RelaySharedKey:             "relay-key",
+		RelayProvider:              "fake",
 		DefaultRegion:              "us-east-1",
 		SupportedRegion:            []string{"us-east-1", "eu-west-1"},
 		AWSInstanceType:            "t4g.small",

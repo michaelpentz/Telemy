@@ -44,3 +44,20 @@ func TestBuildManifestEntries_AWSModeRequiresAMIMapEntries(t *testing.T) {
 		t.Fatalf("unexpected manifest entry: %+v", got[0])
 	}
 }
+
+func TestBuildManifestEntries_BYORModeUsesPlaceholderAMI(t *testing.T) {
+	cfg := config.Config{
+		RelayProvider:   "byor",
+		SupportedRegion: []string{"us-east-1"},
+		AWSAMIMap:       map[string]string{},
+		AWSInstanceType: "t4g.small",
+	}
+
+	got := buildManifestEntries(cfg)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(got))
+	}
+	if got[0].AMIID != "ami-fake-us-east-1" {
+		t.Fatalf("unexpected placeholder ami for byor mode: %s", got[0].AMIID)
+	}
+}

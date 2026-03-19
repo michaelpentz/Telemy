@@ -34,6 +34,8 @@ type Store interface {
 	GetUser(ctx context.Context, userID string) (*model.User, error)
 	GetUsageCurrent(rctx context.Context, userID string) (*model.UsageCurrent, error)
 	GetRelayEntitlement(rctx context.Context, userID string) (*model.RelayEntitlement, error)
+	SaveBYORConfig(ctx context.Context, userID, host string, port int, streamID string) error
+	GetBYORConfig(ctx context.Context, userID string) (*model.BYORConfig, error)
 	CreateAuthSession(ctx context.Context, in store.CreateAuthSessionInput) (*model.AuthSession, error)
 	GetAuthSession(ctx context.Context, sessionID string) (*model.AuthSession, error)
 	GetAuthSessionByRefreshHash(ctx context.Context, refreshTokenHash string) (*model.AuthSession, error)
@@ -89,6 +91,7 @@ func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *d
 			authed.Get("/auth/session", s.handleAuthSession)
 			authed.Post("/auth/logout", s.handleAuthLogout)
 			authed.Post("/user/regenerate-token", s.handleUserRegenerateToken)
+			authed.Post("/user/relay-config", s.handleUserRelayConfig)
 			authed.Post("/relay/start", s.handleRelayStart)
 			authed.Get("/relay/active", s.handleRelayActive)
 			authed.Post("/relay/stop", s.handleRelayStop)

@@ -199,6 +199,96 @@ func TestAuthLogout_RevokesCurrentSession(t *testing.T) {
 	}
 }
 
+func TestUserRelayConfig_SavesAndReturnsConfig(t *testing.T) {
+	saved := false
+	ms := &mockStore{
+		saveBYORConfigFn: func(_ context.Context, userID, host string, port int, streamID string) error {
+			saved = true
+			if userID != "usr_1" || host != "relay.example.com" || port != 5001 || streamID != "live_abc123" {
+				t.Fatalf("unexpected save args: user=%s host=%s port=%d stream=%s", userID, host, port, streamID)
+			}
+			return nil
+		},
+		getBYORConfigFn: func(_ context.Context, userID string) (*model.BYORConfig, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected user id: %s", userID)
+			}
+			return &model.BYORConfig{
+				Host:     "relay.example.com",
+				Port:     5001,
+				StreamID: "live_abc123",
+			}, nil
+		},
+		getAuthSessionFn: func(_ context.Context, sessionID string) (*model.AuthSession, error) {
+			return &model.AuthSession{
+				ID:        sessionID,
+				UserID:    "usr_1",
+				ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+			}, nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/relay-config", jsonBody(map[string]any{
+		"host":      "relay.example.com",
+		"port":      5001,
+		"stream_id": "live_abc123",
+	}))
+	req.Header.Set("Authorization", "Bearer "+testSessionJWT(t, "test-secret", "usr_1", "aut_1"))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !saved {
+		t.Fatal("expected save relay config call")
+	}
+	var resp struct {
+		RelayConfig struct {
+			Host     string `json:"host"`
+			Port     int    `json:"port"`
+			StreamID string `json:"stream_id"`
+		} `json:"relay_config"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.RelayConfig.Host != "relay.example.com" || resp.RelayConfig.Port != 5001 || resp.RelayConfig.StreamID != "live_abc123" {
+		t.Fatalf("unexpected relay config response: %+v", resp.RelayConfig)
+	}
+}
+
+func TestUserRelayConfig_RejectsInvalidPort(t *testing.T) {
+	ms := &mockStore{
+		getAuthSessionFn: func(_ context.Context, sessionID string) (*model.AuthSession, error) {
+			return &model.AuthSession{
+				ID:        sessionID,
+				UserID:    "usr_1",
+				ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+			}, nil
+		},
+		saveBYORConfigFn: func(_ context.Context, _, _ string, _ int, _ string) error {
+			t.Fatal("save should not be called for invalid payload")
+			return nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/relay-config", jsonBody(map[string]any{
+		"host":      "relay.example.com",
+		"port":      70000,
+		"stream_id": "live_abc123",
+	}))
+	req.Header.Set("Authorization", "Bearer "+testSessionJWT(t, "test-secret", "usr_1", "aut_1"))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestPluginLoginStart_ReturnsAttemptAndAuthorizeURL(t *testing.T) {
 	ms := &mockStore{
 		createPluginLoginAttemptFn: func(_ context.Context, in store.CreatePluginLoginAttemptInput) (*model.PluginLoginAttempt, error) {

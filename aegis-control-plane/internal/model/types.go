@@ -67,6 +67,12 @@ type User struct {
 	DisplayName string
 }
 
+type BYORConfig struct {
+	Host     string
+	Port     int
+	StreamID string
+}
+
 type AuthSession struct {
 	ID               string
 	UserID           string

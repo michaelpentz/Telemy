@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,6 +36,12 @@ type pluginLoginCompleteRequest struct {
 	Outcome        string `json:"outcome"`
 	UserID         string `json:"user_id"`
 	ReasonCode     string `json:"reason_code"`
+}
+
+type userRelayConfigRequest struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	StreamID string `json:"stream_id"`
 }
 
 func (s *Server) handlePluginLoginStart(w http.ResponseWriter, r *http.Request) {
@@ -331,6 +338,74 @@ func (s *Server) handleUserRegenerateToken(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"stream_token": streamToken,
+	})
+}
+
+func (s *Server) handleUserRelayConfig(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "missing user identity")
+		return
+	}
+
+	var req userRelayConfigRequest
+	if code, msg := decodeJSON(r, &req); code != 0 {
+		writeAPIError(w, code, "invalid_request", msg)
+		return
+	}
+	if req.Host == "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "host is required")
+		return
+	}
+	if len(req.Host) > 255 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "host too long")
+		return
+	}
+	if req.Port == 0 {
+		req.Port = 5000
+	}
+	if req.Port < 1 || req.Port > 65535 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "port must be between 1 and 65535")
+		return
+	}
+	if req.StreamID == "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "stream_id is required")
+		return
+	}
+	if len(req.StreamID) > 64 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "stream_id too long")
+		return
+	}
+	if _, err := strconv.ParseUint(strconv.Itoa(req.Port), 10, 16); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid port")
+		return
+	}
+
+	if err := s.store.SaveBYORConfig(r.Context(), userID, req.Host, req.Port, req.StreamID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to save relay config")
+		return
+	}
+
+	cfg, err := s.store.GetBYORConfig(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load relay config")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"relay_config": map[string]any{
+			"host":      cfg.Host,
+			"port":      cfg.Port,
+			"stream_id": cfg.StreamID,
+		},
 	})
 }
 
