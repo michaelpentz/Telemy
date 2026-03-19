@@ -64,6 +64,10 @@ struct PluginConfig {
     std::string relay_api_host;                   // e.g. "api.aegis.example.com"
     int relay_heartbeat_interval_sec = 30;
     int metrics_poll_interval_ms     = 500;
+    bool byor_enabled                = false;
+    std::string byor_relay_host;
+    int byor_relay_port              = 5000;
+    std::string byor_stream_id;
     bool grafana_enabled             = false;     // future, default off
     std::string grafana_otlp_endpoint;            // future
     std::string dock_mode            = "studio";

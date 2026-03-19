@@ -90,6 +90,12 @@ struct ActiveRelaySummary {
     std::string status;
 };
 
+struct BYORConfig {
+    std::string relay_host;
+    int         relay_port = 5000;
+    std::string stream_id;
+};
+
 struct AuthSessionSnapshot {
     AuthUser user;
     RelayEntitlement entitlement;
@@ -182,6 +188,12 @@ public:
     bool Stop(const std::string& jwt, const std::string& session_id);
     bool SendHeartbeat(const std::string& jwt, const std::string& session_id);
 
+    // BYOR direct relay connection path (no control-plane session).
+    void ConnectDirect(const std::string& relay_host, int relay_port, const std::string& stream_token);
+    void ConnectDirect(const BYORConfig& config, const std::string& stream_token);
+    void DisconnectDirect();
+    bool IsBYORMode() const;
+
     // Heartbeat loop management
     void StartHeartbeatLoop(const std::string& jwt, const std::string& session_id,
                             int interval_sec = 30);
@@ -229,12 +241,14 @@ private:
 
     PerLinkSnapshot    per_link_;
     mutable std::mutex per_link_mutex_;
+    std::atomic<bool> byor_mode_{false};
 
     // UUID v4 generation
     static std::string GenerateUuidV4();
 
     // JSON helpers
     static std::optional<RelaySession> ParseSessionResponse(const std::string& json);
+    void ClearStatsSnapshots();
 };
 
 }  // namespace aegis

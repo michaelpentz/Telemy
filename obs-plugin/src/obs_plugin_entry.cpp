@@ -997,12 +997,16 @@ void obs_module_unload(void) {
     // Emergency relay teardown
     if (g_relay && g_relay->HasActiveSession()) {
         blog(LOG_INFO, "[aegis-obs-plugin] relay emergency stop on unload");
-        const std::string jwt = CurrentControlPlaneJwt();
-        if (!jwt.empty()) {
-            g_relay->EmergencyRelayStop(jwt);
+        if (g_relay->IsBYORMode()) {
+            g_relay->DisconnectDirect();
         } else {
-            blog(LOG_WARNING,
-                "[aegis-obs-plugin] relay emergency stop skipped: no control-plane jwt available");
+            const std::string jwt = CurrentControlPlaneJwt();
+            if (!jwt.empty()) {
+                g_relay->EmergencyRelayStop(jwt);
+            } else {
+                blog(LOG_WARNING,
+                    "[aegis-obs-plugin] relay emergency stop skipped: no control-plane jwt available");
+            }
         }
     }
     // Signal cancellation and join any outstanding relay worker threads

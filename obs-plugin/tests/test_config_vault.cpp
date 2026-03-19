@@ -148,3 +148,47 @@ TEST_CASE("Config: https and bare relay hosts remain allowed", "[config][host]")
     CHECK_FALSE(aegis::IsExplicitInsecureHttpHost("relay.telemyapp.com"));
     CHECK_FALSE(aegis::IsExplicitInsecureHttpHost("https://relay.telemyapp.com"));
 }
+
+#ifdef _WIN32
+TEST_CASE("Config: BYOR fields persist across save and load", "[config][byor][windows]") {
+    const std::filesystem::path config_path(aegis::PluginConfig::ConfigFilePath());
+    struct ConfigRestoreGuard {
+        std::filesystem::path path;
+        bool had_original = false;
+        std::string original_contents;
+
+        ~ConfigRestoreGuard() {
+            if (had_original) {
+                std::ofstream out(path, std::ios::binary | std::ios::trunc);
+                out << original_contents;
+            } else {
+                std::error_code ec;
+                std::filesystem::remove(path, ec);
+            }
+        }
+    } restore_guard;
+    restore_guard.path = config_path;
+    restore_guard.had_original = std::filesystem::exists(config_path);
+    if (restore_guard.had_original) {
+        std::ifstream in(config_path, std::ios::binary);
+        restore_guard.original_contents.assign(
+            std::istreambuf_iterator<char>(in),
+            std::istreambuf_iterator<char>());
+    }
+
+    aegis::PluginConfig config;
+    config.LoadFromDisk();
+    config.byor_enabled = true;
+    config.byor_relay_host = "byor.telemy.test";
+    config.byor_relay_port = 6000;
+    config.byor_stream_id = "live/custom";
+    REQUIRE(config.SaveToDisk());
+
+    aegis::PluginConfig loaded;
+    REQUIRE(loaded.LoadFromDisk());
+    CHECK(loaded.byor_enabled);
+    CHECK(loaded.byor_relay_host == "byor.telemy.test");
+    CHECK(loaded.byor_relay_port == 6000);
+    CHECK(loaded.byor_stream_id == "live/custom");
+}
+#endif

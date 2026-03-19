@@ -435,6 +435,22 @@ bool PluginConfig::LoadFromDisk()
         metrics_poll_interval_ms =
             obj["metrics_poll_interval_ms"].toInt(500);
 
+    if (obj.contains("byor_enabled") && obj["byor_enabled"].isBool())
+        byor_enabled = obj["byor_enabled"].toBool(false);
+
+    if (obj.contains("byor_relay_host") && obj["byor_relay_host"].isString())
+        byor_relay_host = obj["byor_relay_host"].toString().toStdString();
+
+    if (obj.contains("byor_relay_port") && obj["byor_relay_port"].isDouble()) {
+        const int parsed_port = obj["byor_relay_port"].toInt(5000);
+        if (parsed_port >= 1 && parsed_port <= 65535) {
+            byor_relay_port = parsed_port;
+        }
+    }
+
+    if (obj.contains("byor_stream_id") && obj["byor_stream_id"].isString())
+        byor_stream_id = obj["byor_stream_id"].toString().toStdString();
+
     if (obj.contains("grafana_enabled") && obj["grafana_enabled"].isBool())
         grafana_enabled = obj["grafana_enabled"].toBool(false);
 
@@ -495,6 +511,10 @@ bool PluginConfig::SaveToDisk()
         QString::fromStdString(relay_api_host);
     obj["relay_heartbeat_interval_sec"] = relay_heartbeat_interval_sec;
     obj["metrics_poll_interval_ms"]     = metrics_poll_interval_ms;
+    obj["byor_enabled"]                 = byor_enabled;
+    obj["byor_relay_host"]              = QString::fromStdString(byor_relay_host);
+    obj["byor_relay_port"]              = byor_relay_port;
+    obj["byor_stream_id"]               = QString::fromStdString(byor_stream_id);
     obj["grafana_enabled"]              = grafana_enabled;
     obj["grafana_otlp_endpoint"] =
         QString::fromStdString(grafana_otlp_endpoint);
