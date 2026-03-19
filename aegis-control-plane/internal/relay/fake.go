@@ -19,11 +19,11 @@ func (f *FakeProvisioner) Provision(_ context.Context, req ProvisionRequest) (Pr
 	}
 	ip := fmt.Sprintf("203.0.113.%d", 10+int(ipTail)%200)
 	return ProvisionResult{
-		AWSInstanceID: "i-fake-" + req.SessionID,
-		AMIID:         "ami-placeholder-" + req.Region,
-		InstanceType:  "t4g.small",
-		PublicIP:      ip,
-		SRTPort:       5000,
+		InstanceID:   "i-fake-" + req.SessionID,
+		AMIID:        "ami-placeholder-" + req.Region,
+		InstanceType: "t4g.small",
+		PublicIP:     ip,
+		SRTPort:      5000,
 	}, nil
 }
 

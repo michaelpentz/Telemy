@@ -10,18 +10,18 @@ type ProvisionRequest struct {
 }
 
 type ProvisionResult struct {
-	AWSInstanceID string
-	AMIID         string
-	InstanceType  string
-	PublicIP      string
-	SRTPort       int
+	InstanceID   string
+	AMIID        string
+	InstanceType string
+	PublicIP     string
+	SRTPort      int
 }
 
 type DeprovisionRequest struct {
-	SessionID     string
-	UserID        string
-	Region        string
-	AWSInstanceID string
+	SessionID  string
+	UserID     string
+	Region     string
+	InstanceID string
 }
 
 type Provisioner interface {

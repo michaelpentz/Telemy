@@ -61,16 +61,16 @@ type RelayHealthInput struct {
 }
 
 type ActivateProvisionedSessionInput struct {
-	UserID        string
-	SessionID     string
-	Region        string
-	AWSInstanceID string
-	AMIID         string
-	InstanceType  string
-	PublicIP      string
-	SRTPort       int
-	PairToken     string
-	RelayWSToken  string
+	UserID       string
+	SessionID    string
+	Region       string
+	InstanceID   string
+	AMIID        string
+	InstanceType string
+	PublicIP     string
+	SRTPort      int
+	PairToken    string
+	RelayWSToken string
 }
 
 type CreateAuthSessionInput struct {
@@ -122,7 +122,7 @@ func HashJSON(v any) (string, error) {
 
 func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -139,7 +139,7 @@ limit 1`
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := s.db.QueryRow(ctx, q, userID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -150,7 +150,7 @@ limit 1`
 		return nil, err
 	}
 	out.StoppedAt = stoppedAt
-	out.RelayInstanceID = strPtr(relayInstanceID)
+	out.RelayRecordID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
 		out.RelayHostname = relaySlug + "." + s.relayDomain
 	}
@@ -229,7 +229,7 @@ values
 
 func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -246,7 +246,7 @@ for update of s`
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -257,7 +257,7 @@ for update of s`
 		return nil, err
 	}
 	out.StoppedAt = stoppedAt
-	out.RelayInstanceID = strPtr(relayInstanceID)
+	out.RelayRecordID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
 		out.RelayHostname = relaySlug + "." + s.relayDomain
 	}
@@ -275,11 +275,11 @@ func (s *Store) ActivateProvisionedSession(ctx context.Context, in ActivateProvi
 	now := time.Now().UTC()
 	const insertRelay = `
 insert into relay_instances
-  (id, session_id, aws_instance_id, region, ami_id, instance_type, public_ip, srt_port, ws_url, state, launched_at, created_at)
+  (id, session_id, instance_id, region, ami_id, instance_type, public_ip, srt_port, ws_url, state, launched_at, created_at)
 values
   ($1, $2, $3, $4, $5, $6, $7::inet, $8, '', 'running', $9, $9)`
 	if _, err := tx.Exec(ctx, insertRelay,
-		relayID, in.SessionID, in.AWSInstanceID, in.Region, in.AMIID, in.InstanceType, in.PublicIP, in.SRTPort, now,
+		relayID, in.SessionID, in.InstanceID, in.Region, in.AMIID, in.InstanceType, in.PublicIP, in.SRTPort, now,
 	); err != nil {
 		return nil, err
 	}
@@ -311,7 +311,7 @@ where user_id = $1 and id = $2 and status = 'provisioning'`
 
 func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, sessionID string) (*model.Session, error) {
 	const q = `
-select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.aws_instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
+select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
        coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, '')
@@ -326,7 +326,7 @@ limit 1`
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID, sessionID).Scan(
-		&out.ID, &out.UserID, &relayInstanceID, &out.RelayAWSInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
+		&out.ID, &out.UserID, &relayInstanceID, &out.RelayInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
 		&relaySlug,
@@ -337,7 +337,7 @@ limit 1`
 		return nil, err
 	}
 	out.StoppedAt = stoppedAt
-	out.RelayInstanceID = strPtr(relayInstanceID)
+	out.RelayRecordID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
 		out.RelayHostname = relaySlug + "." + s.relayDomain
 	}
@@ -399,12 +399,12 @@ where user_id = $1 and id = $2 and status in ('provisioning', 'active', 'grace')
 		if tag.RowsAffected() == 0 {
 			return nil, ErrNotFound
 		}
-		if curr.RelayInstanceID != nil {
+		if curr.RelayRecordID != nil {
 			const relayQ = `
 update relay_instances
 set state = 'terminated', terminated_at = coalesce(terminated_at, now())
 where id = $1`
-			if _, err := tx.Exec(ctx, relayQ, *curr.RelayInstanceID); err != nil {
+			if _, err := tx.Exec(ctx, relayQ, *curr.RelayRecordID); err != nil {
 				return nil, err
 			}
 		}
@@ -765,7 +765,7 @@ select
   s.id, s.relay_instance_id, $2, $3, $4, $5, $6, now()
 from sessions s
 join relay_instances ri on ri.id = s.relay_instance_id
-where s.id = $1 and ri.aws_instance_id = $7`
+where s.id = $1 and ri.instance_id = $7`
 	tag, err := s.db.Exec(ctx, q, in.SessionID, in.ObservedAt, in.IngestActive, in.EgressActive, in.SessionUptimeSeconds, in.RawPayload, in.InstanceID)
 	if err != nil {
 		return err

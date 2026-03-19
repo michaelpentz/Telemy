@@ -245,11 +245,11 @@ func (m *mockProvisioner) Provision(ctx context.Context, req relay.ProvisionRequ
 		return m.provisionFn(ctx, req)
 	}
 	return relay.ProvisionResult{
-		AWSInstanceID: "i-default",
-		AMIID:         "ami-default",
-		InstanceType:  "t4g.small",
-		PublicIP:      "203.0.113.10",
-		SRTPort:       5000,
+		InstanceID:   "i-default",
+		AMIID:        "ami-default",
+		InstanceType: "t4g.small",
+		PublicIP:     "203.0.113.10",
+		SRTPort:      5000,
 	}, nil
 }
 
@@ -265,10 +265,10 @@ func TestRelayStop_IdempotentAlreadyStoppedSkipsDeprovision(t *testing.T) {
 	ms := &mockStore{
 		getSessionByIDFn: func(_ context.Context, _, _ string) (*model.Session, error) {
 			return &model.Session{
-				ID:                 "ses_1",
-				UserID:             "usr_1",
-				Status:             model.SessionStopped,
-				RelayAWSInstanceID: "i-abc",
+				ID:              "ses_1",
+				UserID:          "usr_1",
+				Status:          model.SessionStopped,
+				RelayInstanceID: "i-abc",
 			}, nil
 		},
 		stopSessionFn: func(_ context.Context, _, _ string) (*model.Session, error) {
@@ -311,11 +311,11 @@ func TestRelayStop_ActiveSessionCallsDeprovisionThenStops(t *testing.T) {
 	ms := &mockStore{
 		getSessionByIDFn: func(_ context.Context, _, _ string) (*model.Session, error) {
 			return &model.Session{
-				ID:                 "ses_2",
-				UserID:             "usr_1",
-				Status:             model.SessionActive,
-				Region:             "us-east-1",
-				RelayAWSInstanceID: "i-xyz",
+				ID:              "ses_2",
+				UserID:          "usr_1",
+				Status:          model.SessionActive,
+				Region:          "us-east-1",
+				RelayInstanceID: "i-xyz",
 			}, nil
 		},
 		stopSessionFn: func(_ context.Context, _, _ string) (*model.Session, error) {
@@ -332,8 +332,8 @@ func TestRelayStop_ActiveSessionCallsDeprovisionThenStops(t *testing.T) {
 	mp := &mockProvisioner{
 		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
 			deprovCalls++
-			if req.AWSInstanceID != "i-xyz" {
-				t.Fatalf("unexpected instance id: %s", req.AWSInstanceID)
+			if req.InstanceID != "i-xyz" {
+				t.Fatalf("unexpected instance id: %s", req.InstanceID)
 			}
 			return nil
 		},
@@ -360,11 +360,11 @@ func TestRelayStop_DeprovisionFailureReturns500(t *testing.T) {
 	ms := &mockStore{
 		getSessionByIDFn: func(_ context.Context, _, _ string) (*model.Session, error) {
 			return &model.Session{
-				ID:                 "ses_3",
-				UserID:             "usr_1",
-				Status:             model.SessionActive,
-				Region:             "us-east-1",
-				RelayAWSInstanceID: "i-fail",
+				ID:              "ses_3",
+				UserID:          "usr_1",
+				Status:          model.SessionActive,
+				Region:          "us-east-1",
+				RelayInstanceID: "i-fail",
 			}, nil
 		},
 		stopSessionFn: func(_ context.Context, _, _ string) (*model.Session, error) {
@@ -461,7 +461,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 		UserID:             "usr_1",
 		Status:             model.SessionActive,
 		Region:             "us-east-1",
-		RelayAWSInstanceID: "i-123",
+		RelayInstanceID:    "i-123",
 		PublicIP:           "198.51.100.21",
 		SRTPort:            5000,
 		PairToken:          "PAIR1234",
@@ -541,7 +541,7 @@ func TestRelayStart_DuplicateActiveSessionPreventsProvisioning(t *testing.T) {
 		UserID:             "usr_1",
 		Status:             model.SessionActive,
 		Region:             "eu-west-1",
-		RelayAWSInstanceID: "i-existing",
+		RelayInstanceID:    "i-existing",
 		PublicIP:           "203.0.113.77",
 		SRTPort:            5000,
 		PairToken:          "EXIST123",
@@ -1016,17 +1016,17 @@ func TestProvisionPipeline_ActivationFailureDeprovisions(t *testing.T) {
 				t.Errorf("unexpected stream token: %s", req.StreamToken)
 			}
 			return relay.ProvisionResult{
-				AWSInstanceID: "i-orphan-risk",
-				AMIID:         "ami-123",
-				InstanceType:  "t4g.small",
-				PublicIP:      "198.51.100.50",
-				SRTPort:       5000,
+				InstanceID:   "i-orphan-risk",
+				AMIID:        "ami-123",
+				InstanceType: "t4g.small",
+				PublicIP:     "198.51.100.50",
+				SRTPort:      5000,
 			}, nil
 		},
 		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
 			deprovCalls++
-			if req.AWSInstanceID != "i-orphan-risk" {
-				t.Errorf("unexpected instance id: %s", req.AWSInstanceID)
+			if req.InstanceID != "i-orphan-risk" {
+				t.Errorf("unexpected instance id: %s", req.InstanceID)
 			}
 			return nil
 		},
@@ -1059,11 +1059,11 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 	ms := &mockStore{
 		activateSessionFn: func(_ context.Context, in store.ActivateProvisionedSessionInput) (*model.Session, error) {
 			return &model.Session{
-				ID:                 in.SessionID,
-				UserID:             in.UserID,
-				Status:             model.SessionProvisioning,
-				RelayAWSInstanceID: in.AWSInstanceID,
-				PublicIP:           in.PublicIP,
+				ID:              in.SessionID,
+				UserID:          in.UserID,
+				Status:          model.SessionProvisioning,
+				RelayInstanceID: in.InstanceID,
+				PublicIP:        in.PublicIP,
 			}, nil
 		},
 		finalActivateSessionFn: func(_ context.Context, _ string) error {
@@ -1081,17 +1081,17 @@ func TestProvisionPipeline_FinalActivateFailureDeprovisions(t *testing.T) {
 				t.Errorf("unexpected stream token: %s", req.StreamToken)
 			}
 			return relay.ProvisionResult{
-				AWSInstanceID: "i-leak-risk",
-				AMIID:         "ami-123",
-				InstanceType:  "t4g.small",
-				PublicIP:      "198.51.100.50",
-				SRTPort:       5000,
+				InstanceID:   "i-leak-risk",
+				AMIID:        "ami-123",
+				InstanceType: "t4g.small",
+				PublicIP:     "198.51.100.50",
+				SRTPort:      5000,
 			}, nil
 		},
 		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
 			deprovCalls++
-			if req.AWSInstanceID != "i-leak-risk" {
-				t.Errorf("unexpected instance id in deprovision: %s", req.AWSInstanceID)
+			if req.InstanceID != "i-leak-risk" {
+				t.Errorf("unexpected instance id in deprovision: %s", req.InstanceID)
 			}
 			return nil
 		},
@@ -1139,7 +1139,7 @@ func TestRelayHealth_InstanceIDMismatchRejects(t *testing.T) {
 			if in.InstanceID != "i-wrong" {
 				return errors.New("unexpected instance id passed to store")
 			}
-			// Store rejects because aws_instance_id doesn't match session's relay instance.
+			// Store rejects because instance_id doesn't match session's relay instance.
 			return store.ErrRelayHealthRejected
 		},
 	}

@@ -21,8 +21,8 @@ const (
 type Session struct {
 	ID                 string
 	UserID             string
-	RelayInstanceID    *string
-	RelayAWSInstanceID string
+	RelayRecordID      *string
+	RelayInstanceID    string
 	Status             SessionStatus
 	ProvisionStep      string
 	Region             string

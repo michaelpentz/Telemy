@@ -160,12 +160,12 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) compensateRelayStartProvisioned(ctx context.Context, sess *model.Session, userID string, prov relay.ProvisionResult) {
 	if deprovErr := s.provisioner.Deprovision(ctx, relay.DeprovisionRequest{
-		SessionID:     sess.ID,
-		UserID:        userID,
-		Region:        sess.Region,
-		AWSInstanceID: prov.AWSInstanceID,
+		SessionID:  sess.ID,
+		UserID:     userID,
+		Region:     sess.Region,
+		InstanceID: prov.InstanceID,
 	}); deprovErr != nil {
-		log.Printf("relay_start_compensation deprovision_failed session_id=%s user_id=%s instance_id=%s err=%v", sess.ID, userID, prov.AWSInstanceID, deprovErr)
+		log.Printf("relay_start_compensation deprovision_failed session_id=%s user_id=%s instance_id=%s err=%v", sess.ID, userID, prov.InstanceID, deprovErr)
 	}
 	if _, stopErr := s.store.StopSession(ctx, userID, sess.ID); stopErr != nil {
 		log.Printf("relay_start_compensation stop_session_failed session_id=%s user_id=%s err=%v", sess.ID, userID, stopErr)
@@ -246,7 +246,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 			}
 		}
 		if eipAllocID != "" {
-			if assocErr := awsProv.AssociateElasticIP(ctx, region, eipAllocID, prov.AWSInstanceID); assocErr != nil {
+			if assocErr := awsProv.AssociateElasticIP(ctx, region, eipAllocID, prov.InstanceID); assocErr != nil {
 				log.Printf("provision_pipeline: associate_eip_failed session_id=%s alloc=%s err=%v (falling back to auto-assigned IP)", sessionID, eipAllocID, assocErr)
 			} else {
 				log.Printf("provision_pipeline: eip_associated session_id=%s alloc=%s ip=%s", sessionID, eipAllocID, eipIP)
@@ -258,30 +258,30 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	pairToken, err := generatePairToken(8)
 	if err != nil {
 		log.Printf("provision_pipeline: pair_token_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
 		return
 	}
 	relayWSToken, err := generateRelayWSToken()
 	if err != nil {
 		log.Printf("provision_pipeline: relay_ws_token_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
 		return
 	}
 
 	if _, err := s.store.ActivateProvisionedSession(ctx, store.ActivateProvisionedSessionInput{
-		UserID:        userID,
-		SessionID:     sessionID,
-		Region:        region,
-		AWSInstanceID: prov.AWSInstanceID,
-		AMIID:         prov.AMIID,
-		InstanceType:  prov.InstanceType,
-		PublicIP:      prov.PublicIP,
-		SRTPort:       prov.SRTPort,
-		PairToken:     pairToken,
-		RelayWSToken:  relayWSToken,
+		UserID:       userID,
+		SessionID:    sessionID,
+		Region:       region,
+		InstanceID:   prov.InstanceID,
+		AMIID:        prov.AMIID,
+		InstanceType: prov.InstanceType,
+		PublicIP:     prov.PublicIP,
+		SRTPort:      prov.SRTPort,
+		PairToken:    pairToken,
+		RelayWSToken: relayWSToken,
 	}); err != nil {
 		log.Printf("provision_pipeline: activate_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
 		return
 	}
 
@@ -292,7 +292,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	healthURL := fmt.Sprintf("http://%s:8090/health", prov.PublicIP)
 	if !probe(ctx, healthURL) {
 		log.Printf("provision_pipeline: health_probe_timeout session_id=%s", sessionID)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
 		return
 	}
 
@@ -310,7 +310,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	// Probe /health again to confirm the backend is still responsive (no auth needed).
 	if !probe(ctx, healthURL) {
 		log.Printf("provision_pipeline: post_stream_health_probe_timeout session_id=%s", sessionID)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
 		return
 	}
 
@@ -330,7 +330,7 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 	// must be terminated to prevent cost leakage from a permanently stuck session.
 	if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
 		log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.AWSInstanceID)
+		s.deprovisionAndStop(ctx, sessionID, userID, region, prov.InstanceID)
 		return
 	}
 	log.Printf("provision_pipeline: completed session_id=%s", sessionID)
@@ -372,10 +372,10 @@ func (s *Server) probeUntilReady(ctx context.Context, url string) bool {
 func (s *Server) deprovisionAndStop(ctx context.Context, sessionID, userID, region, instanceID string) {
 	if instanceID != "" {
 		if err := s.provisioner.Deprovision(ctx, relay.DeprovisionRequest{
-			SessionID:     sessionID,
-			UserID:        userID,
-			Region:        region,
-			AWSInstanceID: instanceID,
+			SessionID:  sessionID,
+			UserID:     userID,
+			Region:     region,
+			InstanceID: instanceID,
 		}); err != nil {
 			log.Printf("provision_pipeline: deprovision_failed session_id=%s err=%v", sessionID, err)
 		}
@@ -433,13 +433,13 @@ func (s *Server) handleRelayStop(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to query session")
 		return
 	}
-	if curr.Status != model.SessionStopped && curr.RelayAWSInstanceID != "" {
+	if curr.Status != model.SessionStopped && curr.RelayInstanceID != "" {
 		deprovStart := time.Now()
 		if err := s.provisioner.Deprovision(r.Context(), relay.DeprovisionRequest{
-			SessionID:     curr.ID,
-			UserID:        curr.UserID,
-			Region:        curr.Region,
-			AWSInstanceID: curr.RelayAWSInstanceID,
+			SessionID:  curr.ID,
+			UserID:     curr.UserID,
+			Region:     curr.Region,
+			InstanceID: curr.RelayInstanceID,
 		}); err != nil {
 			durMS := float64(time.Since(deprovStart).Milliseconds())
 			log.Printf("metric=relay_deprovision_latency_ms session_id=%s user_id=%s region=%s value=%d status=error", curr.ID, curr.UserID, curr.Region, time.Since(deprovStart).Milliseconds())
@@ -623,8 +623,8 @@ func toSessionResponse(sess *model.Session) map[string]any {
 	if sess.ProvisionStep != "" {
 		resp["provision_step"] = sess.ProvisionStep
 	}
-	if sess.RelayAWSInstanceID != "" {
-		resp["instance_id"] = sess.RelayAWSInstanceID
+	if sess.RelayInstanceID != "" {
+		resp["instance_id"] = sess.RelayInstanceID
 	}
 	return resp
 }
