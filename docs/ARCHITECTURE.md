@@ -374,6 +374,43 @@ useEffect(() => {
 
 Always call `bfree()` after `obs_module_config_path()` √¢‚Ç¨‚Äù OBS uses its own allocator.
 
+
+## BYOR (Bring Your Own Relay) Architecture
+
+v0.0.5 introduces BYOR support, allowing free-tier users to connect their own relay infrastructure instead of using managed AWS provisioning.
+
+### BYORProvisioner
+
+BYORProvisioner implements the Provisioner interface alongside the existing AWSProvisioner. It reads user-stored relay configuration (host, port, stream key) from the database rather than launching cloud infrastructure. No cloud API calls are made ó the provisioner simply returns the user's pre-configured relay details as a session.
+
+### Per-User Routing in handleRelayStart()
+
+handleRelayStart() routes relay requests based on the user's plan_tier:
+
+- **Free-tier users** ? BYORProvisioner (must have relay config saved via POST /api/v1/user/relay-config)
+- **Managed tiers (pro, etc.)** ? AWSProvisioner (cloud-provisioned relay with EIP)
+
+If a free-tier user has not configured their BYOR relay, the API returns a yor_config_required error prompting them to set up their relay details first.
+
+### relay_mode in Auth Session Response
+
+GET /api/v1/auth/session now includes a elay_mode field indicating the user's relay access mode:
+
+- yor ó free-tier user with BYOR relay configured
+- managed ó paid-tier user with cloud-provisioned relay
+- 
+one ó free-tier user without relay config (relay start disabled)
+
+The dock UI uses this field to show the appropriate relay controls (BYOR settings panel vs. managed relay start).
+
+### Plugin ConnectDirect / DisconnectDirect
+
+For BYOR relays, the C++ plugin uses ConnectDirect and DisconnectDirect paths instead of the managed provisioning lifecycle. The dock bridge wires elay_connect_direct and elay_disconnect_direct actions to native handlers that connect to the user-specified relay host without any control-plane provisioning step.
+
+### Stats Degradation for Non-SLS Relays
+
+BYOR relays may not run the same SLS + srtla-receiver stack as managed relays. The plugin handles missing or unreachable stats endpoints gracefully ó relay telemetry cards show "Stats unavailable" rather than erroring, and the core relay connection remains functional without stats polling.
+
 ## Platform Constraints
 
 - **Windows-only**: Win32 DPAPI, WinHTTP, `GetSystemTimes`/`GlobalMemoryStatusEx`
