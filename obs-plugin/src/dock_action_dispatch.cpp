@@ -179,6 +179,27 @@ bool TryOpenBrowserUrl(const std::string& url_text) {
     return QDesktopServices::openUrl(url);
 }
 
+bool TryExtractJsonIntField(
+    const std::string& json_text,
+    const char* field_name,
+    int* out_value) {
+    if (!field_name || !out_value) {
+        return false;
+    }
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(
+        QByteArray::fromStdString(json_text), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+        return false;
+    }
+    const QJsonValue val = doc.object().value(QString::fromUtf8(field_name));
+    if (!val.isDouble()) {
+        return false;
+    }
+    *out_value = val.toInt();
+    return true;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -496,6 +517,10 @@ QJsonObject BuildDockSettingsJsonFromConfig() {
     settings.insert(QStringLiteral("manual_override"), g_config.manual_override);
     settings.insert(QStringLiteral("chat_bot"), g_config.chat_bot);
     settings.insert(QStringLiteral("alerts"), g_config.alerts);
+    settings.insert(QStringLiteral("byor_enabled"), g_config.byor_enabled);
+    settings.insert(QStringLiteral("byor_relay_host"), QString::fromStdString(g_config.byor_relay_host));
+    settings.insert(QStringLiteral("byor_relay_port"), g_config.byor_relay_port);
+    settings.insert(QStringLiteral("byor_stream_id"), QString::fromStdString(g_config.byor_stream_id));
     return settings;
 }
 
@@ -1350,6 +1375,84 @@ bool DispatchDockAction(const std::string& action_json,
         return true;
     }
 
+    if (action_type == "relay_connect_direct") {
+        blog(
+            LOG_INFO,
+            "[aegis-obs-plugin] dock action relay_connect_direct: request_id=%s",
+            request_id.c_str());
+        if (!g_relay) {
+            blog(LOG_WARNING,
+                "[aegis-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=relay_not_configured",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "relay_not_configured", "");
+            return false;
+        }
+
+        std::string relay_host = g_config.byor_relay_host;
+        std::string stream_id = g_config.byor_stream_id;
+        int relay_port = g_config.byor_relay_port;
+        std::string stream_token;
+        (void)TryExtractJsonStringField(action_json, "relay_host", &relay_host);
+        (void)TryExtractJsonStringField(action_json, "stream_id", &stream_id);
+        (void)TryExtractJsonStringField(action_json, "stream_token", &stream_token);
+        (void)TryExtractJsonIntField(action_json, "relay_port", &relay_port);
+
+        if (relay_host.empty()) {
+            blog(LOG_WARNING,
+                "[aegis-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=missing_byor_relay_host",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "missing_byor_relay_host", "");
+            return false;
+        }
+        if (relay_port < 1 || relay_port > 65535) {
+            blog(LOG_WARNING,
+                "[aegis-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=invalid_byor_relay_port",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "invalid_byor_relay_port", "");
+            return false;
+        }
+
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        const std::string effective_stream_id =
+            stream_id.empty() ? stream_token : stream_id;
+        g_relay->ConnectDirect(relay_host, relay_port, effective_stream_id);
+        auto session = g_relay->CurrentSession();
+        if (!session) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "relay_connect_direct_failed", "");
+            return false;
+        }
+        blog(LOG_INFO,
+            "[aegis-obs-plugin] relay_connect_direct completed: request_id=%s host=%s port=%d",
+            request_id.c_str(),
+            relay_host.c_str(),
+            relay_port);
+        EmitDockActionResult(action_type, request_id, "completed", true, "",
+                             BuildRelaySessionDetailJson(*session));
+        return true;
+    }
+
+    if (action_type == "relay_disconnect_direct") {
+        blog(
+            LOG_INFO,
+            "[aegis-obs-plugin] dock action relay_disconnect_direct: request_id=%s",
+            request_id.c_str());
+        if (!g_relay || !g_relay->IsBYORMode() || !g_relay->HasActiveSession()) {
+            blog(LOG_WARNING,
+                "[aegis-obs-plugin] dock action failed: type=relay_disconnect_direct request_id=%s error=no_active_byor_session",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "no_active_byor_session", "");
+            return false;
+        }
+
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        g_relay->DisconnectDirect();
+        blog(LOG_INFO,
+            "[aegis-obs-plugin] relay_disconnect_direct completed: request_id=%s",
+            request_id.c_str());
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        return true;
+    }
+
     // -- load_config: return current plugin config fields to dock --
     if (action_type == "load_config") {
         std::ostringstream detail;
@@ -1358,6 +1461,10 @@ bool DispatchDockAction(const std::string& action_json,
         detail << "\"relay_shared_key_present\":" << (g_vault.Get("relay_shared_key").has_value() ? "true" : "false") << ",";
         detail << "\"relay_heartbeat_interval_sec\":" << g_config.relay_heartbeat_interval_sec << ",";
         detail << "\"metrics_poll_interval_ms\":" << g_config.metrics_poll_interval_ms << ",";
+        detail << "\"byor_enabled\":" << (g_config.byor_enabled ? "true" : "false") << ",";
+        detail << "\"byor_relay_host\":" << JsStringLiteral(g_config.byor_relay_host) << ",";
+        detail << "\"byor_relay_port\":" << g_config.byor_relay_port << ",";
+        detail << "\"byor_stream_id\":" << JsStringLiteral(g_config.byor_stream_id) << ",";
         detail << "\"grafana_enabled\":" << (g_config.grafana_enabled ? "true" : "false") << ",";
         detail << "\"grafana_otlp_endpoint\":" << JsStringLiteral(g_config.grafana_otlp_endpoint) << ",";
         detail << "\"dock_mode\":" << JsStringLiteral(EffectiveDockModeFromConfig()) << ",";
@@ -1380,6 +1487,8 @@ bool DispatchDockAction(const std::string& action_json,
         std::string relay_shared_key;
         std::string relay_heartbeat_interval_sec_str;
         std::string metrics_poll_interval_ms_str;
+        std::string byor_relay_host;
+        std::string byor_stream_id;
         std::string grafana_otlp_endpoint;
 
         (void)TryExtractJsonStringField(action_json, "relay_api_host", &relay_api_host);
@@ -1389,9 +1498,19 @@ bool DispatchDockAction(const std::string& action_json,
                                          &relay_heartbeat_interval_sec_str);
         (void)TryExtractJsonStringField(action_json, "metrics_poll_interval_ms",
                                          &metrics_poll_interval_ms_str);
+        const bool has_byor_relay_host =
+            TryExtractJsonStringField(action_json, "byor_relay_host", &byor_relay_host);
+        const bool has_byor_stream_id =
+            TryExtractJsonStringField(action_json, "byor_stream_id", &byor_stream_id);
         bool grafana_enabled_val = false;
+        bool byor_enabled_val = false;
         const bool has_grafana_enabled =
             TryExtractJsonBoolField(action_json, "grafana_enabled", &grafana_enabled_val);
+        const bool has_byor_enabled =
+            TryExtractJsonBoolField(action_json, "byor_enabled", &byor_enabled_val);
+        int byor_relay_port = g_config.byor_relay_port;
+        const bool has_byor_relay_port =
+            TryExtractJsonIntField(action_json, "byor_relay_port", &byor_relay_port);
         (void)TryExtractJsonStringField(action_json, "grafana_otlp_endpoint",
                                          &grafana_otlp_endpoint);
 
@@ -1441,6 +1560,18 @@ bool DispatchDockAction(const std::string& action_json,
                     g_config.metrics_poll_interval_ms = v;
                 }
             } catch (...) {}
+        }
+        if (has_byor_enabled) {
+            g_config.byor_enabled = byor_enabled_val;
+        }
+        if (has_byor_relay_host) {
+            g_config.byor_relay_host = byor_relay_host;
+        }
+        if (has_byor_stream_id) {
+            g_config.byor_stream_id = byor_stream_id;
+        }
+        if (has_byor_relay_port && byor_relay_port >= 1 && byor_relay_port <= 65535) {
+            g_config.byor_relay_port = byor_relay_port;
         }
         if (has_grafana_enabled) {
             g_config.grafana_enabled = grafana_enabled_val;

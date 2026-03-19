@@ -543,6 +543,18 @@ std::optional<RelaySession> RelayClient::ParseSessionResponse(const std::string&
     return session;
 }
 
+void RelayClient::ClearStatsSnapshots()
+{
+    {
+        std::lock_guard<std::mutex> lk(stats_mutex_);
+        stats_ = RelayStats{};
+    }
+    {
+        std::lock_guard<std::mutex> lk(per_link_mutex_);
+        per_link_ = PerLinkSnapshot{};
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Control plane calls
 // ---------------------------------------------------------------------------
@@ -574,6 +586,7 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt)
     if (session) {
         std::lock_guard<std::mutex> lock(session_mutex_);
         current_session_ = session;
+        byor_mode_ = false;
     }
     return session;
 }
@@ -608,6 +621,7 @@ std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
     if (session) {
         std::lock_guard<std::mutex> lock(session_mutex_);
         current_session_ = session;
+        byor_mode_ = false;
     }
     return session;
 }
@@ -628,12 +642,62 @@ bool RelayClient::Stop(const std::string& jwt, const std::string& session_id)
     if (resp.ok()) {
         std::lock_guard<std::mutex> lock(session_mutex_);
         current_session_ = std::nullopt;
+        byor_mode_ = false;
+        ClearStatsSnapshots();
         blog(LOG_INFO, "relay: session %s stopped", session_id.c_str());
     } else {
         blog(LOG_WARNING, "relay: Stop failed, HTTP %lu: %s",
              resp.status_code, resp.body.c_str());
     }
     return resp.ok();
+}
+
+void RelayClient::ConnectDirect(const std::string& relay_host,
+                                int relay_port,
+                                const std::string& stream_token)
+{
+    StopHeartbeatLoop();
+
+    RelaySession session;
+    session.session_id = "byor-local-" + GenerateUuidV4();
+    session.status = "active";
+    session.public_ip = relay_host;
+    session.srt_port = relay_port;
+    session.relay_hostname = relay_host;
+    session.stream_token = stream_token;
+
+    {
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        current_session_ = session;
+        byor_mode_ = true;
+    }
+    ClearStatsSnapshots();
+    blog(LOG_INFO, "relay: connected direct BYOR host=%s port=%d",
+         relay_host.c_str(), relay_port);
+}
+
+void RelayClient::ConnectDirect(const BYORConfig& config, const std::string& stream_token)
+{
+    const std::string effective_stream_id =
+        config.stream_id.empty() ? stream_token : config.stream_id;
+    ConnectDirect(config.relay_host, config.relay_port, effective_stream_id);
+}
+
+void RelayClient::DisconnectDirect()
+{
+    StopHeartbeatLoop();
+    {
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        current_session_ = std::nullopt;
+        byor_mode_ = false;
+    }
+    ClearStatsSnapshots();
+    blog(LOG_INFO, "relay: disconnected direct BYOR session");
+}
+
+bool RelayClient::IsBYORMode() const
+{
+    return byor_mode_.load();
 }
 
 bool RelayClient::SendHeartbeat(const std::string& jwt, const std::string& session_id)
@@ -672,6 +736,8 @@ bool RelayClient::SendHeartbeat(const std::string& jwt, const std::string& sessi
         blog(LOG_WARNING, "relay: health ping 404 — session expired by server");
         std::lock_guard<std::mutex> lock(session_mutex_);
         current_session_ = std::nullopt;
+        byor_mode_ = false;
+        ClearStatsSnapshots();
         return false;
     }
 
@@ -808,6 +874,11 @@ void RelayClient::EmergencyRelayStop(const std::string& jwt)
 {
     StopHeartbeatLoop();
 
+    if (IsBYORMode()) {
+        DisconnectDirect();
+        return;
+    }
+
     std::optional<RelaySession> session;
     {
         std::lock_guard<std::mutex> lock(session_mutex_);
@@ -848,6 +919,7 @@ bool RelayClient::HasActiveSession() const
 
 void RelayClient::PollRelayStats(const std::string& relay_ip)
 {
+    const bool is_byor = byor_mode_.load();
     if (relay_ip.empty()) {
         std::lock_guard<std::mutex> lk(stats_mutex_);
         stats_.available = false;
@@ -863,23 +935,33 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
         if (current_session_)
             stream_token = current_session_->stream_token;
     }
-    std::string play_id = "play_" + (stream_token.empty() ? std::string("aegis") : stream_token);
-    std::wstring play_id_w(play_id.begin(), play_id.end());
-    std::wstring path_w = L"/stats/" + play_id_w + L"?legacy=1";
+    std::string stream_id = stream_token.empty() ? std::string("play_aegis") : stream_token;
+    if (!stream_id.empty() &&
+        stream_id.find('/') == std::string::npos &&
+        stream_id.rfind("live_", 0) != 0 &&
+        stream_id.rfind("play_", 0) != 0) {
+        stream_id = "play_" + stream_id;
+    }
+    std::wstring stream_id_w(stream_id.begin(), stream_id.end());
+    std::wstring path_w = L"/stats/" + stream_id_w + L"?legacy=1";
 
     HttpResponse resp;
     try {
         resp = http_.Get(host_w, path_w);
     } catch (const std::exception& e) {
-        blog(LOG_DEBUG, "[aegis-relay] stats poll http error: %s", e.what());
+        if (!is_byor) {
+            blog(LOG_DEBUG, "[aegis-relay] stats poll http error: %s", e.what());
+        }
         std::lock_guard<std::mutex> lk(stats_mutex_);
         stats_.available = false;
         return;
     }
 
     if (resp.status_code != 200 || resp.body.empty()) {
-        blog(LOG_DEBUG, "[aegis-relay] stats poll failed: status=%lu",
-             resp.status_code);
+        if (!is_byor) {
+            blog(LOG_DEBUG, "[aegis-relay] stats poll failed: status=%lu",
+                 resp.status_code);
+        }
         std::lock_guard<std::mutex> lk(stats_mutex_);
         stats_.available = false;
         return;
@@ -942,6 +1024,7 @@ RelayStats RelayClient::CurrentStats() const
 
 void RelayClient::PollPerLinkStats(const std::string& relay_ip)
 {
+    const bool is_byor = byor_mode_.load();
     if (relay_ip.empty()) {
         std::lock_guard<std::mutex> lk(per_link_mutex_);
         per_link_.available = false;
@@ -957,15 +1040,19 @@ void RelayClient::PollPerLinkStats(const std::string& relay_ip)
     try {
         resp = http_.Get(host_w, path_w);
     } catch (const std::exception& e) {
-        blog(LOG_DEBUG, "[aegis-relay] per-link stats http error: %s", e.what());
+        if (!is_byor) {
+            blog(LOG_DEBUG, "[aegis-relay] per-link stats http error: %s", e.what());
+        }
         std::lock_guard<std::mutex> lk(per_link_mutex_);
         per_link_.available = false;
         return;
     }
 
     if (resp.status_code != 200 || resp.body.empty()) {
-        blog(LOG_DEBUG, "[aegis-relay] per-link stats failed: status=%lu",
-             resp.status_code);
+        if (!is_byor) {
+            blog(LOG_DEBUG, "[aegis-relay] per-link stats failed: status=%lu",
+                 resp.status_code);
+        }
         std::lock_guard<std::mutex> lk(per_link_mutex_);
         per_link_.available = false;
         return;
