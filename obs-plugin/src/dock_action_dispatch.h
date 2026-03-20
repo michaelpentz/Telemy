@@ -144,4 +144,10 @@ std::vector<PendingRelayAction>& GetPendingRelayActionsRef();
 // ---------------------------------------------------------------------------
 void ClearAllPendingDockActions();
 
+// ---------------------------------------------------------------------------
+// Drain in-flight auth worker futures (called from obs_module_unload before
+// g_auth.reset() to prevent use-after-free on plugin unload).
+// ---------------------------------------------------------------------------
+void DrainAuthWorkers();
+
 #endif // AEGIS_OBS_PLUGIN_BUILD
