@@ -53,7 +53,7 @@ Hard rule:
 
 Required on authenticated endpoints:
 - `Authorization: Bearer <cp_access_jwt>`
-- `X-Aegis-Client-Version: 0.0.4`
+- `X-Aegis-Client-Version: 0.0.5`
 - `X-Aegis-Client-Platform: windows`
 
 Required for relay start:
@@ -143,7 +143,7 @@ Request body:
 {
   "client": {
     "platform": "windows",
-    "plugin_version": "0.0.4",
+    "plugin_version": "0.0.5",
     "device_name": "OBS Desktop"
   }
 }
@@ -668,9 +668,9 @@ Fallback when ASN unavailable: links labeled "Link 1", "Link 2", etc. (no IP lea
 
 Streamers running multi-encode setups (e.g., horizontal 1920x1080 for Twitch/Kick/YouTube + vertical 1080x1920 for TikTok/YT Shorts) need per-encoder and per-upload health visible in the dock.
 
-### Current State (v0.0.4)
+### Current State (v0.0.5)
 
-v0.0.4 collects per-output metrics directly via OBS C API (`obs_enum_outputs`):
+v0.0.5 collects per-output metrics directly via OBS C API (`obs_enum_outputs`):
 - `MetricsCollector` polls per-output stats every 500ms
 - Per-output struct: `id`, `name`, `active`, `bitrate_kbps`, `drop_pct`, `fps`, `encoding_lag_ms`, `encoder`, `group`, `resolution`, `hidden`
 - JSON snapshot includes `multistream_outputs[]` array

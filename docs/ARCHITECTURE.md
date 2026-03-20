@@ -4,7 +4,7 @@ This document describes the all-native C++ OBS plugin architecture introduced in
 
 ## System Overview
 
-v0.0.4 is a single-DLL OBS plugin (`aegis-obs-plugin.dll`) that runs entirely inside the OBS process. There is no standalone binary, no IPC layer, and no Rust dependency.
+v0.0.5 is a single-DLL OBS plugin (`aegis-obs-plugin.dll`) that runs entirely inside the OBS process. There is no standalone binary, no IPC layer, and no Rust dependency.
 
 ```
 OBS Process
@@ -120,7 +120,7 @@ When a relay session is active, the plugin polls the relay's stats API for aggre
 
 ### Per-Link Relay Telemetry
 
-v0.0.4 introduces deep visibility into the individual cellular/WiFi links contributing to a bonded stream:
+v0.0.5 introduces deep visibility into the individual cellular/WiFi links contributing to a bonded stream:
 
 1. **Custom `srtla_rec` Fork** â€” The relay uses a custom fork (`michaelpentz/srtla`, forked from `OpenIRL/srtla`) which adds atomic per-connection byte and packet counters (`std::atomic<uint64_t>`, relaxed ordering) to the core SRTLA proxy logic.
 2. **HTTP Stats Server** â€” The fork includes a lightweight HTTP server listening on `--stats_port` (relay uses port 5080).
@@ -139,7 +139,7 @@ v0.0.4 introduces deep visibility into the individual cellular/WiFi links contri
 
 ### Relay Provision Progress
 
-v0.0.4 provides real-time provisioning feedback instead of a static "Provisioning relay..." message:
+v0.0.5 provides real-time provisioning feedback instead of a static "Provisioning relay..." message:
 
 1. **Async Pipeline** â€” `handleRelayStart` in the Go control plane returns immediately with `status: "provisioning"`, then launches `runProvisionPipeline()` as a background goroutine.
 2. **Step Tracking** â€” The pipeline updates a `provision_step` column in the sessions table as it progresses through six steps: `launching_instance` â†’ `waiting_for_instance` â†’ `starting_docker` â†’ `starting_containers` â†’ `creating_stream` â†’ `ready`.
@@ -232,7 +232,7 @@ Each user gets one AWS Elastic IP per region, allocated on first provision and r
 
 ## Authentication & Session Management
 
-v0.0.4 introduces a browser-handoff plugin login flow, session management, and server-side entitlement enforcement for relay activation. The full auth model is documented in `AUTH_ENTITLEMENT_MODEL.md`; this section covers the architectural components.
+v0.0.5 introduces a browser-handoff plugin login flow, session management, and server-side entitlement enforcement for relay activation. The full auth model is documented in `AUTH_ENTITLEMENT_MODEL.md`; this section covers the architectural components.
 
 ### Plugin Login Flow (Browser Handoff)
 

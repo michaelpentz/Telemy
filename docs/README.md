@@ -1,16 +1,16 @@
-# Telemy Documentation Index (v0.0.4)
+# Telemy Documentation Index (v0.0.5)
 
-This directory contains the authoritative specifications, architecture diagrams, and operational guides for **Telemy v0.0.4**.
+This directory contains the authoritative specifications, architecture diagrams, and operational guides for **Telemy v0.0.5**.
 
 ## Current Architecture
 
-v0.0.4 represents a major simplification, moving from a multi-process Rust/C++ hybrid to an **all-native C++ OBS plugin** (`aegis-obs-plugin.dll`).
+v0.0.5 continues the all-native C++ OBS plugin architecture, originally introduced in v0.0.4 as a replacement for the multi-process Rust/C++ hybrid. Single DLL, no IPC layer: **`aegis-obs-plugin.dll`**.
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed mapping of the single-DLL plugin, including metrics collection, relay communication, and dock hosting.
 - **[API_SPEC_v1.md](API_SPEC_v1.md)**: Cloud API contracts for relay lifecycle, session management, and usage metering.
 - **[AUTH_ENTITLEMENT_MODEL.md](AUTH_ENTITLEMENT_MODEL.md)**: Recommended user login, entitlement enforcement, plugin auth, and per-user stream security model for the paid relay feature.
 - **[STATE_MACHINE_v1.md](STATE_MACHINE_v1.md)**: Authoritative runtime state machine and scene decision rules for the native plugin.
-- **[DB_SCHEMA_v1.md](DB_SCHEMA_v1.md)**: PostgreSQL schema supporting the v0.0.4 control plane.
+- **[DB_SCHEMA_v1.md](DB_SCHEMA_v1.md)**: PostgreSQL schema supporting the v0.0.5 control plane.
 - **[RELAY_DEPLOYMENT.md](RELAY_DEPLOYMENT.md)**: Guide for deploying and managing the AWS EC2 relay stack using `srtla-receiver`.
 
 ## Operational & QA Guides

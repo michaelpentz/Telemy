@@ -48,7 +48,7 @@ export function useSimulatedState() {
       subtitle: "OBS + Core IPC Dock",
       mode,
       modes: ["studio", "irl"],
-      version: "v0.0.4",
+      version: "v0.0.5",
     },
     live: {
       isLive: true,

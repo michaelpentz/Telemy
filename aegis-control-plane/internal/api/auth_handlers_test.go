@@ -178,7 +178,7 @@ func TestAuthLogout_RevokesCurrentSession(t *testing.T) {
 func TestPluginLoginStart_ReturnsAttemptAndAuthorizeURL(t *testing.T) {
     ms := &mockStore{
         createPluginLoginAttemptFn: func(_ context.Context, in store.CreatePluginLoginAttemptInput) (*model.PluginLoginAttempt, error) {
-            if in.ClientPlatform != "windows" || in.ClientVersion != "0.0.4" || in.DeviceName != "OBS Desktop" || in.PollTokenHash == "" {
+            if in.ClientPlatform != "windows" || in.ClientVersion != "0.0.5" || in.DeviceName != "OBS Desktop" || in.PollTokenHash == "" {
                 t.Fatalf("unexpected create input: %+v", in)
             }
             return &model.PluginLoginAttempt{ID: in.ID, PollTokenHash: in.PollTokenHash, Status: model.PluginLoginPending, ClientPlatform: in.ClientPlatform, ClientVersion: in.ClientVersion, DeviceName: in.DeviceName, ExpiresAt: in.ExpiresAt, CreatedAt: time.Now().UTC()}, nil
@@ -186,7 +186,7 @@ func TestPluginLoginStart_ReturnsAttemptAndAuthorizeURL(t *testing.T) {
     }
 
     _, router := NewRouter(testConfig(), ms, &mockProvisioner{}, nil)
-    req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/plugin/login/start", jsonBody(map[string]any{"client": map[string]any{"platform": "windows", "plugin_version": "0.0.4", "device_name": "OBS Desktop"}}))
+    req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/plugin/login/start", jsonBody(map[string]any{"client": map[string]any{"platform": "windows", "plugin_version": "0.0.5", "device_name": "OBS Desktop"}}))
     rr := httptest.NewRecorder()
     router.ServeHTTP(rr, req)
 
@@ -231,7 +231,7 @@ func TestPluginLoginCompleteThenPoll_IssuesTokens(t *testing.T) {
             if attemptID != "pla_1" || gotPollHash != pollHash {
                 t.Fatalf("unexpected poll lookup")
             }
-            return &model.PluginLoginAttempt{ID: attemptID, PollTokenHash: gotPollHash, Status: model.PluginLoginCompleted, UserID: &userID, ClientPlatform: "windows", ClientVersion: "0.0.4", DeviceName: "OBS Desktop", ExpiresAt: time.Now().UTC().Add(5 * time.Minute)}, nil
+            return &model.PluginLoginAttempt{ID: attemptID, PollTokenHash: gotPollHash, Status: model.PluginLoginCompleted, UserID: &userID, ClientPlatform: "windows", ClientVersion: "0.0.5", DeviceName: "OBS Desktop", ExpiresAt: time.Now().UTC().Add(5 * time.Minute)}, nil
         },
         claimPluginLoginFn: func(_ context.Context, attemptID, gotPollHash string, authIn store.CreateAuthSessionInput) (*model.PluginLoginAttempt, *model.AuthSession, error) {
             if attemptID != "pla_1" || gotPollHash != pollHash || authIn.UserID != userID || authIn.RefreshTokenHash == "" {

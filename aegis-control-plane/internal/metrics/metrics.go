@@ -134,7 +134,7 @@ func (r *Registry) ObserveHistogram(name string, value float64, labels map[strin
 
 func (r *Registry) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		w.Header().Set("Content-Type", "text/plain; version=0.0.5; charset=utf-8")
 		_, _ = w.Write([]byte(r.Render()))
 	})
 }

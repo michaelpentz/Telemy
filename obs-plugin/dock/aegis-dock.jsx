@@ -726,7 +726,7 @@ export default function AegisDock() {
   ]);
 
   // Version display
-  const version = header.version || "v0.0.4";
+  const version = header.version || "v0.0.5";
 
   // Merge runtime theme with defaults for safer property access
   const activeTheme = { ...OBS_YAMI_GREY_DEFAULTS, ...theme };

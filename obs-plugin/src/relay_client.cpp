@@ -272,7 +272,7 @@ void ControlPlaneAuthClient::Reconfigure(const std::string& api_host)
 std::vector<std::pair<std::wstring, std::wstring>> ControlPlaneAuthClient::CommonClientHeaders()
 {
     return {
-        {L"X-Aegis-Client-Version", L"0.0.4"},
+        {L"X-Aegis-Client-Version", L"0.0.5"},
         {L"X-Aegis-Client-Platform", L"windows"},
     };
 }
