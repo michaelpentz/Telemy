@@ -1,3 +1,40 @@
+# Release Notes — v0.0.5
+
+## Overview
+
+v0.0.5 builds on the v0.0.4 all-native C++ plugin with BYOR (Bring Your Own Relay) support, multi-connection management, and relay provisioning improvements.
+
+## What's New
+
+### BYOR (Bring Your Own Relay)
+
+Free-tier users can now connect their own relay infrastructure instead of managed AWS provisioning. The dock shows a BYOR settings panel with host/port/stream inputs. The C++ plugin uses `ConnectDirect`/`DisconnectDirect` paths that bypass the managed provisioning lifecycle.
+
+### ConnectionManager
+
+A new `ConnectionManager` class (`src/connection_manager.cpp`) sits between `PluginEntry` and `RelayClient`. It owns all `RelayClient` instances, runs background stats polling off the OBS tick thread, and manages connection persistence. Sensitive BYOR fields are stored in `vault.json` (DPAPI-encrypted); non-sensitive fields in `config.json`.
+
+### Relay Provision Progress UI
+
+Real-time 6-step provisioning feedback replaces the static "Provisioning relay..." message. Steps: `launching_instance` -> `waiting_for_instance` -> `starting_docker` -> `starting_containers` -> `creating_stream` -> `ready`. Each step has a minimum 3-second dwell. The dock shows the current step label, step counter (N/6), animated progress bar, and blinking dots.
+
+### Per-Link Bitrate Bars
+
+Per-link bitrate bars are now nested under the Relay section with carrier labels (T-Mobile, AT&T, Verizon, etc.) derived from IPinfo Lite ASN data on the relay instance.
+
+### Provider Abstraction
+
+`AWSProvisioner` and `BYORProvisioner` both implement a common `Provisioner` interface. `InstanceID` field replaces `AWSInstanceID` across the control plane. `relay_mode` field in `/api/v1/auth/session` response (`yor`/`managed`/`none`) lets the dock show appropriate controls.
+
+## Platform Requirements
+
+- **Windows only** (Win32 DPAPI, WinHTTP)
+- **OBS Studio** with browser source support (CEF)
+- **Qt6** (bundled with OBS)
+- **NVIDIA GPU optional** — NVML metrics gracefully degrade
+
+---
+
 # Release Notes — v0.0.4
 
 ## Overview

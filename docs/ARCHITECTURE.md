@@ -8,14 +8,15 @@ v0.0.5 is a single-DLL OBS plugin (`aegis-obs-plugin.dll`) that runs entirely in
 
 ```
 OBS Process
-â”œâ”€â”€ aegis-obs-plugin.dll
-â”‚   â”œâ”€â”€ PluginEntry          â€” module lifecycle, tick callback, action dispatch
-â”‚   â”œâ”€â”€ MetricsCollector     â€” OBS C API + Win32 + NVML polling (500ms)
-â”‚   â”œâ”€â”€ ConfigVault          â€” JSON config + DPAPI encrypted vault
-â”‚   â”œâ”€â”€ HttpsClient          â€” WinHTTP RAII wrapper
-â”‚   â”œâ”€â”€ RelayClient          â€” relay lifecycle, heartbeat, emergency shutdown
-â”‚   â””â”€â”€ DockHost             â€” CEF browser panel, JS injection
-â””â”€â”€ data/obs-plugins/aegis-obs-plugin/
++-- aegis-obs-plugin.dll
+|   +-- PluginEntry          - module lifecycle, tick callback, action dispatch
+|   +-- MetricsCollector     - OBS C API + Win32 + NVML polling (500ms)
+|   +-- ConfigVault          - JSON config + DPAPI encrypted vault
+|   +-- HttpsClient          - WinHTTP RAII wrapper
+|   +-- ConnectionManager    - owns all RelayClient instances, background stats polling
+|   |   +-- RelayClient      - relay lifecycle, heartbeat, emergency shutdown (per connection)
+|   +-- DockHost             - CEF browser panel, JS injection
++-- data/obs-plugins/aegis-obs-plugin/
     â”œâ”€â”€ aegis-dock.html
     â”œâ”€â”€ aegis-dock-app.js     â€” bundled React dock UI
     â”œâ”€â”€ aegis-dock-bridge.js
@@ -73,6 +74,31 @@ Windows-only WinHTTP wrapper:
 - Synchronous calls on worker threads (no blocking OBS main thread)
 - Bearer token auth from ConfigVault
 - TLS via Windows certificate store (no bundled CA certs)
+
+### ConnectionManager (`src/connection_manager.cpp`)
+
+The primary connection owner in v0.0.5. Sits between `PluginEntry` and `RelayClient`:
+
+- **Owns all RelayClient instances** — the single `RelayClient` for the active connection is held as a `shared_ptr` inside ConnectionManager. Multi-connection (Phase 2) stores a map of `id -> shared_ptr<RelayClient>`.
+- **Background stats polling** — a dedicated `stats_thread_` polls `RelayClient` for `RelayStats` and `PerLinkSnapshot` every 2 seconds. Cached results are stored under `snapshot_mu_` so that `CurrentSnapshot()`, `CurrentStats()`, and `CurrentPerLinkStats()` on the OBS tick thread never perform network I/O.
+- **Connection persistence** — non-sensitive connection fields (`id`, `name`, `type`, `relay_host`, `relay_port`) are saved to `config.json` under a `"connections"` array. Sensitive BYOR fields (stream keys) are stored in DPAPI-encrypted `vault.json` keyed by `conn_<id>`. Neither field holds `connections_mu_` during the serialization — callers release first.
+- **Multi-connection CRUD** — `AddConnection`, `UpdateConnection`, `RemoveConnection`, `ListConnections` manage the connection list. Phase 2 stubs are present; Phase 1 uses the legacy single-relay path.
+- **Legacy compatibility** — `StartManagedRelayAsync`, `StopManagedRelayAsync`, `ConnectDirect`, `DisconnectDirect` preserve the v0.0.4 dock action API. New multi-connection `Connect(id)` / `Disconnect(id)` operations route to the correct `RelayClient` by UUID.
+- **Reconfigure** — `Reconfigure(api_host, relay_shared_key)` hot-swaps config on the live client without a restart (called from `save_config`).
+
+```
+PluginEntry
+    |
+    v
+ConnectionManager
+    |-- StartManagedRelayAsync / StopManagedRelayAsync (legacy managed relay)
+    |-- ConnectDirect / DisconnectDirect (BYOR direct connect)
+    |-- Connect(id) / Disconnect(id) (multi-connection Phase 2)
+    |-- stats_thread_ -> RelayClient::PollStats() -> cached_stats_ / cached_per_link_
+    |-- SaveConnections() / LoadConnections() -> config.json + vault.json
+    v
+RelayClient (per active connection)
+```
 
 ### RelayClient (`src/relay_client.cpp`)
 
@@ -317,6 +343,15 @@ Two new migrations support the auth flow:
 - **`0008_auth_sessions.sql`** — Creates the `auth_sessions` table for server-side session tracking (session ID, user ID, refresh token hash, expiry, revocation).
 - **`0009_plugin_login_attempts.sql`** — Creates the `plugin_login_attempts` table for the browser-handoff flow (attempt ID, short code, status, expiry, bound user ID).
 
+
+## Dock UI Design (v0.0.5)
+
+The v0.0.5 dock redesign introduced several structural changes:
+
+- **Drag-to-reorder sections** — dock sections (OBS Stats, Relay, Encoders, etc.) can be reordered by the user. Order is persisted via `save_scene_prefs`.
+- **Per-link Mbps bars nested under relays** — `BitrateBar` components for individual cellular/WiFi links are rendered inside the Relay section, grouped under their parent relay connection. Each bar shows the link's share percentage with a carrier label (T-Mobile, AT&T, etc.).
+- **Mini health bar** — a compact health indicator in the dock header shows aggregate stream health (0-1 score) as a color-coded bar without expanding the full stats panel.
+- **Connection persistence display** — the dock reflects `relay_mode` from the auth session (`yor`/`managed`/`none`) to show BYOR settings panel vs. managed relay controls.
 
 ## Dock Source Management
 

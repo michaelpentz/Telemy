@@ -1,4 +1,4 @@
-# Telemy Auth and Entitlement Model (v0.0.4)
+# Telemy Auth and Entitlement Model (v0.0.5)
 
 This document defines the recommended access model for the paid AWS relay feature.
 

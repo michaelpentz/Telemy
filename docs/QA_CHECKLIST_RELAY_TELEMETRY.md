@@ -1,12 +1,12 @@
-# QA Checklist: Relay Telemetry (v0.0.4 Native)
+# QA Checklist: Relay Telemetry (v0.0.5 Native)
 
-This checklist verifies the flow of relay stats from the AWS Relay to the OBS Dock in the v0.0.4 native architecture.
+This checklist verifies the flow of relay stats from the AWS Relay to the OBS Dock in the v0.0.5 native architecture.
 
 ## 1. Prerequisites
 - [ ] Aegis Relay (AWS) instance active.
 - [ ] Bonding-capable source (e.g., Larix Broadcaster on a phone with 5G + WiFi) connected to the relay.
 - [ ] OBS Studio running with `aegis-obs-plugin.dll` loaded.
-- [ ] Aegis Dock (Telemy v0.0.4) visible in OBS.
+- [ ] Aegis Dock (Telemy v0.0.5) visible in OBS.
 
 ## 2. Relay -> Plugin Integration (Aggregate)
 - [ ] Verify `PollRelayStats()` in `relay_client.cpp` polls the relay's port 8090 every 2s.
@@ -28,14 +28,14 @@ This checklist verifies the flow of relay stats from the AWS Relay to the OBS Do
 - [ ] **Stale Detection:** Disconnect a link; verify its bar fades (`opacity` drop) after 3s (`last_ms_ago > 3000`).
 - [ ] **Carrier Labels:** Verify ASN-based labels (T-Mobile, AT&T, etc.) appear correctly.
 
-## 7. Validation Status (v0.0.4)
+## 7. Validation Status (v0.0.5)
 - [x] **Relay E2E Telemetry:** PASSED (2026-03-05). Validated via IRL Pro bonded stream to AWS relay.
 - [x] **Relay IPC Round-Trip:** Confirmed (Start → Provisioning → Active → Stop → Stopped).
 - [x] **API Connectivity:** Confirmed (C++ RelayClient → Go Control Plane via HTTPS).
 - [x] **Dock Telemetry Path:** Confirmed (SLS stats API → C++ → JSON Snapshot → CEF Injection → React UI).
 - [ ] **Per-link Relay Telemetry:** PENDING (requires `srtla_rec` fork to expose per-link metadata).
 
-## 8. Test Cases (v0.0.4)
+## 8. Test Cases (v0.0.5)
 
 ### TC-RELAY-001: IRL Pro Bonded Stream (Aggregate)
 - **Description**: Verify aggregate stats for a bonded multi-link stream.
@@ -49,6 +49,60 @@ This checklist verifies the flow of relay stats from the AWS Relay to the OBS Do
     - [x] RTT, Latency, and Loss pills show real-time values from the relay.
     - [x] Stats update every 2 seconds.
 - **Status**: PASSED (2026-03-05)
+
+### TC-CONN-001: Multiple Simultaneous BYOR Connections
+- **Description**: Verify two BYOR connections can be active simultaneously with independent telemetry.
+- **Setup**: Two separate relay endpoints configured as BYOR connections.
+- **Steps**:
+    1. Add two BYOR connections via dock settings panel.
+    2. Connect both via `relay_connect_direct`.
+    3. Monitor dock Relay section.
+- **Expected Results**:
+    - [ ] Both connections show as active in dock.
+    - [ ] Per-link bitrate bars appear under each connection independently.
+    - [ ] Stats polling runs for each connection without interference.
+    - [ ] Disconnecting one connection does not affect the other.
+
+### TC-CONN-002: Connection Persistence Across OBS Restarts
+- **Description**: Verify BYOR connections and their config survive OBS restarts.
+- **Setup**: At least one BYOR connection configured with host/port/stream key.
+- **Steps**:
+    1. Configure a BYOR connection and connect.
+    2. Restart OBS.
+    3. Observe dock state on reload.
+- **Expected Results**:
+    - [ ] BYOR connection config is present after restart (loaded from `config.json`).
+    - [ ] Sensitive fields (stream key) are restored from DPAPI vault.
+    - [ ] Connection status is `idle` (not auto-connected) on restart.
+    - [ ] Reconnecting via dock works without re-entering credentials.
+
+### TC-CONN-003: Managed Connect/Disconnect Flow
+- **Description**: Verify managed relay start/stop flow via ConnectionManager.
+- **Setup**: Authenticated user with managed-tier entitlement.
+- **Steps**:
+    1. Click Start Relay in dock.
+    2. Observe 6-step provision progress UI.
+    3. Verify active relay display after `ready` step.
+    4. Click Stop Relay.
+- **Expected Results**:
+    - [ ] Each provision step label shown in sequence (`launching_instance` -> `ready`).
+    - [ ] Progress bar advances (N/6 counter).
+    - [ ] Active relay stats appear after `ready`.
+    - [ ] Stop transitions cleanly back to idle state.
+    - [ ] No OBS freeze during start/stop (non-blocking worker threads).
+
+### TC-CONN-004: Per-Link Telemetry With Multiple Carriers
+- **Description**: Verify per-link stats show distinct carrier labels for bonded stream.
+- **Setup**: IRL Pro connected via WiFi + cellular on managed relay.
+- **Steps**:
+    1. Start relay and connect IRL Pro with two active links.
+    2. Monitor Relay section in dock.
+- **Expected Results**:
+    - [ ] Two `BitrateBar` elements appear, one per link.
+    - [ ] Carrier labels show (e.g., "T-Mobile", "Cox") — not generic "Link 1/2".
+    - [ ] `share_pct` for all links totals ~100%.
+    - [ ] Stale link fades after 3s without data.
+    - [ ] Link bars are nested under the correct relay connection.
 
 ### TC-RELAY-002: Per-Link Telemetry (Bonded)
 - **Description**: Verify individual link contributions and health indicators.

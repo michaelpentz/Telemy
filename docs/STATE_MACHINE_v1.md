@@ -1,8 +1,8 @@
-# Aegis State Machine Spec v1 (v0.0.4 Native)
+# Aegis State Machine Spec v1 (v0.0.5 Native)
 
 ## 1. Scope
 
-This spec defines the authoritative runtime state machine for the Telemy v0.0.4 native C++ plugin.
+This spec defines the authoritative runtime state machine for the Telemy v0.0.5 native C++ plugin.
 
 Responsibilities:
 - Determine desired OBS scene target from local and cloud signals.

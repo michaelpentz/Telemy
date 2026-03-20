@@ -1,8 +1,8 @@
-# Aegis Database Schema v1 (v0.0.4)
+# Aegis Database Schema v1 (v0.0.5)
 
 ## 1. Scope
 
-This schema supports the Telemy v0.0.4 cloud control plane.
+This schema supports the Telemy v0.0.5 cloud control plane.
 
 Covers:
 - Identity and API access
