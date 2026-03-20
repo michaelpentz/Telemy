@@ -1,8 +1,8 @@
-# Aegis Control Plane API Spec v1 (v0.0.4)
+# Aegis Control Plane API Spec v1 (v0.0.5)
 
 ## 1. Scope
 
-This spec defines the cloud API for the Telemy v0.0.4 control plane. This is the authoritative contract for the native C++ plugin.
+This spec defines the cloud API for the Telemy v0.0.5 control plane. This is the authoritative contract for the native C++ plugin.
 
 Focus:
 - Authentication and authorization

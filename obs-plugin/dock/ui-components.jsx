@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { ENGINE_STATES } from "./constants.js";
+import { cefCopyToClipboard } from "./utils.js";
 
 // =============================================================================
 // UI COMPONENTS
 // =============================================================================
 
 // --- Collapsible Section ---
-export function Section({ title, icon, badge, badgeColor, defaultOpen = false, compact = false, children }) {
+export function Section({ title, icon, badge, badgeColor, defaultOpen = false, compact = false, children, dragHandle }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div style={{
@@ -14,42 +15,45 @@ export function Section({ title, icon, badge, badgeColor, defaultOpen = false, c
       background: open ? "rgba(128,128,128,0.04)" : "transparent",
       transition: "background 0.2s ease",
     }}>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          width: "100%", display: "flex", alignItems: "center", gap: 8,
-          padding: compact ? "9px 10px" : "10px 12px", border: "none", background: "none",
-          color: "var(--theme-text-muted, #c8ccd4)", cursor: "pointer", fontSize: compact ? 10 : 11,
-          fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
-          fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
-          transition: "color 0.15s ease",
-        }}
-        onMouseEnter={e => e.currentTarget.style.color = "var(--theme-text, #fff)"}
-        onMouseLeave={e => e.currentTarget.style.color = "var(--theme-text-muted, #c8ccd4)"}
-      >
-        <span style={{ fontSize: 13, opacity: 0.6, lineHeight: 1 }}>{icon}</span>
-        <span style={{ flex: 1, textAlign: "left" }}>{title}</span>
-        {badge != null && (
-          <span style={{
-            background: badgeColor || "#2d7aed",
-            color: "var(--theme-bg, #fff)", fontSize: compact ? 7 : 8, fontWeight: 700,
-            padding: compact ? "1px 4px" : "2px 6px", borderRadius: 3, letterSpacing: "0.04em",
-            fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
-            maxWidth: compact ? 64 : 92,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}>{badge}</span>
-        )}
-        <svg width="10" height="10" viewBox="0 0 10 10"
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        <button
+          onClick={() => setOpen(!open)}
           style={{
-            transform: open ? "rotate(0deg)" : "rotate(-90deg)",
-            transition: "transform 0.2s ease", opacity: 0.4,
-          }}>
-          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5"
-            fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
+            flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8,
+            padding: compact ? "9px 10px" : "10px 12px", border: "none", background: "none",
+            color: "var(--theme-text-muted, #c8ccd4)", cursor: "pointer", fontSize: compact ? 10 : 11,
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
+            transition: "color 0.15s ease",
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = "var(--theme-text, #fff)"}
+          onMouseLeave={e => e.currentTarget.style.color = "var(--theme-text-muted, #c8ccd4)"}
+        >
+          <span style={{ fontSize: 13, opacity: 0.6, lineHeight: 1 }}>{icon}</span>
+          <span style={{ flex: 1, textAlign: "left" }}>{title}</span>
+          {badge != null && (
+            <span style={{
+              background: badgeColor || "#2d7aed",
+              color: "var(--theme-bg, #fff)", fontSize: compact ? 7 : 8, fontWeight: 700,
+              padding: compact ? "1px 4px" : "2px 6px", borderRadius: 3, letterSpacing: "0.04em",
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+              maxWidth: compact ? 64 : 92,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}>{badge}</span>
+          )}
+          <svg width="10" height="10" viewBox="0 0 10 10"
+            style={{
+              transform: open ? "rotate(0deg)" : "rotate(-90deg)",
+              transition: "transform 0.2s ease", opacity: 0.4,
+            }}>
+            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5"
+              fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        {dragHandle}
+      </div>
       <div style={{
         maxHeight: open ? 800 : 0,
         overflow: "hidden",
@@ -89,8 +93,8 @@ export function BitrateBar({ value, max, color, label }) {
   return (
     <div style={{ marginBottom: 6 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-        <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)" }}>{label}</span>
-        <span style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)", fontWeight: 600 }}>
+        <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>{label}</span>
+        <span style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", fontWeight: 600 }}>
           {value >= 1000 ? (value / 1000).toFixed(1) + " Mbps" : Math.round(value) + " kbps"}
         </span>
       </div>
@@ -131,7 +135,7 @@ export function ToggleRow({ label, value, color, dimmed, onChange }) {
     }}>
       <span style={{
         fontSize: 10, color: isOn ? "var(--theme-text, #c8ccd4)" : "var(--theme-text-muted, #5a5f6d)",
-        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
       }}>{label}</span>
       <button onClick={() => { if (!isDimmed && onChange) onChange(!isOn); }} style={{
         width: 32, height: 16, borderRadius: 8, border: "none",
@@ -168,13 +172,13 @@ export function ConnectionCard({ name, type, signal, bitrate, status, compact = 
         <StatusDot color={col} pulse={status === "connected"} />
         <span style={{
           fontSize: compact ? 10 : 11, color: "var(--theme-text, #e0e2e8)", fontWeight: 600, flex: 1,
-          fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>{name}</span>
         <span style={{
           fontSize: compact ? 8 : 9, color: "var(--theme-text-muted, #6b7080)", fontWeight: 500,
           background: "var(--theme-surface, #1a1d23)", padding: compact ? "1px 4px" : "1px 5px", borderRadius: 2,
-          fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)", flexShrink: 0,
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", flexShrink: 0,
         }}>{type}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -188,7 +192,7 @@ export function ConnectionCard({ name, type, signal, bitrate, status, compact = 
             }} />
           ))}
         </div>
-        <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)" }}>
+        <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>
           {bitrate > 0 ? `${(bitrate / 1000).toFixed(1)} Mbps` : "\u2014"}
         </span>
       </div>
@@ -210,7 +214,7 @@ export function EngineStateChips({ activeState, compact = false }) {
             height: compact ? 20 : 22, borderRadius: 3, display: "flex",
             alignItems: "center", justifyContent: "center",
             fontSize: compact ? 6 : 7, fontWeight: 700, letterSpacing: "0.04em",
-            fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
             background: isActive ? es.bgActive : "var(--theme-surface, #13151a)",
             border: `1px solid ${isActive ? es.borderActive : "var(--theme-border, #2a2d35)"}`,
             color: isActive ? es.color : "var(--theme-text-muted, #5a5f6d)",
@@ -221,6 +225,74 @@ export function EngineStateChips({ activeState, compact = false }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// --- Connection Type Badge: BYOR (blue) or MGD (green) ---
+export function ConnectionTypeBadge({ type }) {
+  const isByor = type === "byor";
+  return (
+    <span style={{
+      fontSize: 8, fontWeight: 700, letterSpacing: "0.06em",
+      background: isByor ? "#1a3a5a" : "#1a3a2a",
+      color: isByor ? "#5ba3f5" : "#4ade80",
+      padding: "2px 5px", borderRadius: 2, flexShrink: 0,
+      border: isByor ? "1px solid #2d7aed30" : "1px solid #2ea04330",
+      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+    }}>
+      {isByor ? "BYOR" : "MGD"}
+    </span>
+  );
+}
+
+// --- Secret Field: masked value with show/copy buttons ---
+export function SecretField({ label, value, copyValue }) {
+  const [revealed, setRevealed] = useState(false);
+  const hasValue = !!value;
+  const displayValue = revealed
+    ? value
+    : (hasValue ? "\u2022".repeat(Math.min(String(value).length, 22)) : "\u2014");
+  return (
+    <div style={{ marginBottom: 5 }}>
+      <div style={{
+        fontSize: 8, color: "var(--theme-text-muted, #8b8f98)",
+        textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+      }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <span style={{
+          flex: 1, fontSize: 9, color: hasValue ? "var(--theme-text, #e0e2e8)" : "var(--theme-text-muted, #5a5f6d)",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{displayValue}</span>
+        {hasValue && (
+          <button
+            onClick={() => setRevealed(!revealed)}
+            style={{
+              border: "none", background: "none", padding: "0 2px",
+              color: "var(--theme-text-muted, #4a4f5c)", fontSize: 8,
+              cursor: "pointer", flexShrink: 0,
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            }}
+          >
+            {revealed ? "hide" : "show"}
+          </button>
+        )}
+        {hasValue && (
+          <button
+            onClick={() => cefCopyToClipboard(copyValue || value)}
+            style={{
+              border: "none", background: "none", padding: "0 2px",
+              color: "var(--theme-text-muted, #4a4f5c)", fontSize: 9,
+              cursor: "pointer", flexShrink: 0, lineHeight: 1,
+            }}
+            title="Copy"
+          >
+            {"\u29c9"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

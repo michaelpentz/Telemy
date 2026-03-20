@@ -21,6 +21,7 @@ const (
 type Session struct {
 	ID                 string
 	UserID             string
+	ConnectionID       string
 	RelayRecordID      *string
 	RelayInstanceID    string
 	Status             SessionStatus
@@ -51,14 +52,17 @@ type UsageCurrent struct {
 }
 
 type RelayEntitlement struct {
-	PlanTier         string
-	PlanStatus       string
-	IncludedSeconds  int
-	ConsumedSeconds  int
-	RemainingSeconds int
-	OverageSeconds   int
-	Allowed          bool
-	ReasonCode       string
+	PlanTier           string
+	PlanStatus         string
+	RelayAccessStatus  string
+	MaxConcurrentConns int
+	ActiveManagedConns int
+	IncludedSeconds    int
+	ConsumedSeconds    int
+	RemainingSeconds   int
+	OverageSeconds     int
+	Allowed            bool
+	ReasonCode         string
 }
 
 type User struct {

@@ -302,8 +302,21 @@
           autoSwitchEnabled: autoSwitchEnabled,
           manualOverrideEnabled: manualOverrideEnabled,
         },
-        connections: {
-          items: Array.isArray(plugin.connections) ? plugin.connections : [],
+        relay_connections: Array.isArray(snap.relay_connections) ? snap.relay_connections : [],
+      connections: {
+          items: Array.isArray(plugin.connections)
+            ? plugin.connections
+            : (Array.isArray(snap.connections) ? snap.connections.map(function (item, idx) {
+                if (!item || typeof item !== "object") return null;
+                return {
+                  id: item.id || ("conn-" + String(idx + 1)),
+                  name: item.name || ("Link " + String(idx + 1)),
+                  type: item.type || "Unknown",
+                  signal: Number(item.signal != null ? item.signal : 0),
+                  bitrate: Number(item.bitrate != null ? item.bitrate : (item.bitrate_kbps != null ? item.bitrate_kbps : 0)),
+                  status: item.status || "disconnected",
+                };
+              }).filter(Boolean) : []),
         },
         bitrate: {
           bondedKbps: Number(snap.bitrate_kbps || 0),
@@ -629,7 +642,8 @@
           action.type === "relay_stop" ||
           action.type === "relay_connect_direct" ||
           action.type === "relay_disconnect_direct" ||
-          (action.type && action.type.indexOf("auth_") === 0)
+          (action.type && action.type.indexOf("auth_") === 0) ||
+          (action.type && action.type.indexOf("connection_") === 0)
         ) {
           addEvent("info", "Relay action forwarded to native: " + String(action.type));
           emit();

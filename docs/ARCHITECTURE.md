@@ -1,4 +1,4 @@
-# Telemy Architecture (v0.0.4)
+# Telemy Architecture (v0.0.5)
 
 This document describes the all-native C++ OBS plugin architecture introduced in v0.0.4, replacing the v0.0.3 hybrid Rust bridge + C++ shim + IPC pipe system.
 
@@ -320,7 +320,7 @@ Two new migrations support the auth flow:
 
 ## Dock Source Management
 
-- **Source of truth**: `telemy-v0.0.4/obs-plugin/dock/`
+- **Source of truth**: `telemy-v0.0.5/obs-plugin/dock/`
 - **OBS reads from**: `obs-plugin/dock/` via `AEGIS_DOCK_BRIDGE_ROOT` env var
 - **Build command**:
   ```bash
@@ -381,7 +381,7 @@ v0.0.5 introduces BYOR support, allowing free-tier users to connect their own re
 
 ### BYORProvisioner
 
-BYORProvisioner implements the Provisioner interface alongside the existing AWSProvisioner. It reads user-stored relay configuration (host, port, stream key) from the database rather than launching cloud infrastructure. No cloud API calls are made — the provisioner simply returns the user's pre-configured relay details as a session.
+BYORProvisioner implements the Provisioner interface alongside the existing AWSProvisioner. It reads user-stored relay configuration (host, port, stream key) from the database rather than launching cloud infrastructure. No cloud API calls are made ï¿½ the provisioner simply returns the user's pre-configured relay details as a session.
 
 ### Per-User Routing in handleRelayStart()
 
@@ -396,10 +396,10 @@ If a free-tier user has not configured their BYOR relay, the API returns a yor_
 
 GET /api/v1/auth/session now includes a elay_mode field indicating the user's relay access mode:
 
-- yor — free-tier user with BYOR relay configured
-- managed — paid-tier user with cloud-provisioned relay
+- yor ï¿½ free-tier user with BYOR relay configured
+- managed ï¿½ paid-tier user with cloud-provisioned relay
 - 
-one — free-tier user without relay config (relay start disabled)
+one ï¿½ free-tier user without relay config (relay start disabled)
 
 The dock UI uses this field to show the appropriate relay controls (BYOR settings panel vs. managed relay start).
 
@@ -409,7 +409,7 @@ For BYOR relays, the C++ plugin uses ConnectDirect and DisconnectDirect paths in
 
 ### Stats Degradation for Non-SLS Relays
 
-BYOR relays may not run the same SLS + srtla-receiver stack as managed relays. The plugin handles missing or unreachable stats endpoints gracefully — relay telemetry cards show "Stats unavailable" rather than erroring, and the core relay connection remains functional without stats polling.
+BYOR relays may not run the same SLS + srtla-receiver stack as managed relays. The plugin handles missing or unreachable stats endpoints gracefully ï¿½ relay telemetry cards show "Stats unavailable" rather than erroring, and the core relay connection remains functional without stats polling.
 
 ## Platform Constraints
 

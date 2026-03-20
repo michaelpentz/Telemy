@@ -39,10 +39,10 @@ type mockStore struct {
 	claimPluginLoginFn         func(context.Context, string, string, store.CreateAuthSessionInput) (*model.PluginLoginAttempt, *model.AuthSession, error)
 	getUserFn                  func(context.Context, string) (*model.User, error)
 	getActiveSessionFn         func(context.Context, string) (*model.Session, error)
+	getActiveSessionByConnFn   func(context.Context, string, string) (*model.Session, error)
+	listActiveSessionsFn       func(context.Context, string) ([]model.Session, error)
 	getUsageCurrentFn          func(context.Context, string) (*model.UsageCurrent, error)
 	getRelayEntitlementFn      func(context.Context, string) (*model.RelayEntitlement, error)
-	saveBYORConfigFn           func(context.Context, string, string, int, string) error
-	getBYORConfigFn            func(context.Context, string) (*model.BYORConfig, error)
 	recordRelayHealthEventFn   func(context.Context, store.RelayHealthInput) error
 	listRelayManifestFn        func(context.Context) ([]model.RelayManifestEntry, error)
 	updateProvisionStepFn      func(context.Context, string, string) error
@@ -159,6 +159,20 @@ func (m *mockStore) GetActiveSession(ctx context.Context, userID string) (*model
 	return nil, nil
 }
 
+func (m *mockStore) GetActiveSessionByConnection(ctx context.Context, userID, connectionID string) (*model.Session, error) {
+	if m.getActiveSessionByConnFn != nil {
+		return m.getActiveSessionByConnFn(ctx, userID, connectionID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListActiveSessions(ctx context.Context, userID string) ([]model.Session, error) {
+	if m.listActiveSessionsFn != nil {
+		return m.listActiveSessionsFn(ctx, userID)
+	}
+	return nil, nil
+}
+
 func (m *mockStore) GetSessionByID(ctx context.Context, userID, sessionID string) (*model.Session, error) {
 	if m.getSessionByIDFn != nil {
 		return m.getSessionByIDFn(ctx, userID, sessionID)
@@ -192,20 +206,6 @@ func (m *mockStore) GetRelayEntitlement(ctx context.Context, userID string) (*mo
 		return m.getRelayEntitlementFn(ctx, userID)
 	}
 	return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
-}
-
-func (m *mockStore) SaveBYORConfig(ctx context.Context, userID, host string, port int, streamID string) error {
-	if m.saveBYORConfigFn != nil {
-		return m.saveBYORConfigFn(ctx, userID, host, port, streamID)
-	}
-	return nil
-}
-
-func (m *mockStore) GetBYORConfig(ctx context.Context, userID string) (*model.BYORConfig, error) {
-	if m.getBYORConfigFn != nil {
-		return m.getBYORConfigFn(ctx, userID)
-	}
-	return nil, store.ErrNotFound
 }
 
 func (m *mockStore) RecordRelayHealth(ctx context.Context, in store.RelayHealthInput) error {
@@ -408,6 +408,57 @@ func TestRelayStop_DeprovisionFailureReturns500(t *testing.T) {
 	}
 }
 
+func TestRelayStop_ByConnectionIDScopesLookup(t *testing.T) {
+	stoppedAt := time.Now().UTC()
+	ms := &mockStore{
+		getActiveSessionByConnFn: func(_ context.Context, userID, connectionID string) (*model.Session, error) {
+			if userID != "usr_1" || connectionID != "11111111-1111-1111-1111-111111111111" {
+				t.Fatalf("unexpected lookup args user=%s connection=%s", userID, connectionID)
+			}
+			return &model.Session{
+				ID:              "ses_conn_1",
+				UserID:          userID,
+				ConnectionID:    connectionID,
+				Status:          model.SessionActive,
+				Region:          "us-east-1",
+				RelayInstanceID: "i-conn",
+			}, nil
+		},
+		stopSessionFn: func(_ context.Context, userID, sessionID string) (*model.Session, error) {
+			if userID != "usr_1" || sessionID != "ses_conn_1" {
+				t.Fatalf("unexpected stop args user=%s session=%s", userID, sessionID)
+			}
+			return &model.Session{ID: sessionID, UserID: userID, Status: model.SessionStopped, StoppedAt: &stoppedAt}, nil
+		},
+	}
+	deprovCalls := 0
+	mp := &mockProvisioner{
+		deprovisionFn: func(_ context.Context, req relay.DeprovisionRequest) error {
+			deprovCalls++
+			if req.InstanceID != "i-conn" {
+				t.Fatalf("unexpected instance id: %s", req.InstanceID)
+			}
+			return nil
+		},
+	}
+
+	_, router := NewRouter(testConfig(), ms, mp, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/stop", jsonBody(map[string]any{
+		"connection_id": "11111111-1111-1111-1111-111111111111",
+		"reason":        "user_requested",
+	}))
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if deprovCalls != 1 {
+		t.Fatalf("expected deprovision call, got %d", deprovCalls)
+	}
+}
+
 func TestUserRegenerateToken_ReturnsUpdatedToken(t *testing.T) {
 	ms := &mockStore{
 		regenerateStreamTokenFn: func(_ context.Context, userID string) (string, error) {
@@ -462,9 +513,11 @@ func TestUserRegenerateToken_UserNotFoundReturns404(t *testing.T) {
 
 func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 	idem := "8a849d0e-04eb-4a11-bf8a-6b8e5ea1572f"
+	connectionID := "11111111-1111-1111-1111-111111111111"
 	firstSession := &model.Session{
 		ID:                 "ses_new",
 		UserID:             "usr_1",
+		ConnectionID:       connectionID,
 		Status:             model.SessionProvisioning,
 		Region:             "us-east-1",
 		StreamToken:        "streamtok",
@@ -475,6 +528,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 	replayedSession := &model.Session{
 		ID:                 "ses_new",
 		UserID:             "usr_1",
+		ConnectionID:       connectionID,
 		Status:             model.SessionActive,
 		Region:             "us-east-1",
 		RelayInstanceID:    "i-123",
@@ -504,6 +558,9 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 			if in.IdempotencyKey.String() != idem {
 				t.Fatalf("unexpected idempotency key: %s", in.IdempotencyKey.String())
 			}
+			if in.ConnectionID != connectionID {
+				t.Fatalf("unexpected connection id: %s", in.ConnectionID)
+			}
 			if startCalls == 1 {
 				return firstSession, true, nil
 			}
@@ -516,6 +573,7 @@ func TestRelayStart_IdempotencyReplaySkipsProvisioning(t *testing.T) {
 	_, router := NewRouter(testConfig(), ms, mp, nil)
 	body := map[string]any{
 		"region_preference": "us-east-1",
+		"connection_id":     connectionID,
 		"client_context":    map[string]any{"requested_by": "dashboard"},
 	}
 	for i := 0; i < 2; i++ {
@@ -738,65 +796,8 @@ func TestRelayStart_UnknownUserDeniedByEntitlementCheck(t *testing.T) {
 	}
 }
 
-func TestRelayStart_FreePlanWithoutBYORConfigReturns400(t *testing.T) {
-	ms := &mockStore{
-		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
-			if userID != "usr_1" {
-				t.Fatalf("unexpected user id: %s", userID)
-			}
-			return &model.RelayEntitlement{
-				PlanTier:   "free",
-				PlanStatus: "active",
-				Allowed:    true,
-			}, nil
-		},
-		getBYORConfigFn: func(_ context.Context, userID string) (*model.BYORConfig, error) {
-			if userID != "usr_1" {
-				t.Fatalf("unexpected user id: %s", userID)
-			}
-			return &model.BYORConfig{}, nil
-		},
-		startOrGetSessionFn: func(_ context.Context, _ store.StartInput) (*model.Session, bool, error) {
-			t.Fatal("start should not be called without BYOR config")
-			return nil, false, nil
-		},
-	}
-
-	_, router := NewRouter(testConfig(), ms, &mockProvisioner{
-		provisionFn: func(_ context.Context, _ relay.ProvisionRequest) (relay.ProvisionResult, error) {
-			t.Fatal("managed provisioner should not be called for free tier without BYOR config")
-			return relay.ProvisionResult{}, nil
-		},
-	}, nil)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/relay/start", jsonBody(map[string]any{
-		"region_preference": "us-east-1",
-		"client_context":    map[string]any{"requested_by": "dashboard"},
-	}))
-	req.Header.Set("Authorization", "Bearer "+testJWT(t, "test-secret", "usr_1"))
-	req.Header.Set("Idempotency-Key", "09763662-96c0-4827-aac2-a17e3dd01315")
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	var resp struct {
-		Error struct {
-			Code   string `json:"code"`
-			Reason string `json:"reason_code"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp.Error.Code != "byor_config_required" || resp.Error.Reason != "byor_config_missing" {
-		t.Fatalf("unexpected error payload: %+v", resp.Error)
-	}
-}
-
 func TestRelayStart_StarterPlanUsesManagedProvisioning(t *testing.T) {
 	startCalls := 0
-	byorLookupCalls := 0
 	ms := &mockStore{
 		getRelayEntitlementFn: func(_ context.Context, userID string) (*model.RelayEntitlement, error) {
 			if userID != "usr_1" {
@@ -807,13 +808,6 @@ func TestRelayStart_StarterPlanUsesManagedProvisioning(t *testing.T) {
 				PlanStatus: "active",
 				Allowed:    true,
 			}, nil
-		},
-		getBYORConfigFn: func(_ context.Context, userID string) (*model.BYORConfig, error) {
-			byorLookupCalls++
-			if userID != "usr_1" {
-				t.Fatalf("unexpected user id: %s", userID)
-			}
-			return &model.BYORConfig{}, nil
 		},
 		startOrGetSessionFn: func(_ context.Context, in store.StartInput) (*model.Session, bool, error) {
 			startCalls++
@@ -845,9 +839,6 @@ func TestRelayStart_StarterPlanUsesManagedProvisioning(t *testing.T) {
 	}
 	if startCalls != 1 {
 		t.Fatalf("expected start to be called once, got %d", startCalls)
-	}
-	if byorLookupCalls != 1 {
-		t.Fatalf("expected one BYOR config lookup, got %d", byorLookupCalls)
 	}
 	appServer.Shutdown(time.Second)
 }

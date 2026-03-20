@@ -42,6 +42,7 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 
 type relayStartRequest struct {
 	RegionPreference string `json:"region_preference"`
+	ConnectionID     string `json:"connection_id"`
 	ClientContext    struct {
 		OBSConnected bool   `json:"obs_connected"`
 		Mode         string `json:"mode"`
@@ -50,8 +51,9 @@ type relayStartRequest struct {
 }
 
 type relayStopRequest struct {
-	SessionID string `json:"session_id"`
-	Reason    string `json:"reason"`
+	SessionID    string `json:"session_id"`
+	ConnectionID string `json:"connection_id"`
+	Reason       string `json:"reason"`
 }
 
 type relayHealthRequest struct {
@@ -79,38 +81,20 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to verify relay entitlement")
 		return
 	}
-	byorCfg, err := s.store.GetBYORConfig(r.Context(), userID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load relay config")
-		return
-	}
-
-	relayMode := relayModeForUser(entitlement, byorCfg)
-	var sessionProvisioner relay.Provisioner
-	var providerName string
-
-	switch relayMode {
-	case "byor":
-		sessionProvisioner = relay.NewBYORProvisioner(byorCfg)
-		providerName = "byor"
-	case "managed":
-		sessionProvisioner = s.provisioner
-		providerName = s.cfg.RelayProvider
-	default:
-		if entitlement.PlanTier == "free" && !hasBYORConfig(byorCfg) &&
-			(entitlement.PlanStatus == "active" || entitlement.PlanStatus == "trial") {
-			writeAPIErrorWithReason(w, http.StatusBadRequest, "byor_config_required",
-				"BYOR relay endpoint not configured. Set it via POST /api/v1/user/relay-config",
-				"byor_config_missing")
-			return
-		}
+	if !entitlement.Allowed {
 		reason := entitlement.ReasonCode
 		if reason == "" {
 			reason = "entitlement_denied"
 		}
-		writeAPIErrorWithReason(w, http.StatusForbidden, "entitlement_denied", "relay access is not enabled for this account", reason)
+		code := "entitlement_denied"
+		if reason == "connection_limit_reached" {
+			code = "connection_limit_reached"
+		}
+		writeAPIErrorWithReason(w, http.StatusForbidden, code, "relay access is not enabled for this account", reason)
 		return
 	}
+	sessionProvisioner := s.provisioner
+	providerName := s.cfg.RelayProvider
 
 	idemRaw := r.Header.Get("Idempotency-Key")
 	if idemRaw == "" {
@@ -132,6 +116,10 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "region_preference too long")
 		return
 	}
+	if req.ConnectionID != "" && !uuidRe.MatchString(req.ConnectionID) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "connection_id must be uuid-v4")
+		return
+	}
 
 	region := s.resolveRegion(req.RegionPreference)
 	requestedBy := req.ClientContext.RequestedBy
@@ -147,6 +135,7 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 
 	sess, created, err := s.store.StartOrGetSession(r.Context(), store.StartInput{
 		UserID:         userID,
+		ConnectionID:   req.ConnectionID,
 		Region:         region,
 		RequestedBy:    requestedBy,
 		IdempotencyKey: idem,
@@ -422,16 +411,31 @@ func (s *Server) handleRelayStop(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, code, "invalid_request", msg)
 		return
 	}
-	if req.SessionID == "" {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "session_id is required")
-		return
-	}
 	if len(req.Reason) > 256 {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request", "reason too long")
 		return
 	}
+	if req.ConnectionID != "" && !uuidRe.MatchString(req.ConnectionID) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "connection_id must be uuid-v4")
+		return
+	}
 
-	curr, err := s.store.GetSessionByID(r.Context(), userID, req.SessionID)
+	var curr *model.Session
+	var err error
+	switch {
+	case req.SessionID != "":
+		curr, err = s.store.GetSessionByID(r.Context(), userID, req.SessionID)
+	case req.ConnectionID != "":
+		curr, err = s.store.GetActiveSessionByConnection(r.Context(), userID, req.ConnectionID)
+		if err == nil && curr == nil {
+			err = store.ErrNotFound
+		}
+	default:
+		curr, err = s.store.GetActiveSession(r.Context(), userID)
+		if err == nil && curr == nil {
+			err = store.ErrNotFound
+		}
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "session not found")
@@ -474,7 +478,7 @@ func (s *Server) handleRelayStop(w http.ResponseWriter, r *http.Request) {
 		// The record stays pointed at the user's Elastic IP across provision cycles.
 	}
 
-	sess, err := s.store.StopSession(r.Context(), userID, req.SessionID)
+	sess, err := s.store.StopSession(r.Context(), userID, curr.ID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "not_found", "session not found")
@@ -627,6 +631,9 @@ func toSessionResponse(sess *model.Session) map[string]any {
 			"max_session_seconds":  sess.MaxSessionSeconds,
 		},
 	}
+	if sess.ConnectionID != "" {
+		resp["connection_id"] = sess.ConnectionID
+	}
 	if sess.ProvisionStep != "" {
 		resp["provision_step"] = sess.ProvisionStep
 	}
@@ -635,13 +642,7 @@ func toSessionResponse(sess *model.Session) map[string]any {
 	}
 	return resp
 }
-
-func provisionedPublicIP(provider, publicIP string) string {
-	if provider == "byor" {
-		return ""
-	}
-	return publicIP
-}
+func provisionedPublicIP(_ string, publicIP string) string { return publicIP }
 
 func generatePairToken(length int) (string, error) {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"

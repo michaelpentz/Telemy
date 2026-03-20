@@ -19,7 +19,7 @@ func TestStopSession_AlreadyStopped_Idempotent(t *testing.T) {
 	defer mock.Close()
 
 	stoppedAt := time.Now().UTC()
-	queryPrefix := "select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, coalesce(nullif(u.byor_stream_id, ''), u.stream_token),"
+	queryPrefix := "select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,"
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("^"+regexp.QuoteMeta(queryPrefix)).
@@ -54,7 +54,7 @@ func TestStopSession_Active_TransitionsAndTerminatesRelay(t *testing.T) {
 	stoppedAt := time.Now().UTC()
 	activeRow := sessionRowWithTimes("ses_2", "usr_1", "rly_2", "i-xyz", string(model.SessionActive), startedAt, nil)
 	stoppedRow := sessionRowWithTimes("ses_2", "usr_1", "rly_2", "i-xyz", string(model.SessionStopped), startedAt, &stoppedAt)
-	queryPrefix := "select s.id, s.user_id, coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, coalesce(nullif(u.byor_stream_id, ''), u.stream_token),"
+	queryPrefix := "select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,"
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("^"+regexp.QuoteMeta(queryPrefix)).
@@ -138,11 +138,11 @@ func sessionRow(sessionID, userID, relayID, awsID, status string, stoppedAt time
 
 func sessionRowWithTimes(sessionID, userID, relayID, awsID, status string, startedAt time.Time, stoppedAt *time.Time) *pgxmock.Rows {
 	cols := []string{
-		"id", "user_id", "relay_instance_id", "instance_id", "status", "provision_step", "region", "pair_token", "relay_ws_token", "stream_token",
-		"public_ip", "srt_port", "ws_url", "started_at", "stopped_at", "duration_seconds", "grace_window_seconds", "max_session_seconds", "relay_slug", "byor_relay_host",
+		"id", "user_id", "connection_id", "relay_instance_id", "instance_id", "status", "provision_step", "region", "pair_token", "relay_ws_token", "stream_token",
+		"public_ip", "srt_port", "ws_url", "started_at", "stopped_at", "duration_seconds", "grace_window_seconds", "max_session_seconds", "relay_slug",
 	}
 	return pgxmock.NewRows(cols).AddRow(
-		sessionID, userID, relayID, awsID, status, "", "us-east-1", "ABCDEFGH", "relaytoken", "streamtok",
-		"203.0.113.10", 5000, "", startedAt, stoppedAt, 120, 600, 57600, "", "",
+		sessionID, userID, "", relayID, awsID, status, "", "us-east-1", "ABCDEFGH", "relaytoken", "streamtok",
+		"203.0.113.10", 5000, "", startedAt, stoppedAt, 120, 600, 57600, "",
 	)
 }

@@ -1,7 +1,7 @@
 # Telemy Relay Architecture Analysis
 
 **Date:** 2026-03-18
-**Version analyzed:** telemy-v0.0.4
+**Version analyzed:** telemy-v0.0.5
 **Author:** Claude (analysis based on full codebase read)
 
 ---

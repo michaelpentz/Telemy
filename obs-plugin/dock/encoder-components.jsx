@@ -15,7 +15,7 @@ export function OutputBar({ name, bitrateKbps, fps, dropPct, active, maxBitrate,
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "baseline",
         marginBottom: 3, fontSize: compact ? 9 : 10,
-        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
       }}>
         <span style={{
           color: "var(--theme-text, #e0e2e8)", fontWeight: 600,
@@ -60,7 +60,7 @@ export function EncoderGroupHeader({ name, resolution, totalBitrateKbps, avgLagM
       <div style={{
         display: "flex", alignItems: "center", gap: 6,
         fontSize: compact ? 8 : 9,
-        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
         color: "var(--theme-text-muted, #8b8f98)",
         letterSpacing: "0.05em", fontWeight: 700,
       }}>
@@ -78,7 +78,7 @@ export function EncoderGroupHeader({ name, resolution, totalBitrateKbps, avgLagM
       </div>
       <div style={{
         fontSize: compact ? 8 : 9, color: "var(--theme-text-muted, #6b7080)",
-        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
         textAlign: "center", marginTop: 3,
       }}>
         Pool {totalBitrateKbps != null ? `${(totalBitrateKbps / 1000).toFixed(1)} Mbps` : "\u2014"}
@@ -101,7 +101,7 @@ export function HiddenOutputsToggle({ items, compact = false }) {
         style={{
           display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
           fontSize: compact ? 8 : 9,
-          fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
           color: "var(--theme-text-muted, #6b7080)",
         }}
       >
@@ -118,7 +118,7 @@ export function HiddenOutputsToggle({ items, compact = false }) {
           {items.map((item, idx) => (
             <div key={item.id || idx} style={{
               fontSize: compact ? 8 : 9, color: "var(--theme-text-muted, #6b7080)",
-              fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
               marginBottom: 2,
             }}>
               {item.name || item.platform || `Output ${idx + 1}`}
@@ -187,7 +187,7 @@ export function OutputConfigRow({ output, config, onUpdate, compact = false }) {
             }}
             style={{
               width: "100%", fontSize: rowFs, padding: "1px 4px",
-              fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
               background: "var(--theme-surface, #13151a)", color: "var(--theme-text, #e0e2e8)",
               border: "1px solid var(--theme-accent, #5ba3f5)", borderRadius: 2, outline: "none",
             }}
@@ -198,7 +198,7 @@ export function OutputConfigRow({ output, config, onUpdate, compact = false }) {
             title="Click to rename"
             style={{
               fontSize: rowFs, cursor: "pointer",
-              fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
               color: "var(--theme-text, #e0e2e8)", fontWeight: 500,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
             }}
@@ -221,7 +221,7 @@ export function OutputConfigRow({ output, config, onUpdate, compact = false }) {
           }}
           style={{
             width: 60, fontSize: compact ? 8 : 9, padding: "1px 4px",
-            fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
             background: "var(--theme-surface, #13151a)", color: "var(--theme-text, #e0e2e8)",
             border: "1px solid var(--theme-accent, #5ba3f5)", borderRadius: 2, outline: "none",
           }}
@@ -232,7 +232,7 @@ export function OutputConfigRow({ output, config, onUpdate, compact = false }) {
           title="Click to set group"
           style={{
             fontSize: compact ? 8 : 9, cursor: "pointer", flexShrink: 0,
-            fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
             color: groupName ? "var(--theme-text-muted, #8b8f98)" : "var(--theme-text-muted, #3a3d45)",
             background: "var(--theme-surface, #13151a)", padding: "1px 5px", borderRadius: 2,
             border: "1px solid var(--theme-border, #2a2d35)",
@@ -282,7 +282,7 @@ export function OutputConfigPanel({ encoderOutputs, sendAction, compact = false 
     return (
       <div style={{
         fontSize: compact ? 9 : 10, color: "var(--theme-text-muted, #3a3d45)",
-        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
         padding: "8px 0", textAlign: "center",
       }}>
         No outputs detected
@@ -294,7 +294,7 @@ export function OutputConfigPanel({ encoderOutputs, sendAction, compact = false 
     <div>
       <div style={{
         fontSize: compact ? 7 : 8, color: "var(--theme-text-muted, #5a5f6d)",
-        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
         padding: "2px 0 6px", letterSpacing: "0.04em",
       }}>
         Click name or group to edit. Toggle visibility with the dot.

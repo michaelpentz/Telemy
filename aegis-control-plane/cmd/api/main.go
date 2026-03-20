@@ -59,8 +59,6 @@ func main() {
 			log.Fatalf("init aws provisioner: %v", err)
 		}
 		prov = awsProv
-	case "byor":
-		prov = relay.NewStoreBackedBYORProvisioner(st)
 	default:
 		prov = relay.NewFakeProvisioner()
 	}

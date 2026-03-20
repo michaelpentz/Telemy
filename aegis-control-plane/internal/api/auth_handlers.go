@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,12 +35,6 @@ type pluginLoginCompleteRequest struct {
 	Outcome        string `json:"outcome"`
 	UserID         string `json:"user_id"`
 	ReasonCode     string `json:"reason_code"`
-}
-
-type userRelayConfigRequest struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	StreamID string `json:"stream_id"`
 }
 
 func (s *Server) handlePluginLoginStart(w http.ResponseWriter, r *http.Request) {
@@ -341,74 +334,6 @@ func (s *Server) handleUserRegenerateToken(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (s *Server) handleUserRelayConfig(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.UserIDFromContext(r.Context())
-	if !ok {
-		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "missing user identity")
-		return
-	}
-
-	var req userRelayConfigRequest
-	if code, msg := decodeJSON(r, &req); code != 0 {
-		writeAPIError(w, code, "invalid_request", msg)
-		return
-	}
-	if req.Host == "" {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "host is required")
-		return
-	}
-	if len(req.Host) > 255 {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "host too long")
-		return
-	}
-	if req.Port == 0 {
-		req.Port = 5000
-	}
-	if req.Port < 1 || req.Port > 65535 {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "port must be between 1 and 65535")
-		return
-	}
-	if req.StreamID == "" {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "stream_id is required")
-		return
-	}
-	if len(req.StreamID) > 64 {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "stream_id too long")
-		return
-	}
-	if _, err := strconv.ParseUint(strconv.Itoa(req.Port), 10, 16); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request", "invalid port")
-		return
-	}
-
-	if err := s.store.SaveBYORConfig(r.Context(), userID, req.Host, req.Port, req.StreamID); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeAPIError(w, http.StatusNotFound, "not_found", "user not found")
-			return
-		}
-		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to save relay config")
-		return
-	}
-
-	cfg, err := s.store.GetBYORConfig(r.Context(), userID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeAPIError(w, http.StatusNotFound, "not_found", "user not found")
-			return
-		}
-		writeAPIError(w, http.StatusInternalServerError, "internal_error", "failed to load relay config")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"relay_config": map[string]any{
-			"host":      cfg.Host,
-			"port":      cfg.Port,
-			"stream_id": cfg.StreamID,
-		},
-	})
-}
-
 func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, includeActiveRelay bool) (map[string]any, error) {
 	user, err := s.store.GetUser(ctx, userID)
 	if err != nil {
@@ -423,23 +348,19 @@ func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, in
 		return nil, err
 	}
 
-	byorCfg, err := s.store.GetBYORConfig(ctx, userID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return nil, err
-	}
-
 	resp := map[string]any{
-		"relay_mode": relayModeForUser(entitlement, byorCfg),
 		"user": map[string]any{
 			"id":           user.ID,
 			"email":        user.Email,
 			"display_name": user.DisplayName,
 		},
 		"entitlement": map[string]any{
-			"relay_access_status": relayAccessStatus(entitlement),
-			"reason_code":         relayAccessReason(entitlement),
-			"plan_tier":           entitlement.PlanTier,
-			"plan_status":         entitlement.PlanStatus,
+			"relay_access_status":  relayAccessStatus(entitlement),
+			"reason_code":          relayAccessReason(entitlement),
+			"plan_tier":            entitlement.PlanTier,
+			"plan_status":          entitlement.PlanStatus,
+			"max_concurrent_conns": entitlement.MaxConcurrentConns,
+			"active_managed_conns": entitlement.ActiveManagedConns,
 		},
 		"usage": map[string]any{
 			"included_seconds":  usage.IncludedSeconds,
@@ -450,17 +371,31 @@ func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, in
 	}
 
 	if includeActiveRelay {
-		active, err := s.store.GetActiveSession(ctx, userID)
+		activeSessions, err := s.store.ListActiveSessions(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		if active == nil {
+		resp["active_sessions"] = make([]map[string]any, 0, len(activeSessions))
+		if len(activeSessions) == 0 {
 			resp["active_relay"] = nil
 		} else {
 			resp["active_relay"] = map[string]any{
-				"session_id": active.ID,
-				"status":     string(active.Status),
+				"session_id": activeSessions[0].ID,
+				"status":     string(activeSessions[0].Status),
 			}
+		}
+		for _, active := range activeSessions {
+			item := map[string]any{
+				"session_id":   active.ID,
+				"status":       string(active.Status),
+				"public_ip":    active.PublicIP,
+				"srt_port":     active.SRTPort,
+				"stream_token": active.StreamToken,
+			}
+			if active.ConnectionID != "" {
+				item["connection_id"] = active.ConnectionID
+			}
+			resp["active_sessions"] = append(resp["active_sessions"].([]map[string]any), item)
 		}
 	}
 
@@ -468,6 +403,9 @@ func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, in
 }
 
 func relayAccessStatus(entitlement *model.RelayEntitlement) string {
+	if entitlement != nil && entitlement.RelayAccessStatus != "" {
+		return entitlement.RelayAccessStatus
+	}
 	if entitlement != nil && entitlement.Allowed {
 		return "enabled"
 	}
@@ -485,29 +423,6 @@ func relayAccessReason(entitlement *model.RelayEntitlement) string {
 		return entitlement.ReasonCode
 	}
 	return "entitlement_denied"
-}
-
-func relayModeForUser(entitlement *model.RelayEntitlement, byorCfg *model.BYORConfig) string {
-	if entitlement == nil {
-		return "none"
-	}
-
-	switch entitlement.PlanTier {
-	case "free":
-		if (entitlement.PlanStatus == "active" || entitlement.PlanStatus == "trial") && hasBYORConfig(byorCfg) {
-			return "byor"
-		}
-	case "starter", "standard", "pro":
-		if entitlement.PlanStatus == "active" || entitlement.PlanStatus == "trial" {
-			return "managed"
-		}
-	}
-
-	return "none"
-}
-
-func hasBYORConfig(cfg *model.BYORConfig) bool {
-	return cfg != nil && cfg.Host != "" && cfg.StreamID != ""
 }
 
 func (s *Server) issueCompletedPluginLoginAttempt(ctx context.Context, attempt *model.PluginLoginAttempt, pollTokenHash, sessionID, refreshToken string) (*model.AuthSession, *model.PluginLoginAttempt, error) {

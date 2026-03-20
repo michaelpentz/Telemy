@@ -43,7 +43,7 @@ srtla-receiver provides:
 Security group: `aegis-relay-sg` (`<RELAY_SG_ID>`)
 
 - **UDP 4000-5000**: Open to all (`0.0.0.0/0`) for dynamic cellular ingest.
-- **TCP 22**: Open for SSH diagnostics using `aegis-relay-key.pem`.
+- **TCP 22**: Open for SSH diagnostics using `{ssh_key_file}`.
 - **TCP 8090, 5080**: Must be accessible from the streamer's OBS machine to enable real-time dock telemetry. 
 - **TCP 3000**: Restricted to admin/control-plane IPs.
 
@@ -58,7 +58,7 @@ The relay bootstrap process has been hardened to minimize sensitive material lea
 
 To diagnose a relay instance:
 ```bash
-ssh -i aegis-relay-key.pem ec2-user@{relay_ip}
+ssh -i {ssh_key_file} ec2-user@{relay_ip}
 ```
 
 ## Automatic Provisioning

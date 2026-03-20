@@ -1,4 +1,5 @@
 #include "metrics_collector.h"
+#include "connection_manager.h"
 #include "relay_client.h"
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
@@ -411,7 +412,8 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     const std::string& relay_region,
     const aegis::RelaySession* relay_session,
     const aegis::RelayStats* relay_stats,
-    const aegis::PerLinkSnapshot* per_link_stats) const
+    const aegis::PerLinkSnapshot* per_link_stats,
+    const aegis::ConnectionSnapshot* connection_snapshot) const
 {
     const auto& snap = current_;
 
@@ -515,6 +517,31 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << "],";
     } else {
         os << "\"relay_per_link_available\":false,";
+    }
+
+    if (connection_snapshot && connection_snapshot->available && !connection_snapshot->items.empty()) {
+        os << "\"connections\":[";
+        for (size_t i = 0; i < connection_snapshot->items.size(); ++i) {
+            if (i > 0) os << ",";
+            const auto& conn = connection_snapshot->items[i];
+            os << "{";
+            os << "\"id\":\"" << JsonEscape(conn.id) << "\",";
+            os << "\"name\":\"" << JsonEscape(conn.name) << "\",";
+            os << "\"type\":\"" << JsonEscape(conn.type) << "\",";
+            os << "\"signal\":" << conn.signal << ",";
+            os << "\"bitrate_kbps\":" << conn.bitrate_kbps << ",";
+            os << "\"status\":\"" << JsonEscape(conn.status) << "\"";
+            if (!conn.addr.empty()) {
+                os << ",\"addr\":\"" << JsonEscape(conn.addr) << "\"";
+            }
+            if (!conn.asn_org.empty()) {
+                os << ",\"asn_org\":\"" << JsonEscape(conn.asn_org) << "\"";
+            }
+            os << "}";
+        }
+        os << "],";
+    } else {
+        os << "\"connections\":[],";
     }
 
     // ── Multistream outputs ──────────────────────────────────────────────

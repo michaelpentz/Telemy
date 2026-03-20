@@ -20,7 +20,7 @@ v0.0.4 represents a major simplification, moving from a multi-process Rust/C++ h
 
 ## Historical Notes
 
-v0.0.3-era bridge / IPC documents and ad hoc review notes were removed from this directory and archived outside the `telemy-v0.0.4` repo tree so they do not ship with the current versioned docs.
+v0.0.3-era bridge / IPC documents and ad hoc review notes were removed from this directory and archived outside the `telemy-v0.0.5` repo tree so they do not ship with the current versioned docs.
 
 ---
 *Last Updated: 2026-03-08 (Sync after hardening pass)*

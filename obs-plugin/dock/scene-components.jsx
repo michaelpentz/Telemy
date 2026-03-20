@@ -30,7 +30,7 @@ export function SceneButton({ name, active, pending, intent, compact = false, on
       <span style={{
         fontSize: compact ? 10 : 11, fontWeight: active ? 600 : 400,
         color: active ? c.text : pending ? "var(--theme-accent, #5ba3f5)" : "var(--theme-text-muted, #8b8f98)",
-        fontFamily: "var(--theme-font-family, 'JetBrains Mono', monospace)", flex: 1, textAlign: "left", minWidth: 0,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", flex: 1, textAlign: "left", minWidth: 0,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>{name}</span>
       {active && (
