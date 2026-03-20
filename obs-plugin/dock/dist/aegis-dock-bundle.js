@@ -1714,7 +1714,7 @@
           status: "connected",
           managed_region: "us-east",
           session_id: "ses_sim_abc123",
-          relay_ip: "44.237.197.131",
+          relay_ip: "198.51.100.1",
           stats: { bitrate_kbps: Math.round(sim2 * 1.1), rtt_ms: 31, available: true },
           per_link: {
             available: true,
