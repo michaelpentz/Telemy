@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <fstream>
+#include <future>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -72,6 +73,39 @@ static constexpr std::chrono::milliseconds kDockActionDuplicateWindowMs(1500);
 static std::uint64_t g_local_dock_action_seq = 0;
 static std::mutex g_recent_dock_actions_mu;
 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_recent_dock_actions;
+
+// ---------------------------------------------------------------------------
+// Auth worker lifetime tracking (use-after-free fix for detached auth threads)
+// All auth action handlers post futures here instead of detach()-ing threads.
+// DrainAuthWorkers() is called from obs_module_unload before g_auth.reset().
+// ---------------------------------------------------------------------------
+static std::mutex g_auth_workers_mu;
+static std::vector<std::future<void>> g_auth_workers;
+
+static void TrackAuthWorker(std::future<void>&& f)
+{
+    std::lock_guard<std::mutex> lk(g_auth_workers_mu);
+    // Prune already-completed futures to avoid unbounded growth.
+    g_auth_workers.erase(
+        std::remove_if(g_auth_workers.begin(), g_auth_workers.end(),
+                       [](std::future<void>& fut) {
+                           return fut.wait_for(std::chrono::seconds(0)) ==
+                                  std::future_status::ready;
+                       }),
+        g_auth_workers.end());
+    g_auth_workers.push_back(std::move(f));
+}
+
+void DrainAuthWorkers()
+{
+    std::lock_guard<std::mutex> lk(g_auth_workers_mu);
+    for (auto& f : g_auth_workers) {
+        if (f.valid()) {
+            f.wait();
+        }
+    }
+    g_auth_workers.clear();
+}
 
 namespace {
 
@@ -980,7 +1014,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
 
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        std::thread([req_id = request_id, device_name]() {
+        TrackAuthWorker(std::async(std::launch::async, [req_id = request_id, device_name]() {
             try {
                 auto attempt = g_auth->StartPluginLogin(device_name);
                 if (!attempt) {
@@ -1016,7 +1050,7 @@ bool DispatchDockAction(const std::string& action_json,
                 EmitCurrentStatusSnapshotToDock("auth_login_start_exception", false);
                 EmitDockActionResult("auth_login_start", req_id, "failed", false, e.what(), "");
             }
-        }).detach();
+        }));
         return true;
     }
 
@@ -1044,7 +1078,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
 
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        std::thread([req_id = request_id, login_attempt_id, poll_token]() {
+        TrackAuthWorker(std::async(std::launch::async, [req_id = request_id, login_attempt_id, poll_token]() {
             try {
                 auto result = g_auth->PollPluginLogin(login_attempt_id, poll_token);
                 if (!result) {
@@ -1081,7 +1115,7 @@ bool DispatchDockAction(const std::string& action_json,
             } catch (const std::exception& e) {
                 EmitDockActionResult("auth_login_poll", req_id, "failed", false, e.what(), "");
             }
-        }).detach();
+        }));
         return true;
     }
 
@@ -1095,7 +1129,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
 
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        std::thread([req_id = request_id]() {
+        TrackAuthWorker(std::async(std::launch::async, [req_id = request_id]() {
             try {
                 const std::string refresh_token = CurrentRefreshTokenForActions();
                 if (refresh_token.empty()) {
@@ -1130,7 +1164,7 @@ bool DispatchDockAction(const std::string& action_json,
             } catch (const std::exception& e) {
                 EmitDockActionResult("auth_refresh", req_id, "failed", false, e.what(), "");
             }
-        }).detach();
+        }));
         return true;
     }
 
@@ -1156,7 +1190,7 @@ bool DispatchDockAction(const std::string& action_json,
              "[aegis-obs-plugin] dock action auth_logout: request_id=%s",
              request_id.c_str());
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        std::thread([req_id = request_id]() {
+        TrackAuthWorker(std::async(std::launch::async, [req_id = request_id]() {
             const std::string jwt = CurrentControlPlaneJwtForActions();
             if (g_auth && !jwt.empty()) {
                 (void)g_auth->Logout(jwt);
@@ -1164,7 +1198,7 @@ bool DispatchDockAction(const std::string& action_json,
             ClearAuthStateAndPersist(true);
             EmitCurrentStatusSnapshotToDock("auth_logout", false);
             EmitDockActionResult("auth_logout", req_id, "completed", true, "", "");
-        }).detach();
+        }));
         return true;
     }
 
@@ -1539,6 +1573,29 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
             return false;
         }
+        // Managed connections go through the async relay start path; BYOR is synchronous.
+        const auto conns = g_connection_manager.ListConnections();
+        const auto it = std::find_if(conns.begin(), conns.end(),
+                                     [&conn_id](const aegis::RelayConnectionConfig& c) {
+                                         return c.id == conn_id;
+                                     });
+        if (it != conns.end() && it->type == "managed") {
+            const std::string jwt = CurrentControlPlaneJwtForActions();
+            if (jwt.empty()) {
+                blog(LOG_WARNING,
+                     "[aegis-obs-plugin] dock action failed: type=connection_connect"
+                     " request_id=%s error=no_control_plane_auth",
+                     request_id.c_str());
+                EmitDockActionResult(action_type, request_id, "failed", false,
+                                     "no_control_plane_auth", "");
+                return false;
+            }
+            // Async — StartManagedRelayAsync emits provisioning/completed/failed results.
+            g_connection_manager.StartManagedRelayAsync(
+                jwt, request_id, g_config.relay_heartbeat_interval_sec);
+            return true;
+        }
+        // BYOR: synchronous direct connect.
         const std::string jwt = CurrentControlPlaneJwtForActions();
         g_connection_manager.Connect(conn_id, jwt);
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
@@ -1555,6 +1612,28 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
             return false;
         }
+        // Managed connections go through the async relay stop path; BYOR is synchronous.
+        const auto conns = g_connection_manager.ListConnections();
+        const auto it = std::find_if(conns.begin(), conns.end(),
+                                     [&conn_id](const aegis::RelayConnectionConfig& c) {
+                                         return c.id == conn_id;
+                                     });
+        if (it != conns.end() && it->type == "managed") {
+            if (!g_connection_manager.HasActiveSession()) {
+                blog(LOG_WARNING,
+                     "[aegis-obs-plugin] dock action failed: type=connection_disconnect"
+                     " request_id=%s error=no_active_session",
+                     request_id.c_str());
+                EmitDockActionResult(action_type, request_id, "failed", false,
+                                     "no_active_session", "");
+                return false;
+            }
+            const std::string jwt = CurrentControlPlaneJwtForActions();
+            // Async — StopManagedRelayAsync emits queued/completed/failed results.
+            g_connection_manager.StopManagedRelayAsync(jwt, request_id);
+            return true;
+        }
+        // BYOR: synchronous direct disconnect.
         const std::string jwt = CurrentControlPlaneJwtForActions();
         g_connection_manager.Disconnect(conn_id, jwt);
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
