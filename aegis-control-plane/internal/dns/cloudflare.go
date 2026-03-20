@@ -17,6 +17,7 @@ type Client struct {
 	apiToken   string
 	baseDomain string
 	httpClient *http.Client
+	baseURL    string // defaults to https://api.cloudflare.com; overridden in tests
 }
 
 // NewClient creates a DNS client. The baseDomain is the relay domain (e.g. "relay.telemyapp.com").
@@ -26,6 +27,7 @@ func NewClient(baseDomain string) *Client {
 		apiToken:   os.Getenv("CLOUDFLARE_DNS_TOKEN"),
 		baseDomain: baseDomain,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL:    "https://api.cloudflare.com",
 	}
 }
 
@@ -66,10 +68,10 @@ func (c *Client) CreateOrUpdateRecord(slug, ip string) error {
 	var method, url string
 	if existingID != "" {
 		method = http.MethodPut
-		url = fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records/%s", c.zoneID, existingID)
+		url = fmt.Sprintf("%s/client/v4/zones/%s/dns_records/%s", c.baseURL, c.zoneID, existingID)
 	} else {
 		method = http.MethodPost
-		url = fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records", c.zoneID)
+		url = fmt.Sprintf("%s/client/v4/zones/%s/dns_records", c.baseURL, c.zoneID)
 	}
 
 	req, err := http.NewRequest(method, url, bytes.NewReader(payload))
@@ -109,7 +111,7 @@ func (c *Client) DeleteRecord(slug string) error {
 		return nil
 	}
 
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records/%s", c.zoneID, recordID)
+	url := fmt.Sprintf("%s/client/v4/zones/%s/dns_records/%s", c.baseURL, c.zoneID, recordID)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err
@@ -132,7 +134,7 @@ func (c *Client) DeleteRecord(slug string) error {
 
 // findRecord queries Cloudflare for an existing A record matching fqdn.
 func (c *Client) findRecord(fqdn string) (string, error) {
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records?type=A&name=%s", c.zoneID, fqdn)
+	url := fmt.Sprintf("%s/client/v4/zones/%s/dns_records?type=A&name=%s", c.baseURL, c.zoneID, fqdn)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err

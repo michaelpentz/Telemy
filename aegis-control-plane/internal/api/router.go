@@ -176,9 +176,19 @@ func writeAPIErrorWithReason(w http.ResponseWriter, status int, code, message, r
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	buf, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("writeJSON: marshal failed: %v", err)
+		http.Error(w, `{"error":{"code":"internal_error","message":"response encoding failed"}}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if _, err := w.Write(buf); err != nil {
+		log.Printf("writeJSON: write failed: %v", err)
+	}
+	// Append newline to match json.Encoder behaviour (easier log parsing).
+	_, _ = w.Write([]byte("\n"))
 }
 
 // maxBodySize returns middleware that limits request body size for methods that
