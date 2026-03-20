@@ -22,7 +22,10 @@
 
   function parseJsonSafe(jsonText) {
     try {
-      return { ok: true, value: JSON.parse(String(jsonText)) };
+      // Strip C1 control chars (U+0080–U+009F) that Windows-1252 encodes as raw bytes
+      // (e.g. 0x97 = em-dash in Win-1252 arrives as U+0097 which is invalid in JSON strings)
+      var cleaned = String(jsonText).replace(/[\u0080-\u009F]/g, "");
+      return { ok: true, value: JSON.parse(cleaned) };
     } catch (_e) {
       return { ok: false, value: null };
     }

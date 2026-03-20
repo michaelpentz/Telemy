@@ -215,12 +215,13 @@ ObsDockThemeSlots qt_palette_to_theme() {
             iniFile.close();
         }
     }
-    // Convert point size to pixel size at 96 DPI, then apply density offset
-    out.fontSizePx = qRound(static_cast<double>(obsFontScale) * 96.0 / 72.0) + obsDensity;
+    // Convert point size to pixel size at 96 DPI — density is a separate axis, not added here
+    out.fontSizePx = qRound(static_cast<double>(obsFontScale) * 96.0 / 72.0);
     if (out.fontSizePx < 8) out.fontSizePx = 8; // floor
+    out.densityLevel = obsDensity;
 
-    blog(LOG_INFO, "[aegis-obs-plugin] font sample: family=%s sizePx=%d (obsFontScale=%d obsDensity=%d)",
-         out.fontFamily.c_str(), out.fontSizePx, obsFontScale, obsDensity);
+    blog(LOG_INFO, "[aegis-obs-plugin] font sample: family=%s sizePx=%d densityLevel=%d (obsFontScale=%d obsDensity=%d)",
+         out.fontFamily.c_str(), out.fontSizePx, out.densityLevel, obsFontScale, obsDensity);
     out.valid = true;
     return out;
 }
@@ -240,6 +241,7 @@ QJsonObject QtThemeToJsonObject(const ObsDockThemeSlots& theme) {
     obj.insert(QStringLiteral("scrollbar"), QString::fromStdString(theme.scrollbar));
     obj.insert(QStringLiteral("fontFamily"), QString::fromStdString(theme.fontFamily));
     obj.insert(QStringLiteral("fontSizePx"), theme.fontSizePx);
+    obj.insert(QStringLiteral("densityLevel"), theme.densityLevel);
     return obj;
 }
 
@@ -255,7 +257,7 @@ void RefreshCachedObsDockThemeFromQt(const char* reason) {
         std::lock_guard<std::mutex> lock(g_obs_dock_theme_mu);
         const std::string next_sig = theme.valid
             ? (theme.bg + "|" + theme.surface + "|" + theme.panel + "|" + theme.text + "|" +
-               theme.textMuted + "|" + theme.accent + "|" + theme.border + "|" + theme.scrollbar + "|" + theme.fontFamily + "|" + std::to_string(theme.fontSizePx))
+               theme.textMuted + "|" + theme.accent + "|" + theme.border + "|" + theme.scrollbar + "|" + theme.fontFamily + "|" + std::to_string(theme.fontSizePx) + "|" + std::to_string(theme.densityLevel))
             : std::string();
         changed = (next_sig != g_obs_dock_theme_signature);
         g_obs_dock_theme_cache = theme;

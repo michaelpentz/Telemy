@@ -246,9 +246,9 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
   return (
     <div style={{ marginTop: 6 }}>
       <div style={{
-        padding: "8px 8px", background: "var(--theme-surface, #13151a)",
+        padding: "calc(var(--dp,1) * 8px) 8px", background: "var(--theme-surface, #13151a)",
         borderRadius: 4, border: "1px solid var(--theme-border, #2a2d35)",
-        marginBottom: 4,
+        marginBottom: "calc(var(--dp,1) * 4px)",
       }}>
         {isByor && (
           <div>
@@ -477,7 +477,7 @@ function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
   const inlineStat = getRelayInlineStat(conn);
 
   return (
-    <div style={{ borderBottom: "1px solid var(--theme-border, #13151a)", padding: "7px 0" }}>
+    <div style={{ borderBottom: "1px solid var(--theme-border, #13151a)", padding: "calc(var(--dp,1) * 7px) 0" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
         <StatusDot color={statusColor} pulse={isConnected || isConnecting} />
         <div style={{ flex: 1, overflow: "hidden", minWidth: 0, display: "flex", alignItems: "baseline", gap: 5 }}>
@@ -614,9 +614,9 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
       background: "var(--theme-surface, #13151a)",
       border: "1px solid var(--theme-border, #2a2d35)",
       borderRadius: 4,
-      padding: "10px 10px 12px",
+      padding: "calc(var(--dp,1) * 10px) 10px calc(var(--dp,1) * 12px)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: "calc(var(--dp,1) * 10px)" }}>
         <span style={{
           flex: 1, fontSize: 10, fontWeight: 700,
           color: "var(--theme-text, #e0e2e8)",

@@ -593,7 +593,10 @@ void PollObsThemeChangesOnObsThread() {
         before.textMuted != after.textMuted ||
         before.accent != after.accent ||
         before.border != after.border ||
-        before.scrollbar != after.scrollbar;
+        before.scrollbar != after.scrollbar ||
+        before.fontFamily != after.fontFamily ||
+        before.fontSizePx != after.fontSizePx ||
+        before.densityLevel != after.densityLevel;
     if (changed) {
         ReemitDockStatusSnapshotWithCurrentTheme("tick_poll");
     }

@@ -736,10 +736,15 @@ export default function AegisDock() {
   const themeFontFamily = (typeof activeTheme.fontFamily === "string" && activeTheme.fontFamily.trim())
     ? `'${activeTheme.fontFamily.replace(/'/g, "\\'")}', 'Segoe UI', system-ui, sans-serif`
     : "'Segoe UI', system-ui, sans-serif";
-  // Font scale: OBS default is ~9px base. Scale the dock proportionally to the user's chosen font size.
+  // Font scale: OBS default FontScale=9pt → 12px at 96 DPI. Scale dock proportionally.
+  const kObsDefaultFontPx = 12;
   const obsFontSizePx = (typeof activeTheme.fontSizePx === "number" && activeTheme.fontSizePx > 0)
-    ? activeTheme.fontSizePx : 9;
-  const fontScale = obsFontSizePx / 9;
+    ? activeTheme.fontSizePx : kObsDefaultFontPx;
+  const fontScale = obsFontSizePx / kObsDefaultFontPx;
+  // Density scale: OBS Normal density = -3. Each step ±0.15 of base spacing.
+  const kObsNormalDensity = -3;
+  const densityLevel = (typeof activeTheme.densityLevel === "number") ? activeTheme.densityLevel : kObsNormalDensity;
+  const densityScale = Math.max(0.5, Math.min(1.5, 1.0 + (densityLevel - kObsNormalDensity) * 0.15));
   const isLightTheme = useMemo(() => (
     isLightColor(activeTheme.bg) || isLightColor(activeTheme.surface)
   ), [activeTheme.bg, activeTheme.surface]);
@@ -763,6 +768,7 @@ export default function AegisDock() {
       "--theme-scrollbar": activeTheme.scrollbar,
       "--theme-font-family": themeFontFamily,
       "--theme-font-scale": fontScale,
+      "--dp": densityScale,
       zoom: fontScale !== 1 ? fontScale : undefined,
     }}>
       <style>{getDockCss(activeTheme)}</style>

@@ -20,7 +20,7 @@ export function Section({ title, icon, badge, badgeColor, defaultOpen = false, c
           onClick={() => setOpen(!open)}
           style={{
             flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8,
-            padding: compact ? "9px 10px" : "10px 12px", border: "none", background: "none",
+            padding: compact ? "calc(var(--dp,1) * 9px) 10px" : "calc(var(--dp,1) * 10px) 12px", border: "none", background: "none",
             color: "var(--theme-text-muted, #c8ccd4)", cursor: "pointer", fontSize: compact ? 10 : 11,
             fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
             fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
@@ -60,7 +60,7 @@ export function Section({ title, icon, badge, badgeColor, defaultOpen = false, c
         transition: "max-height 0.3s cubic-bezier(0.4,0,0.2,1)",
         opacity: open ? 1 : 0,
       }}>
-        <div style={{ padding: compact ? "2px 10px 10px" : "2px 12px 12px" }}>
+        <div style={{ padding: compact ? "2px 10px calc(var(--dp,1) * 10px)" : "2px 12px calc(var(--dp,1) * 12px)" }}>
           {children}
         </div>
       </div>
@@ -91,7 +91,7 @@ export function StatusDot({ color, pulse }) {
 export function BitrateBar({ value, max, color, label, suffix }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
-    <div style={{ marginBottom: 6 }}>
+    <div style={{ marginBottom: "calc(var(--dp,1) * 6px)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
         <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", display: "inline-flex", alignItems: "center" }}>
           {label}{suffix}
@@ -132,7 +132,7 @@ export function ToggleRow({ label, value, color, dimmed, onChange }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "6px 0", borderBottom: "1px solid var(--theme-border, #13151a)",
+      padding: "calc(var(--dp,1) * 6px) 0", borderBottom: "1px solid var(--theme-border, #13151a)",
       opacity: isDimmed ? 0.45 : 1,
     }}>
       <span style={{
@@ -166,11 +166,11 @@ export function ConnectionCard({ name, type, signal, bitrate, status, compact = 
   const bars = [1, 2, 3, 4];
   return (
     <div style={{
-      background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "8px 10px",
+      background: "var(--theme-surface, #13151a)", borderRadius: 4, padding: "calc(var(--dp,1) * 8px) 10px",
       border: `1px solid ${status === "connected" ? "var(--theme-accent, #1a3a1a)" : "var(--theme-border, #2a2d35)"}`,
-      marginBottom: 4, transition: "border-color 0.2s ease",
+      marginBottom: "calc(var(--dp,1) * 4px)", transition: "border-color 0.2s ease",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: compact ? 4 : 6, marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: compact ? 4 : 6, marginBottom: "calc(var(--dp,1) * 4px)" }}>
         <StatusDot color={col} pulse={status === "connected"} />
         <span style={{
           fontSize: compact ? 10 : 11, color: "var(--theme-text, #e0e2e8)", fontWeight: 600, flex: 1,
@@ -207,7 +207,7 @@ export function EngineStateChips({ activeState, compact = false }) {
   return (
     <div style={{
       display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "1fr 1fr 1fr",
-      gap: 3, marginBottom: 8,
+      gap: "calc(var(--dp,1) * 3px)", marginBottom: "calc(var(--dp,1) * 8px)",
     }}>
       {ENGINE_STATES.map((es) => {
         const isActive = activeState === es.id;
