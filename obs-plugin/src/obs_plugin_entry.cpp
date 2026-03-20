@@ -1014,6 +1014,9 @@ void obs_module_unload(void) {
     // Shutdown ConnectionManager (stops background thread, joins workers,
     // destroys RelayClient) before g_http is destroyed.
     g_connection_manager.Shutdown();
+    // Drain any in-flight auth worker futures before destroying g_auth to
+    // prevent use-after-free if a thread is still referencing g_auth.
+    DrainAuthWorkers();
     g_auth.reset();
     blog(LOG_INFO, "[aegis-obs-plugin] connection manager destroyed");
 }
