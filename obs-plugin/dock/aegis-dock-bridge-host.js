@@ -1,6 +1,6 @@
 "use strict";
 
-// v0.0.4 — Host-side adapter around aegis-dock-bridge.js for browser-dock integration.
+// v0.0.5 — Host-side adapter around aegis-dock-bridge.js for browser-dock integration.
 // Defines stable entry points for plugin/local callbacks and status snapshot delivery.
 // IPC envelope support retained as no-op stubs for backward compatibility.
 

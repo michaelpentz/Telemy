@@ -48,7 +48,7 @@ struct HttpResponse {
 // -----------------------------------------------------------------------
 class HttpsClient {
 public:
-    // Creates the WinHTTP session with a "Telemy/0.0.4" user-agent and
+    // Creates the WinHTTP session with a "Telemy/0.0.5" user-agent and
     // configures timeouts (5s resolve, 5s connect, 10s send, 30s receive).
     // Throws std::runtime_error if WinHttpOpen fails.
     HttpsClient();

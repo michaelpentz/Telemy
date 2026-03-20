@@ -1,6 +1,6 @@
 "use strict";
 
-// v0.0.4 — Browser dock bootstrap exposing the plugin-call surface.
+// v0.0.5 — Browser dock bootstrap exposing the plugin-call surface.
 //
 // Inbound (native -> dock):
 //   window.aegisDockNative.receiveStatusSnapshotJson(...)    [NEW in v0.0.4 — primary data]

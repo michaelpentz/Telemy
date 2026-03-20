@@ -961,7 +961,7 @@ bool obs_module_load(void) {
     InitializeBrowserDockHostBridge();
     g_frontend_exit_seen = false;
 
-    CacheDockPipeStatusForReplay("ok", "native plugin v0.0.4");
+    CacheDockPipeStatusForReplay("ok", "native plugin v0.0.5");
 
     if (!g_frontend_event_callback_registered) {
         obs_frontend_add_event_callback(OnFrontendEvent, nullptr);
@@ -1019,7 +1019,7 @@ void obs_module_unload(void) {
 }
 
 const char* obs_module_description(void) {
-    return "Aegis OBS Plugin (v0.0.4)";
+    return "Aegis OBS Plugin (v0.0.5)";
 }
 
 #else

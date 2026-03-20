@@ -1,6 +1,6 @@
 "use strict";
 
-// v0.0.4 — Thin pass-through bridge for browser-dock embedding.
+// v0.0.5 — Thin pass-through bridge for browser-dock embedding.
 // The C++ plugin now produces the full status snapshot; the bridge simply stores
 // it and exposes the dock-contract getState() shape.  No IPC envelopes, no
 // projection/reducer — just storage + simple mapping.
@@ -288,7 +288,7 @@
       var state = {
         header: {
           mode: mode,
-          version: "v0.0.4",
+          version: "v0.0.5",
         },
         live: {
           isLive: isLive,

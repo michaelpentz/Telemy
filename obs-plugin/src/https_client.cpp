@@ -90,7 +90,7 @@ WinHttpHandle::~WinHttpHandle()
 HttpsClient::HttpsClient()
 {
     HINTERNET s = WinHttpOpen(
-        L"Telemy/0.0.4",
+        L"Telemy/0.0.5",
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,

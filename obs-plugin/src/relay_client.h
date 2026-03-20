@@ -154,7 +154,7 @@ public:
 
     std::optional<AuthSessionSnapshot> GetSession(const std::string& cp_access_jwt);
     std::optional<PluginLoginAttempt> StartPluginLogin(const std::string& device_name,
-                                                       const std::string& plugin_version = "0.0.4",
+                                                       const std::string& plugin_version = "0.0.5",
                                                        const std::string& platform = "windows");
     std::optional<AuthPollResult> PollPluginLogin(const std::string& login_attempt_id,
                                                   const std::string& poll_token);

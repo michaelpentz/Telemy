@@ -494,7 +494,7 @@
           }
         }
         "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(Error());
-        var REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = Symbol.for("react.activity"), MAYBE_ITERATOR_SYMBOL = Symbol.iterator, didWarnStateUpdateForUnmountedComponent = {}, ReactNoopUpdateQueue = {
+        var REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), MAYBE_ITERATOR_SYMBOL = Symbol.iterator, didWarnStateUpdateForUnmountedComponent = {}, ReactNoopUpdateQueue = {
           isMounted: function() {
             return false;
           },
@@ -537,7 +537,7 @@
         deprecatedAPIs.constructor = PureComponent;
         assign(deprecatedAPIs, Component.prototype);
         deprecatedAPIs.isPureReactComponent = true;
-        var isArrayImpl = Array.isArray, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), ReactSharedInternals = {
+        var isArrayImpl = Array.isArray, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = {
           H: null,
           A: null,
           T: null,
@@ -1675,7 +1675,7 @@
         subtitle: "OBS + Core IPC Dock",
         mode,
         modes: ["studio", "irl"],
-        version: "v0.0.4"
+        version: "v0.0.5"
       },
       live: {
         isLive: true,
@@ -1714,7 +1714,7 @@
           status: "connected",
           managed_region: "us-east",
           session_id: "ses_sim_abc123",
-          relay_ip: "198.51.100.1",
+          relay_ip: "0.0.0.0",
           stats: { bitrate_kbps: Math.round(sim2 * 1.1), rtt_ms: 31, available: true },
           per_link: {
             available: true,
@@ -3745,7 +3745,7 @@
       sendAction,
       tryEnterUiActionGate
     ]);
-    const version = header.version || "v0.0.4";
+    const version = header.version || "v0.0.5";
     const activeTheme = { ...OBS_YAMI_GREY_DEFAULTS, ...theme };
     const themeFontFamily = typeof activeTheme.fontFamily === "string" && activeTheme.fontFamily.trim() ? `'${activeTheme.fontFamily.replace(/'/g, "\\'")}', 'Segoe UI', system-ui, sans-serif` : "'Segoe UI', system-ui, sans-serif";
     const isLightTheme = (0, import_react7.useMemo)(() => isLightColor(activeTheme.bg) || isLightColor(activeTheme.surface), [activeTheme.bg, activeTheme.surface]);
