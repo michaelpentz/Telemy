@@ -168,10 +168,16 @@ void MetricsCollector::ShutdownNvml() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void MetricsCollector::Poll() {
+    std::lock_guard<std::mutex> lock(mu_);
     current_.timestamp_unix_ms = NowUnixMs();
     CollectObsGlobal();
     CollectOutputs();
     CollectSystem();
+}
+
+MetricsSnapshot MetricsCollector::Latest() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return current_;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
