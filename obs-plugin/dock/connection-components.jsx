@@ -20,6 +20,59 @@ function connStatusColor(status) {
   return "#5a5f6d";
 }
 
+// --- Freshness-based color for per-link health (Approach A) ---
+// lastMsAgo = ms since last packet received on this link
+function freshnessColor(lastMsAgo) {
+  if (lastMsAgo == null || lastMsAgo === 0) return "#2ea043"; // fresh / just arrived
+  if (lastMsAgo < 500)  return "#2ea043"; // green: active
+  if (lastMsAgo < 2000) return "#d29922"; // yellow: stale
+  return "#da3633";                        // red: very stale / dead
+}
+
+function freshnessLabel(lastMsAgo) {
+  if (lastMsAgo == null || lastMsAgo === 0) return "Active";
+  if (lastMsAgo < 500)  return "Active";
+  if (lastMsAgo < 2000) return "Stale";
+  return "Dead";
+}
+
+// --- Try to match a relay link carrier name to a device-side network_connection ---
+function matchSignal(carrier, networkConnections) {
+  if (!carrier || !Array.isArray(networkConnections) || networkConnections.length === 0) return null;
+  const norm = carrier.toLowerCase();
+  for (const nc of networkConnections) {
+    if (!nc.name) continue;
+    // fuzzy: check if carrier string appears in connection name or vice versa
+    const ncNorm = nc.name.toLowerCase();
+    if (ncNorm.includes(norm) || norm.includes(ncNorm.replace(/sim\s*\d+\s*[—–-]\s*/i, "").trim())) {
+      return { signal: nc.signal, type: nc.type, status: nc.status };
+    }
+  }
+  return null;
+}
+
+// --- Tiny signal strength bars icon (1-4 bars) ---
+function SignalBarsIcon({ signal, type, color }) {
+  const bars = [1, 2, 3, 4];
+  return (
+    <span style={{ display: "inline-flex", alignItems: "flex-end", gap: 1, marginLeft: 4 }} title={type || ""}>
+      {bars.map(i => (
+        <span key={i} style={{
+          display: "inline-block", width: 2, height: 2 + i * 2,
+          borderRadius: 0.5,
+          background: i <= signal ? (color || "#2ea043") : "var(--theme-border, #2a2d35)",
+        }} />
+      ))}
+      {type && (
+        <span style={{
+          fontSize: 7, color: "var(--theme-text-muted, #6b7080)", marginLeft: 2,
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+        }}>{type}</span>
+      )}
+    </span>
+  );
+}
+
 // --- Animated dots for provisioning ---
 function ProvisionDots() {
   return (
@@ -274,6 +327,7 @@ function getRelayInlineStat(conn) {
 }
 
 // --- Mini stacked health bar shown inline in collapsed connection row ---
+// Colors represent link FRESHNESS (health), width represents share of bandwidth
 function MiniHealthBar({ conn, onClick, isExpanded }) {
   if (conn.status !== "connected") return null;
 
@@ -282,49 +336,54 @@ function MiniHealthBar({ conn, onClick, isExpanded }) {
 
   if (hasPerLink) {
     const links = conn.per_link.links;
-    const totalKbps = links.reduce((s, l) => s + (l.bitrate_kbps || 0), 0);
     segments = links.map(l => {
+      const pct = l.sharePct > 0 ? l.sharePct : (100 / links.length);
       const kbps = l.bitrate_kbps || 0;
-      const pct = totalKbps > 0 ? (kbps / totalKbps) * 100 : (100 / links.length);
-      let color;
-      if (kbps === 0)        color = "#5a5f6d";
-      else if (kbps < 100)  color = "#da3633";
-      else if (kbps <= 500) color = "#d29922";
-      else                   color = "#2ea043";
+      const color = kbps === 0 ? "#5a5f6d" : freshnessColor(l.lastMsAgo);
       return { pct, color };
     });
   } else if (conn.stats?.available) {
     const kbps = conn.stats.bitrate_kbps || 0;
-    let color;
-    if (kbps === 0)        color = "#5a5f6d";
-    else if (kbps < 100)  color = "#da3633";
-    else if (kbps <= 500) color = "#d29922";
-    else                   color = "#2ea043";
+    const color = kbps === 0 ? "#5a5f6d" : "#2ea043";
     segments = [{ pct: 100, color }];
   } else {
     return null;
   }
 
+  // Aggregate status: best-case wins — if any link is active, the feed is alive
+  const hasActive = segments.some(s => s.color === "#2ea043");
+  const hasStale  = segments.some(s => s.color === "#d29922");
+  const labelColor = hasActive ? "#2ea043" : hasStale ? "#d29922" : "#da3633";
+  const barLabel   = hasActive ? "Active"  : hasStale ? "Stale"   : "Dead";
+
   return (
     <div
       onClick={onClick}
       title={isExpanded ? "Collapse per-link stats" : "Expand per-link stats"}
-      style={{
+      style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0, cursor: "pointer" }}
+    >
+      <span style={{
+        fontSize: 7, fontWeight: 600, color: labelColor, whiteSpace: "nowrap",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+      }}>{barLabel}</span>
+      <div style={{
         display: "flex", width: 48, height: 5, borderRadius: 2,
-        overflow: "hidden", flexShrink: 0, cursor: "pointer",
+        overflow: "hidden", flexShrink: 0,
         opacity: isExpanded ? 0.65 : 1,
         transition: "opacity 0.15s",
-      }}
-    >
-      {segments.map((seg, i) => (
-        <div key={i} style={{ flex: seg.pct, height: "100%", background: seg.color, minWidth: 2 }} />
-      ))}
+      }}>
+        {segments.map((seg, i) => (
+          <div key={i} style={{ flex: seg.pct, height: "100%", background: seg.color, minWidth: 2 }} />
+        ))}
+      </div>
     </div>
   );
 }
 
 // --- Inline per-link Mbps bars shown under active relay connections ---
-function RelayLinkBars({ conn }) {
+// Bar color = freshness health (matches mini-bar), width = bitrate contribution
+// Signal strength shown inline when carrier matches a device-side connection
+function RelayLinkBars({ conn, networkConnections }) {
   if (conn.status !== "connected") return null;
 
   const hasPerLink = conn.per_link?.available && Array.isArray(conn.per_link?.links) && conn.per_link.links.length > 0;
@@ -332,7 +391,7 @@ function RelayLinkBars({ conn }) {
   const boundedStyle = {
     marginTop: 5,
     paddingLeft: 11,
-    maxHeight: 96,
+    maxHeight: 120,
     overflowY: "auto",
     padding: "4px 6px",
     border: "1px solid #2a2d3550",
@@ -345,28 +404,40 @@ function RelayLinkBars({ conn }) {
     const maxKbps = Math.max(...conn.per_link.links.map(l => l.bitrate_kbps || 0), 1000) * 1.25;
     return (
       <div style={boundedStyle}>
-        {conn.per_link.links.map((link, i) => (
-          <BitrateBar
-            key={link.carrier || i}
-            label={link.carrier || ("Link " + (i + 1))}
-            value={link.bitrate_kbps || 0}
-            max={maxKbps}
-            color="#2d7aed"
-          />
-        ))}
+        {conn.per_link.links.map((link, i) => {
+          const kbps = link.bitrate_kbps || 0;
+          const color = kbps === 0 ? "#5a5f6d" : freshnessColor(link.lastMsAgo);
+          const label = kbps === 0 ? "Idle" : freshnessLabel(link.lastMsAgo);
+          const sig = matchSignal(link.carrier, networkConnections);
+          return (
+            <div key={link.carrier || i}>
+              <BitrateBar
+                label={link.carrier || ("Link " + (i + 1))}
+                value={kbps}
+                max={maxKbps}
+                color={color}
+                suffix={<>
+                  <span style={{ fontSize: 7, color: color, marginLeft: 4, fontWeight: 600 }}>{label}</span>
+                  {sig ? <SignalBarsIcon signal={sig.signal} type={sig.type} color={color} /> : null}
+                </>}
+              />
+            </div>
+          );
+        })}
       </div>
     );
   }
 
   if (conn.stats?.available && conn.stats.bitrate_kbps > 0) {
-    const maxKbps = Math.max(conn.stats.bitrate_kbps * 1.5, 1000);
+    const kbps = conn.stats.bitrate_kbps;
+    const maxKbps = Math.max(kbps * 1.5, 1000);
     return (
       <div style={boundedStyle}>
         <BitrateBar
           label="Total"
-          value={conn.stats.bitrate_kbps}
+          value={kbps}
           max={maxKbps}
-          color="#2d7aed"
+          color="#2ea043"
         />
       </div>
     );
@@ -376,7 +447,7 @@ function RelayLinkBars({ conn }) {
 }
 
 // --- Single connection row ---
-function ConnectionRow({ conn, sendAction, isCompact }) {
+function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showLinks, setShowLinks] = useState(false);
   const statusColor = connStatusColor(conn.status);
@@ -425,15 +496,15 @@ function ConnectionRow({ conn, sendAction, isCompact }) {
             fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>{conn.name}</span>
-          {inlineStat && (
-            <span style={{
-              fontSize: 8, color: "var(--theme-text-muted, #8b8f98)", flexShrink: 0, whiteSpace: "nowrap",
-              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-            }}>
-              {inlineStat.mbps} Mbps{inlineStat.rttMs > 0 ? " \u00b7 " + inlineStat.rttMs + "ms" : ""}
-            </span>
-          )}
         </div>
+        {inlineStat && (
+          <span style={{
+            fontSize: 8, color: "var(--theme-text-muted, #8b8f98)", flexShrink: 0, whiteSpace: "nowrap",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+          }}>
+            {inlineStat.mbps} Mbps{inlineStat.rttMs > 0 ? " \u00b7 " + inlineStat.rttMs + "ms" : ""}
+          </span>
+        )}
         <MiniHealthBar conn={conn} onClick={() => setShowLinks(s => !s)} isExpanded={showLinks} />
         <ConnectionTypeBadge type={conn.type} />
         <button onClick={handleAction} style={{
@@ -463,7 +534,7 @@ function ConnectionRow({ conn, sendAction, isCompact }) {
           overflow: "hidden",
           transition: "max-height 0.2s ease",
         }}>
-          <RelayLinkBars conn={conn} />
+          <RelayLinkBars conn={conn} networkConnections={networkConnections} />
         </div>
       )}
 
@@ -743,6 +814,7 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
 // --- Main section component (exported — used in AegisDock) ---
 export function ConnectionListSection({
   relayConnections,
+  networkConnections,
   sendAction,
   authAuthenticated,
   authDisplayName,
@@ -823,7 +895,7 @@ export function ConnectionListSection({
       )}
 
       {connections.map(conn => (
-        <ConnectionRow key={conn.id} conn={conn} sendAction={sendAction} isCompact={isCompact} />
+        <ConnectionRow key={conn.id} conn={conn} sendAction={sendAction} isCompact={isCompact} networkConnections={networkConnections} />
       ))}
 
       {!showAddModal && (

@@ -21,6 +21,8 @@ struct ObsDockThemeSlots {
     std::string accent;
     std::string border;
     std::string scrollbar;
+    std::string fontFamily;
+    int fontSizePx = 0;
     bool valid = false;
 };
 

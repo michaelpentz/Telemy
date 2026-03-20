@@ -35,3 +35,6 @@ docs/plans/
 
 aegis-control-plane/.gocache/
 aegis-control-plane/.gotmp/
+
+# Dock dev dependencies
+obs-plugin/dock/node_modules/

@@ -164,6 +164,9 @@ export default function AegisDock() {
         links: relay.links.map(l => ({
           carrier: l.asn_org || l.addr || "Link",
           bitrate_kbps: Math.round((l.sharePct / 100) * totalKbps),
+          lastMsAgo: l.lastMsAgo || 0,
+          sharePct: l.sharePct || 0,
+          uptimeS: l.uptimeS || 0,
         })),
       };
     }
@@ -733,6 +736,10 @@ export default function AegisDock() {
   const themeFontFamily = (typeof activeTheme.fontFamily === "string" && activeTheme.fontFamily.trim())
     ? `'${activeTheme.fontFamily.replace(/'/g, "\\'")}', 'Segoe UI', system-ui, sans-serif`
     : "'Segoe UI', system-ui, sans-serif";
+  // Font scale: OBS default is ~9px base. Scale the dock proportionally to the user's chosen font size.
+  const obsFontSizePx = (typeof activeTheme.fontSizePx === "number" && activeTheme.fontSizePx > 0)
+    ? activeTheme.fontSizePx : 9;
+  const fontScale = obsFontSizePx / 9;
   const isLightTheme = useMemo(() => (
     isLightColor(activeTheme.bg) || isLightColor(activeTheme.surface)
   ), [activeTheme.bg, activeTheme.surface]);
@@ -755,6 +762,8 @@ export default function AegisDock() {
       "--theme-border": activeTheme.border,
       "--theme-scrollbar": activeTheme.scrollbar,
       "--theme-font-family": themeFontFamily,
+      "--theme-font-scale": fontScale,
+      zoom: fontScale !== 1 ? fontScale : undefined,
     }}>
       <style>{getDockCss(activeTheme)}</style>
 
@@ -1380,6 +1389,7 @@ export default function AegisDock() {
               dragHandle={dragHandleEl}>
               <ConnectionListSection
                 relayConnections={relayConnections}
+                networkConnections={conns}
                 sendAction={sendAction}
                 authAuthenticated={authAuthenticated}
                 authDisplayName={authDisplayName}

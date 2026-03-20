@@ -88,12 +88,14 @@ export function StatusDot({ color, pulse }) {
 }
 
 // --- Bitrate Bar ---
-export function BitrateBar({ value, max, color, label }) {
+export function BitrateBar({ value, max, color, label, suffix }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
     <div style={{ marginBottom: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-        <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>{label}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+        <span style={{ fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", display: "inline-flex", alignItems: "center" }}>
+          {label}{suffix}
+        </span>
         <span style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", fontWeight: 600 }}>
           {value >= 1000 ? (value / 1000).toFixed(1) + " Mbps" : Math.round(value) + " kbps"}
         </span>

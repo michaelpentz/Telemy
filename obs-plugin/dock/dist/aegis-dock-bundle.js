@@ -1,1018 +1,18 @@
-(() => {
-  var __create = Object.create;
-  var __defProp = Object.defineProperty;
-  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __getProtoOf = Object.getPrototypeOf;
-  var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __commonJS = (cb, mod) => function __require() {
-    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-  };
-  var __copyProps = (to, from, except, desc) => {
-    if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-    }
-    return to;
-  };
-  var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-    // If the importer is in node compatibility mode or this is not an ESM
-    // file that has been converted to a CommonJS file using a Babel-
-    // compatible transform (i.e. "__esModule" has not been set), then set
-    // "default" to the CommonJS "module.exports" for node compatibility.
-    isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-    mod
-  ));
-
-  // ../../dock-preview/node_modules/react/cjs/react.development.js
-  var require_react_development = __commonJS({
-    "../../dock-preview/node_modules/react/cjs/react.development.js"(exports, module) {
-      "use strict";
-      (function() {
-        function defineDeprecationWarning(methodName, info) {
-          Object.defineProperty(Component.prototype, methodName, {
-            get: function() {
-              console.warn(
-                "%s(...) is deprecated in plain JavaScript React classes. %s",
-                info[0],
-                info[1]
-              );
-            }
-          });
-        }
-        function getIteratorFn(maybeIterable) {
-          if (null === maybeIterable || "object" !== typeof maybeIterable)
-            return null;
-          maybeIterable = MAYBE_ITERATOR_SYMBOL && maybeIterable[MAYBE_ITERATOR_SYMBOL] || maybeIterable["@@iterator"];
-          return "function" === typeof maybeIterable ? maybeIterable : null;
-        }
-        function warnNoop(publicInstance, callerName) {
-          publicInstance = (publicInstance = publicInstance.constructor) && (publicInstance.displayName || publicInstance.name) || "ReactClass";
-          var warningKey = publicInstance + "." + callerName;
-          didWarnStateUpdateForUnmountedComponent[warningKey] || (console.error(
-            "Can't call %s on a component that is not yet mounted. This is a no-op, but it might indicate a bug in your application. Instead, assign to `this.state` directly or define a `state = {};` class property with the desired state in the %s component.",
-            callerName,
-            publicInstance
-          ), didWarnStateUpdateForUnmountedComponent[warningKey] = true);
-        }
-        function Component(props, context, updater) {
-          this.props = props;
-          this.context = context;
-          this.refs = emptyObject;
-          this.updater = updater || ReactNoopUpdateQueue;
-        }
-        function ComponentDummy() {
-        }
-        function PureComponent(props, context, updater) {
-          this.props = props;
-          this.context = context;
-          this.refs = emptyObject;
-          this.updater = updater || ReactNoopUpdateQueue;
-        }
-        function noop() {
-        }
-        function testStringCoercion(value) {
-          return "" + value;
-        }
-        function checkKeyStringCoercion(value) {
-          try {
-            testStringCoercion(value);
-            var JSCompiler_inline_result = false;
-          } catch (e) {
-            JSCompiler_inline_result = true;
-          }
-          if (JSCompiler_inline_result) {
-            JSCompiler_inline_result = console;
-            var JSCompiler_temp_const = JSCompiler_inline_result.error;
-            var JSCompiler_inline_result$jscomp$0 = "function" === typeof Symbol && Symbol.toStringTag && value[Symbol.toStringTag] || value.constructor.name || "Object";
-            JSCompiler_temp_const.call(
-              JSCompiler_inline_result,
-              "The provided key is an unsupported type %s. This value must be coerced to a string before using it here.",
-              JSCompiler_inline_result$jscomp$0
-            );
-            return testStringCoercion(value);
-          }
-        }
-        function getComponentNameFromType(type) {
-          if (null == type) return null;
-          if ("function" === typeof type)
-            return type.$$typeof === REACT_CLIENT_REFERENCE ? null : type.displayName || type.name || null;
-          if ("string" === typeof type) return type;
-          switch (type) {
-            case REACT_FRAGMENT_TYPE:
-              return "Fragment";
-            case REACT_PROFILER_TYPE:
-              return "Profiler";
-            case REACT_STRICT_MODE_TYPE:
-              return "StrictMode";
-            case REACT_SUSPENSE_TYPE:
-              return "Suspense";
-            case REACT_SUSPENSE_LIST_TYPE:
-              return "SuspenseList";
-            case REACT_ACTIVITY_TYPE:
-              return "Activity";
-          }
-          if ("object" === typeof type)
-            switch ("number" === typeof type.tag && console.error(
-              "Received an unexpected object in getComponentNameFromType(). This is likely a bug in React. Please file an issue."
-            ), type.$$typeof) {
-              case REACT_PORTAL_TYPE:
-                return "Portal";
-              case REACT_CONTEXT_TYPE:
-                return type.displayName || "Context";
-              case REACT_CONSUMER_TYPE:
-                return (type._context.displayName || "Context") + ".Consumer";
-              case REACT_FORWARD_REF_TYPE:
-                var innerType = type.render;
-                type = type.displayName;
-                type || (type = innerType.displayName || innerType.name || "", type = "" !== type ? "ForwardRef(" + type + ")" : "ForwardRef");
-                return type;
-              case REACT_MEMO_TYPE:
-                return innerType = type.displayName || null, null !== innerType ? innerType : getComponentNameFromType(type.type) || "Memo";
-              case REACT_LAZY_TYPE:
-                innerType = type._payload;
-                type = type._init;
-                try {
-                  return getComponentNameFromType(type(innerType));
-                } catch (x) {
-                }
-            }
-          return null;
-        }
-        function getTaskName(type) {
-          if (type === REACT_FRAGMENT_TYPE) return "<>";
-          if ("object" === typeof type && null !== type && type.$$typeof === REACT_LAZY_TYPE)
-            return "<...>";
-          try {
-            var name = getComponentNameFromType(type);
-            return name ? "<" + name + ">" : "<...>";
-          } catch (x) {
-            return "<...>";
-          }
-        }
-        function getOwner() {
-          var dispatcher = ReactSharedInternals.A;
-          return null === dispatcher ? null : dispatcher.getOwner();
-        }
-        function UnknownOwner() {
-          return Error("react-stack-top-frame");
-        }
-        function hasValidKey(config) {
-          if (hasOwnProperty.call(config, "key")) {
-            var getter = Object.getOwnPropertyDescriptor(config, "key").get;
-            if (getter && getter.isReactWarning) return false;
-          }
-          return void 0 !== config.key;
-        }
-        function defineKeyPropWarningGetter(props, displayName) {
-          function warnAboutAccessingKey() {
-            specialPropKeyWarningShown || (specialPropKeyWarningShown = true, console.error(
-              "%s: `key` is not a prop. Trying to access it will result in `undefined` being returned. If you need to access the same value within the child component, you should pass it as a different prop. (https://react.dev/link/special-props)",
-              displayName
-            ));
-          }
-          warnAboutAccessingKey.isReactWarning = true;
-          Object.defineProperty(props, "key", {
-            get: warnAboutAccessingKey,
-            configurable: true
-          });
-        }
-        function elementRefGetterWithDeprecationWarning() {
-          var componentName = getComponentNameFromType(this.type);
-          didWarnAboutElementRef[componentName] || (didWarnAboutElementRef[componentName] = true, console.error(
-            "Accessing element.ref was removed in React 19. ref is now a regular prop. It will be removed from the JSX Element type in a future release."
-          ));
-          componentName = this.props.ref;
-          return void 0 !== componentName ? componentName : null;
-        }
-        function ReactElement(type, key, props, owner, debugStack, debugTask) {
-          var refProp = props.ref;
-          type = {
-            $$typeof: REACT_ELEMENT_TYPE,
-            type,
-            key,
-            props,
-            _owner: owner
-          };
-          null !== (void 0 !== refProp ? refProp : null) ? Object.defineProperty(type, "ref", {
-            enumerable: false,
-            get: elementRefGetterWithDeprecationWarning
-          }) : Object.defineProperty(type, "ref", { enumerable: false, value: null });
-          type._store = {};
-          Object.defineProperty(type._store, "validated", {
-            configurable: false,
-            enumerable: false,
-            writable: true,
-            value: 0
-          });
-          Object.defineProperty(type, "_debugInfo", {
-            configurable: false,
-            enumerable: false,
-            writable: true,
-            value: null
-          });
-          Object.defineProperty(type, "_debugStack", {
-            configurable: false,
-            enumerable: false,
-            writable: true,
-            value: debugStack
-          });
-          Object.defineProperty(type, "_debugTask", {
-            configurable: false,
-            enumerable: false,
-            writable: true,
-            value: debugTask
-          });
-          Object.freeze && (Object.freeze(type.props), Object.freeze(type));
-          return type;
-        }
-        function cloneAndReplaceKey(oldElement, newKey) {
-          newKey = ReactElement(
-            oldElement.type,
-            newKey,
-            oldElement.props,
-            oldElement._owner,
-            oldElement._debugStack,
-            oldElement._debugTask
-          );
-          oldElement._store && (newKey._store.validated = oldElement._store.validated);
-          return newKey;
-        }
-        function validateChildKeys(node) {
-          isValidElement(node) ? node._store && (node._store.validated = 1) : "object" === typeof node && null !== node && node.$$typeof === REACT_LAZY_TYPE && ("fulfilled" === node._payload.status ? isValidElement(node._payload.value) && node._payload.value._store && (node._payload.value._store.validated = 1) : node._store && (node._store.validated = 1));
-        }
-        function isValidElement(object) {
-          return "object" === typeof object && null !== object && object.$$typeof === REACT_ELEMENT_TYPE;
-        }
-        function escape(key) {
-          var escaperLookup = { "=": "=0", ":": "=2" };
-          return "$" + key.replace(/[=:]/g, function(match) {
-            return escaperLookup[match];
-          });
-        }
-        function getElementKey(element, index) {
-          return "object" === typeof element && null !== element && null != element.key ? (checkKeyStringCoercion(element.key), escape("" + element.key)) : index.toString(36);
-        }
-        function resolveThenable(thenable) {
-          switch (thenable.status) {
-            case "fulfilled":
-              return thenable.value;
-            case "rejected":
-              throw thenable.reason;
-            default:
-              switch ("string" === typeof thenable.status ? thenable.then(noop, noop) : (thenable.status = "pending", thenable.then(
-                function(fulfilledValue) {
-                  "pending" === thenable.status && (thenable.status = "fulfilled", thenable.value = fulfilledValue);
-                },
-                function(error) {
-                  "pending" === thenable.status && (thenable.status = "rejected", thenable.reason = error);
-                }
-              )), thenable.status) {
-                case "fulfilled":
-                  return thenable.value;
-                case "rejected":
-                  throw thenable.reason;
-              }
-          }
-          throw thenable;
-        }
-        function mapIntoArray(children, array, escapedPrefix, nameSoFar, callback) {
-          var type = typeof children;
-          if ("undefined" === type || "boolean" === type) children = null;
-          var invokeCallback = false;
-          if (null === children) invokeCallback = true;
-          else
-            switch (type) {
-              case "bigint":
-              case "string":
-              case "number":
-                invokeCallback = true;
-                break;
-              case "object":
-                switch (children.$$typeof) {
-                  case REACT_ELEMENT_TYPE:
-                  case REACT_PORTAL_TYPE:
-                    invokeCallback = true;
-                    break;
-                  case REACT_LAZY_TYPE:
-                    return invokeCallback = children._init, mapIntoArray(
-                      invokeCallback(children._payload),
-                      array,
-                      escapedPrefix,
-                      nameSoFar,
-                      callback
-                    );
-                }
-            }
-          if (invokeCallback) {
-            invokeCallback = children;
-            callback = callback(invokeCallback);
-            var childKey = "" === nameSoFar ? "." + getElementKey(invokeCallback, 0) : nameSoFar;
-            isArrayImpl(callback) ? (escapedPrefix = "", null != childKey && (escapedPrefix = childKey.replace(userProvidedKeyEscapeRegex, "$&/") + "/"), mapIntoArray(callback, array, escapedPrefix, "", function(c) {
-              return c;
-            })) : null != callback && (isValidElement(callback) && (null != callback.key && (invokeCallback && invokeCallback.key === callback.key || checkKeyStringCoercion(callback.key)), escapedPrefix = cloneAndReplaceKey(
-              callback,
-              escapedPrefix + (null == callback.key || invokeCallback && invokeCallback.key === callback.key ? "" : ("" + callback.key).replace(
-                userProvidedKeyEscapeRegex,
-                "$&/"
-              ) + "/") + childKey
-            ), "" !== nameSoFar && null != invokeCallback && isValidElement(invokeCallback) && null == invokeCallback.key && invokeCallback._store && !invokeCallback._store.validated && (escapedPrefix._store.validated = 2), callback = escapedPrefix), array.push(callback));
-            return 1;
-          }
-          invokeCallback = 0;
-          childKey = "" === nameSoFar ? "." : nameSoFar + ":";
-          if (isArrayImpl(children))
-            for (var i = 0; i < children.length; i++)
-              nameSoFar = children[i], type = childKey + getElementKey(nameSoFar, i), invokeCallback += mapIntoArray(
-                nameSoFar,
-                array,
-                escapedPrefix,
-                type,
-                callback
-              );
-          else if (i = getIteratorFn(children), "function" === typeof i)
-            for (i === children.entries && (didWarnAboutMaps || console.warn(
-              "Using Maps as children is not supported. Use an array of keyed ReactElements instead."
-            ), didWarnAboutMaps = true), children = i.call(children), i = 0; !(nameSoFar = children.next()).done; )
-              nameSoFar = nameSoFar.value, type = childKey + getElementKey(nameSoFar, i++), invokeCallback += mapIntoArray(
-                nameSoFar,
-                array,
-                escapedPrefix,
-                type,
-                callback
-              );
-          else if ("object" === type) {
-            if ("function" === typeof children.then)
-              return mapIntoArray(
-                resolveThenable(children),
-                array,
-                escapedPrefix,
-                nameSoFar,
-                callback
-              );
-            array = String(children);
-            throw Error(
-              "Objects are not valid as a React child (found: " + ("[object Object]" === array ? "object with keys {" + Object.keys(children).join(", ") + "}" : array) + "). If you meant to render a collection of children, use an array instead."
-            );
-          }
-          return invokeCallback;
-        }
-        function mapChildren(children, func, context) {
-          if (null == children) return children;
-          var result = [], count = 0;
-          mapIntoArray(children, result, "", "", function(child) {
-            return func.call(context, child, count++);
-          });
-          return result;
-        }
-        function lazyInitializer(payload) {
-          if (-1 === payload._status) {
-            var ioInfo = payload._ioInfo;
-            null != ioInfo && (ioInfo.start = ioInfo.end = performance.now());
-            ioInfo = payload._result;
-            var thenable = ioInfo();
-            thenable.then(
-              function(moduleObject) {
-                if (0 === payload._status || -1 === payload._status) {
-                  payload._status = 1;
-                  payload._result = moduleObject;
-                  var _ioInfo = payload._ioInfo;
-                  null != _ioInfo && (_ioInfo.end = performance.now());
-                  void 0 === thenable.status && (thenable.status = "fulfilled", thenable.value = moduleObject);
-                }
-              },
-              function(error) {
-                if (0 === payload._status || -1 === payload._status) {
-                  payload._status = 2;
-                  payload._result = error;
-                  var _ioInfo2 = payload._ioInfo;
-                  null != _ioInfo2 && (_ioInfo2.end = performance.now());
-                  void 0 === thenable.status && (thenable.status = "rejected", thenable.reason = error);
-                }
-              }
-            );
-            ioInfo = payload._ioInfo;
-            if (null != ioInfo) {
-              ioInfo.value = thenable;
-              var displayName = thenable.displayName;
-              "string" === typeof displayName && (ioInfo.name = displayName);
-            }
-            -1 === payload._status && (payload._status = 0, payload._result = thenable);
-          }
-          if (1 === payload._status)
-            return ioInfo = payload._result, void 0 === ioInfo && console.error(
-              "lazy: Expected the result of a dynamic import() call. Instead received: %s\n\nYour code should look like: \n  const MyComponent = lazy(() => import('./MyComponent'))\n\nDid you accidentally put curly braces around the import?",
-              ioInfo
-            ), "default" in ioInfo || console.error(
-              "lazy: Expected the result of a dynamic import() call. Instead received: %s\n\nYour code should look like: \n  const MyComponent = lazy(() => import('./MyComponent'))",
-              ioInfo
-            ), ioInfo.default;
-          throw payload._result;
-        }
-        function resolveDispatcher() {
-          var dispatcher = ReactSharedInternals.H;
-          null === dispatcher && console.error(
-            "Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:\n1. You might have mismatching versions of React and the renderer (such as React DOM)\n2. You might be breaking the Rules of Hooks\n3. You might have more than one copy of React in the same app\nSee https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem."
-          );
-          return dispatcher;
-        }
-        function releaseAsyncTransition() {
-          ReactSharedInternals.asyncTransitions--;
-        }
-        function enqueueTask(task) {
-          if (null === enqueueTaskImpl)
-            try {
-              var requireString = ("require" + Math.random()).slice(0, 7);
-              enqueueTaskImpl = (module && module[requireString]).call(
-                module,
-                "timers"
-              ).setImmediate;
-            } catch (_err) {
-              enqueueTaskImpl = function(callback) {
-                false === didWarnAboutMessageChannel && (didWarnAboutMessageChannel = true, "undefined" === typeof MessageChannel && console.error(
-                  "This browser does not have a MessageChannel implementation, so enqueuing tasks via await act(async () => ...) will fail. Please file an issue at https://github.com/facebook/react/issues if you encounter this warning."
-                ));
-                var channel = new MessageChannel();
-                channel.port1.onmessage = callback;
-                channel.port2.postMessage(void 0);
-              };
-            }
-          return enqueueTaskImpl(task);
-        }
-        function aggregateErrors(errors) {
-          return 1 < errors.length && "function" === typeof AggregateError ? new AggregateError(errors) : errors[0];
-        }
-        function popActScope(prevActQueue, prevActScopeDepth) {
-          prevActScopeDepth !== actScopeDepth - 1 && console.error(
-            "You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one. "
-          );
-          actScopeDepth = prevActScopeDepth;
-        }
-        function recursivelyFlushAsyncActWork(returnValue, resolve, reject) {
-          var queue = ReactSharedInternals.actQueue;
-          if (null !== queue)
-            if (0 !== queue.length)
-              try {
-                flushActQueue(queue);
-                enqueueTask(function() {
-                  return recursivelyFlushAsyncActWork(returnValue, resolve, reject);
-                });
-                return;
-              } catch (error) {
-                ReactSharedInternals.thrownErrors.push(error);
-              }
-            else ReactSharedInternals.actQueue = null;
-          0 < ReactSharedInternals.thrownErrors.length ? (queue = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, reject(queue)) : resolve(returnValue);
-        }
-        function flushActQueue(queue) {
-          if (!isFlushing) {
-            isFlushing = true;
-            var i = 0;
-            try {
-              for (; i < queue.length; i++) {
-                var callback = queue[i];
-                do {
-                  ReactSharedInternals.didUsePromise = false;
-                  var continuation = callback(false);
-                  if (null !== continuation) {
-                    if (ReactSharedInternals.didUsePromise) {
-                      queue[i] = callback;
-                      queue.splice(0, i);
-                      return;
-                    }
-                    callback = continuation;
-                  } else break;
-                } while (1);
-              }
-              queue.length = 0;
-            } catch (error) {
-              queue.splice(0, i + 1), ReactSharedInternals.thrownErrors.push(error);
-            } finally {
-              isFlushing = false;
-            }
-          }
-        }
-        "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(Error());
-        var REACT_ELEMENT_TYPE = /* @__PURE__ */ Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = /* @__PURE__ */ Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = /* @__PURE__ */ Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = /* @__PURE__ */ Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = /* @__PURE__ */ Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = /* @__PURE__ */ Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = /* @__PURE__ */ Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = /* @__PURE__ */ Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = /* @__PURE__ */ Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = /* @__PURE__ */ Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = /* @__PURE__ */ Symbol.for("react.memo"), REACT_LAZY_TYPE = /* @__PURE__ */ Symbol.for("react.lazy"), REACT_ACTIVITY_TYPE = /* @__PURE__ */ Symbol.for("react.activity"), MAYBE_ITERATOR_SYMBOL = Symbol.iterator, didWarnStateUpdateForUnmountedComponent = {}, ReactNoopUpdateQueue = {
-          isMounted: function() {
-            return false;
-          },
-          enqueueForceUpdate: function(publicInstance) {
-            warnNoop(publicInstance, "forceUpdate");
-          },
-          enqueueReplaceState: function(publicInstance) {
-            warnNoop(publicInstance, "replaceState");
-          },
-          enqueueSetState: function(publicInstance) {
-            warnNoop(publicInstance, "setState");
-          }
-        }, assign = Object.assign, emptyObject = {};
-        Object.freeze(emptyObject);
-        Component.prototype.isReactComponent = {};
-        Component.prototype.setState = function(partialState, callback) {
-          if ("object" !== typeof partialState && "function" !== typeof partialState && null != partialState)
-            throw Error(
-              "takes an object of state variables to update or a function which returns an object of state variables."
-            );
-          this.updater.enqueueSetState(this, partialState, callback, "setState");
-        };
-        Component.prototype.forceUpdate = function(callback) {
-          this.updater.enqueueForceUpdate(this, callback, "forceUpdate");
-        };
-        var deprecatedAPIs = {
-          isMounted: [
-            "isMounted",
-            "Instead, make sure to clean up subscriptions and pending requests in componentWillUnmount to prevent memory leaks."
-          ],
-          replaceState: [
-            "replaceState",
-            "Refactor your code to use setState instead (see https://github.com/facebook/react/issues/3236)."
-          ]
-        };
-        for (fnName in deprecatedAPIs)
-          deprecatedAPIs.hasOwnProperty(fnName) && defineDeprecationWarning(fnName, deprecatedAPIs[fnName]);
-        ComponentDummy.prototype = Component.prototype;
-        deprecatedAPIs = PureComponent.prototype = new ComponentDummy();
-        deprecatedAPIs.constructor = PureComponent;
-        assign(deprecatedAPIs, Component.prototype);
-        deprecatedAPIs.isPureReactComponent = true;
-        var isArrayImpl = Array.isArray, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = {
-          H: null,
-          A: null,
-          T: null,
-          S: null,
-          actQueue: null,
-          asyncTransitions: 0,
-          isBatchingLegacy: false,
-          didScheduleLegacyUpdate: false,
-          didUsePromise: false,
-          thrownErrors: [],
-          getCurrentStack: null,
-          recentlyCreatedOwnerStacks: 0
-        }, hasOwnProperty = Object.prototype.hasOwnProperty, createTask = console.createTask ? console.createTask : function() {
-          return null;
-        };
-        deprecatedAPIs = {
-          react_stack_bottom_frame: function(callStackForError) {
-            return callStackForError();
-          }
-        };
-        var specialPropKeyWarningShown, didWarnAboutOldJSXRuntime;
-        var didWarnAboutElementRef = {};
-        var unknownOwnerDebugStack = deprecatedAPIs.react_stack_bottom_frame.bind(
-          deprecatedAPIs,
-          UnknownOwner
-        )();
-        var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
-        var didWarnAboutMaps = false, userProvidedKeyEscapeRegex = /\/+/g, reportGlobalError = "function" === typeof reportError ? reportError : function(error) {
-          if ("object" === typeof window && "function" === typeof window.ErrorEvent) {
-            var event = new window.ErrorEvent("error", {
-              bubbles: true,
-              cancelable: true,
-              message: "object" === typeof error && null !== error && "string" === typeof error.message ? String(error.message) : String(error),
-              error
-            });
-            if (!window.dispatchEvent(event)) return;
-          } else if ("object" === typeof process && "function" === typeof process.emit) {
-            process.emit("uncaughtException", error);
-            return;
-          }
-          console.error(error);
-        }, didWarnAboutMessageChannel = false, enqueueTaskImpl = null, actScopeDepth = 0, didWarnNoAwaitAct = false, isFlushing = false, queueSeveralMicrotasks = "function" === typeof queueMicrotask ? function(callback) {
-          queueMicrotask(function() {
-            return queueMicrotask(callback);
-          });
-        } : enqueueTask;
-        deprecatedAPIs = Object.freeze({
-          __proto__: null,
-          c: function(size) {
-            return resolveDispatcher().useMemoCache(size);
-          }
-        });
-        var fnName = {
-          map: mapChildren,
-          forEach: function(children, forEachFunc, forEachContext) {
-            mapChildren(
-              children,
-              function() {
-                forEachFunc.apply(this, arguments);
-              },
-              forEachContext
-            );
-          },
-          count: function(children) {
-            var n = 0;
-            mapChildren(children, function() {
-              n++;
-            });
-            return n;
-          },
-          toArray: function(children) {
-            return mapChildren(children, function(child) {
-              return child;
-            }) || [];
-          },
-          only: function(children) {
-            if (!isValidElement(children))
-              throw Error(
-                "React.Children.only expected to receive a single React element child."
-              );
-            return children;
-          }
-        };
-        exports.Activity = REACT_ACTIVITY_TYPE;
-        exports.Children = fnName;
-        exports.Component = Component;
-        exports.Fragment = REACT_FRAGMENT_TYPE;
-        exports.Profiler = REACT_PROFILER_TYPE;
-        exports.PureComponent = PureComponent;
-        exports.StrictMode = REACT_STRICT_MODE_TYPE;
-        exports.Suspense = REACT_SUSPENSE_TYPE;
-        exports.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE = ReactSharedInternals;
-        exports.__COMPILER_RUNTIME = deprecatedAPIs;
-        exports.act = function(callback) {
-          var prevActQueue = ReactSharedInternals.actQueue, prevActScopeDepth = actScopeDepth;
-          actScopeDepth++;
-          var queue = ReactSharedInternals.actQueue = null !== prevActQueue ? prevActQueue : [], didAwaitActCall = false;
-          try {
-            var result = callback();
-          } catch (error) {
-            ReactSharedInternals.thrownErrors.push(error);
-          }
-          if (0 < ReactSharedInternals.thrownErrors.length)
-            throw popActScope(prevActQueue, prevActScopeDepth), callback = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, callback;
-          if (null !== result && "object" === typeof result && "function" === typeof result.then) {
-            var thenable = result;
-            queueSeveralMicrotasks(function() {
-              didAwaitActCall || didWarnNoAwaitAct || (didWarnNoAwaitAct = true, console.error(
-                "You called act(async () => ...) without await. This could lead to unexpected testing behaviour, interleaving multiple act calls and mixing their scopes. You should - await act(async () => ...);"
-              ));
-            });
-            return {
-              then: function(resolve, reject) {
-                didAwaitActCall = true;
-                thenable.then(
-                  function(returnValue) {
-                    popActScope(prevActQueue, prevActScopeDepth);
-                    if (0 === prevActScopeDepth) {
-                      try {
-                        flushActQueue(queue), enqueueTask(function() {
-                          return recursivelyFlushAsyncActWork(
-                            returnValue,
-                            resolve,
-                            reject
-                          );
-                        });
-                      } catch (error$0) {
-                        ReactSharedInternals.thrownErrors.push(error$0);
-                      }
-                      if (0 < ReactSharedInternals.thrownErrors.length) {
-                        var _thrownError = aggregateErrors(
-                          ReactSharedInternals.thrownErrors
-                        );
-                        ReactSharedInternals.thrownErrors.length = 0;
-                        reject(_thrownError);
-                      }
-                    } else resolve(returnValue);
-                  },
-                  function(error) {
-                    popActScope(prevActQueue, prevActScopeDepth);
-                    0 < ReactSharedInternals.thrownErrors.length ? (error = aggregateErrors(
-                      ReactSharedInternals.thrownErrors
-                    ), ReactSharedInternals.thrownErrors.length = 0, reject(error)) : reject(error);
-                  }
-                );
-              }
-            };
-          }
-          var returnValue$jscomp$0 = result;
-          popActScope(prevActQueue, prevActScopeDepth);
-          0 === prevActScopeDepth && (flushActQueue(queue), 0 !== queue.length && queueSeveralMicrotasks(function() {
-            didAwaitActCall || didWarnNoAwaitAct || (didWarnNoAwaitAct = true, console.error(
-              "A component suspended inside an `act` scope, but the `act` call was not awaited. When testing React components that depend on asynchronous data, you must await the result:\n\nawait act(() => ...)"
-            ));
-          }), ReactSharedInternals.actQueue = null);
-          if (0 < ReactSharedInternals.thrownErrors.length)
-            throw callback = aggregateErrors(ReactSharedInternals.thrownErrors), ReactSharedInternals.thrownErrors.length = 0, callback;
-          return {
-            then: function(resolve, reject) {
-              didAwaitActCall = true;
-              0 === prevActScopeDepth ? (ReactSharedInternals.actQueue = queue, enqueueTask(function() {
-                return recursivelyFlushAsyncActWork(
-                  returnValue$jscomp$0,
-                  resolve,
-                  reject
-                );
-              })) : resolve(returnValue$jscomp$0);
-            }
-          };
-        };
-        exports.cache = function(fn) {
-          return function() {
-            return fn.apply(null, arguments);
-          };
-        };
-        exports.cacheSignal = function() {
-          return null;
-        };
-        exports.captureOwnerStack = function() {
-          var getCurrentStack = ReactSharedInternals.getCurrentStack;
-          return null === getCurrentStack ? null : getCurrentStack();
-        };
-        exports.cloneElement = function(element, config, children) {
-          if (null === element || void 0 === element)
-            throw Error(
-              "The argument must be a React element, but you passed " + element + "."
-            );
-          var props = assign({}, element.props), key = element.key, owner = element._owner;
-          if (null != config) {
-            var JSCompiler_inline_result;
-            a: {
-              if (hasOwnProperty.call(config, "ref") && (JSCompiler_inline_result = Object.getOwnPropertyDescriptor(
-                config,
-                "ref"
-              ).get) && JSCompiler_inline_result.isReactWarning) {
-                JSCompiler_inline_result = false;
-                break a;
-              }
-              JSCompiler_inline_result = void 0 !== config.ref;
-            }
-            JSCompiler_inline_result && (owner = getOwner());
-            hasValidKey(config) && (checkKeyStringCoercion(config.key), key = "" + config.key);
-            for (propName in config)
-              !hasOwnProperty.call(config, propName) || "key" === propName || "__self" === propName || "__source" === propName || "ref" === propName && void 0 === config.ref || (props[propName] = config[propName]);
-          }
-          var propName = arguments.length - 2;
-          if (1 === propName) props.children = children;
-          else if (1 < propName) {
-            JSCompiler_inline_result = Array(propName);
-            for (var i = 0; i < propName; i++)
-              JSCompiler_inline_result[i] = arguments[i + 2];
-            props.children = JSCompiler_inline_result;
-          }
-          props = ReactElement(
-            element.type,
-            key,
-            props,
-            owner,
-            element._debugStack,
-            element._debugTask
-          );
-          for (key = 2; key < arguments.length; key++)
-            validateChildKeys(arguments[key]);
-          return props;
-        };
-        exports.createContext = function(defaultValue) {
-          defaultValue = {
-            $$typeof: REACT_CONTEXT_TYPE,
-            _currentValue: defaultValue,
-            _currentValue2: defaultValue,
-            _threadCount: 0,
-            Provider: null,
-            Consumer: null
-          };
-          defaultValue.Provider = defaultValue;
-          defaultValue.Consumer = {
-            $$typeof: REACT_CONSUMER_TYPE,
-            _context: defaultValue
-          };
-          defaultValue._currentRenderer = null;
-          defaultValue._currentRenderer2 = null;
-          return defaultValue;
-        };
-        exports.createElement = function(type, config, children) {
-          for (var i = 2; i < arguments.length; i++)
-            validateChildKeys(arguments[i]);
-          i = {};
-          var key = null;
-          if (null != config)
-            for (propName in didWarnAboutOldJSXRuntime || !("__self" in config) || "key" in config || (didWarnAboutOldJSXRuntime = true, console.warn(
-              "Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for faster performance: https://react.dev/link/new-jsx-transform"
-            )), hasValidKey(config) && (checkKeyStringCoercion(config.key), key = "" + config.key), config)
-              hasOwnProperty.call(config, propName) && "key" !== propName && "__self" !== propName && "__source" !== propName && (i[propName] = config[propName]);
-          var childrenLength = arguments.length - 2;
-          if (1 === childrenLength) i.children = children;
-          else if (1 < childrenLength) {
-            for (var childArray = Array(childrenLength), _i = 0; _i < childrenLength; _i++)
-              childArray[_i] = arguments[_i + 2];
-            Object.freeze && Object.freeze(childArray);
-            i.children = childArray;
-          }
-          if (type && type.defaultProps)
-            for (propName in childrenLength = type.defaultProps, childrenLength)
-              void 0 === i[propName] && (i[propName] = childrenLength[propName]);
-          key && defineKeyPropWarningGetter(
-            i,
-            "function" === typeof type ? type.displayName || type.name || "Unknown" : type
-          );
-          var propName = 1e4 > ReactSharedInternals.recentlyCreatedOwnerStacks++;
-          return ReactElement(
-            type,
-            key,
-            i,
-            getOwner(),
-            propName ? Error("react-stack-top-frame") : unknownOwnerDebugStack,
-            propName ? createTask(getTaskName(type)) : unknownOwnerDebugTask
-          );
-        };
-        exports.createRef = function() {
-          var refObject = { current: null };
-          Object.seal(refObject);
-          return refObject;
-        };
-        exports.forwardRef = function(render) {
-          null != render && render.$$typeof === REACT_MEMO_TYPE ? console.error(
-            "forwardRef requires a render function but received a `memo` component. Instead of forwardRef(memo(...)), use memo(forwardRef(...))."
-          ) : "function" !== typeof render ? console.error(
-            "forwardRef requires a render function but was given %s.",
-            null === render ? "null" : typeof render
-          ) : 0 !== render.length && 2 !== render.length && console.error(
-            "forwardRef render functions accept exactly two parameters: props and ref. %s",
-            1 === render.length ? "Did you forget to use the ref parameter?" : "Any additional parameter will be undefined."
-          );
-          null != render && null != render.defaultProps && console.error(
-            "forwardRef render functions do not support defaultProps. Did you accidentally pass a React component?"
-          );
-          var elementType = { $$typeof: REACT_FORWARD_REF_TYPE, render }, ownName;
-          Object.defineProperty(elementType, "displayName", {
-            enumerable: false,
-            configurable: true,
-            get: function() {
-              return ownName;
-            },
-            set: function(name) {
-              ownName = name;
-              render.name || render.displayName || (Object.defineProperty(render, "name", { value: name }), render.displayName = name);
-            }
-          });
-          return elementType;
-        };
-        exports.isValidElement = isValidElement;
-        exports.lazy = function(ctor) {
-          ctor = { _status: -1, _result: ctor };
-          var lazyType = {
-            $$typeof: REACT_LAZY_TYPE,
-            _payload: ctor,
-            _init: lazyInitializer
-          }, ioInfo = {
-            name: "lazy",
-            start: -1,
-            end: -1,
-            value: null,
-            owner: null,
-            debugStack: Error("react-stack-top-frame"),
-            debugTask: console.createTask ? console.createTask("lazy()") : null
-          };
-          ctor._ioInfo = ioInfo;
-          lazyType._debugInfo = [{ awaited: ioInfo }];
-          return lazyType;
-        };
-        exports.memo = function(type, compare) {
-          null == type && console.error(
-            "memo: The first argument must be a component. Instead received: %s",
-            null === type ? "null" : typeof type
-          );
-          compare = {
-            $$typeof: REACT_MEMO_TYPE,
-            type,
-            compare: void 0 === compare ? null : compare
-          };
-          var ownName;
-          Object.defineProperty(compare, "displayName", {
-            enumerable: false,
-            configurable: true,
-            get: function() {
-              return ownName;
-            },
-            set: function(name) {
-              ownName = name;
-              type.name || type.displayName || (Object.defineProperty(type, "name", { value: name }), type.displayName = name);
-            }
-          });
-          return compare;
-        };
-        exports.startTransition = function(scope) {
-          var prevTransition = ReactSharedInternals.T, currentTransition = {};
-          currentTransition._updatedFibers = /* @__PURE__ */ new Set();
-          ReactSharedInternals.T = currentTransition;
-          try {
-            var returnValue = scope(), onStartTransitionFinish = ReactSharedInternals.S;
-            null !== onStartTransitionFinish && onStartTransitionFinish(currentTransition, returnValue);
-            "object" === typeof returnValue && null !== returnValue && "function" === typeof returnValue.then && (ReactSharedInternals.asyncTransitions++, returnValue.then(releaseAsyncTransition, releaseAsyncTransition), returnValue.then(noop, reportGlobalError));
-          } catch (error) {
-            reportGlobalError(error);
-          } finally {
-            null === prevTransition && currentTransition._updatedFibers && (scope = currentTransition._updatedFibers.size, currentTransition._updatedFibers.clear(), 10 < scope && console.warn(
-              "Detected a large number of updates inside startTransition. If this is due to a subscription please re-write it to use React provided hooks. Otherwise concurrent mode guarantees are off the table."
-            )), null !== prevTransition && null !== currentTransition.types && (null !== prevTransition.types && prevTransition.types !== currentTransition.types && console.error(
-              "We expected inner Transitions to have transferred the outer types set and that you cannot add to the outer Transition while inside the inner.This is a bug in React."
-            ), prevTransition.types = currentTransition.types), ReactSharedInternals.T = prevTransition;
-          }
-        };
-        exports.unstable_useCacheRefresh = function() {
-          return resolveDispatcher().useCacheRefresh();
-        };
-        exports.use = function(usable) {
-          return resolveDispatcher().use(usable);
-        };
-        exports.useActionState = function(action, initialState, permalink) {
-          return resolveDispatcher().useActionState(
-            action,
-            initialState,
-            permalink
-          );
-        };
-        exports.useCallback = function(callback, deps) {
-          return resolveDispatcher().useCallback(callback, deps);
-        };
-        exports.useContext = function(Context) {
-          var dispatcher = resolveDispatcher();
-          Context.$$typeof === REACT_CONSUMER_TYPE && console.error(
-            "Calling useContext(Context.Consumer) is not supported and will cause bugs. Did you mean to call useContext(Context) instead?"
-          );
-          return dispatcher.useContext(Context);
-        };
-        exports.useDebugValue = function(value, formatterFn) {
-          return resolveDispatcher().useDebugValue(value, formatterFn);
-        };
-        exports.useDeferredValue = function(value, initialValue) {
-          return resolveDispatcher().useDeferredValue(value, initialValue);
-        };
-        exports.useEffect = function(create, deps) {
-          null == create && console.warn(
-            "React Hook useEffect requires an effect callback. Did you forget to pass a callback to the hook?"
-          );
-          return resolveDispatcher().useEffect(create, deps);
-        };
-        exports.useEffectEvent = function(callback) {
-          return resolveDispatcher().useEffectEvent(callback);
-        };
-        exports.useId = function() {
-          return resolveDispatcher().useId();
-        };
-        exports.useImperativeHandle = function(ref, create, deps) {
-          return resolveDispatcher().useImperativeHandle(ref, create, deps);
-        };
-        exports.useInsertionEffect = function(create, deps) {
-          null == create && console.warn(
-            "React Hook useInsertionEffect requires an effect callback. Did you forget to pass a callback to the hook?"
-          );
-          return resolveDispatcher().useInsertionEffect(create, deps);
-        };
-        exports.useLayoutEffect = function(create, deps) {
-          null == create && console.warn(
-            "React Hook useLayoutEffect requires an effect callback. Did you forget to pass a callback to the hook?"
-          );
-          return resolveDispatcher().useLayoutEffect(create, deps);
-        };
-        exports.useMemo = function(create, deps) {
-          return resolveDispatcher().useMemo(create, deps);
-        };
-        exports.useOptimistic = function(passthrough, reducer) {
-          return resolveDispatcher().useOptimistic(passthrough, reducer);
-        };
-        exports.useReducer = function(reducer, initialArg, init) {
-          return resolveDispatcher().useReducer(reducer, initialArg, init);
-        };
-        exports.useRef = function(initialValue) {
-          return resolveDispatcher().useRef(initialValue);
-        };
-        exports.useState = function(initialState) {
-          return resolveDispatcher().useState(initialState);
-        };
-        exports.useSyncExternalStore = function(subscribe, getSnapshot, getServerSnapshot) {
-          return resolveDispatcher().useSyncExternalStore(
-            subscribe,
-            getSnapshot,
-            getServerSnapshot
-          );
-        };
-        exports.useTransition = function() {
-          return resolveDispatcher().useTransition();
-        };
-        exports.version = "19.2.4";
-        "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
-      })();
-    }
+var AegisDock = (() => {
+  var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+    get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+  }) : x)(function(x) {
+    if (typeof require !== "undefined") return require.apply(this, arguments);
+    throw Error('Dynamic require of "' + x + '" is not supported');
   });
 
-  // ../../dock-preview/node_modules/react/index.js
-  var require_react = __commonJS({
-    "../../dock-preview/node_modules/react/index.js"(exports, module) {
-      "use strict";
-      if (false) {
-        module.exports = null;
-      } else {
-        module.exports = require_react_development();
-      }
-    }
-  });
+  // aegis-dock-entry.jsx
+  var import_client = __require("react-dom/client");
 
-  // dock/aegis-dock.jsx
-  var import_react7 = __toESM(require_react());
+  // aegis-dock.jsx
+  var import_react7 = __require("react");
 
-  // dock/constants.js
+  // constants.js
   var ENGINE_STATES = [
     { id: "STUDIO", short: "STU", color: "#5ba3f5", bgActive: "#0d1a2e", borderActive: "#1a3a5a" },
     { id: "IRL_CONNECTING", short: "CONN", color: "#fbbf24", bgActive: "#261e0d", borderActive: "#3a2a0d" },
@@ -1133,7 +133,7 @@
     { id: "e5", time: "00:00:01", tsUnixMs: Date.now() - 39e5, type: "info", msg: "Core connected", source: "ipc" }
   ];
 
-  // dock/utils.js
+  // utils.js
   var _reqCounter = 0;
   function genRequestId() {
     return `dock_${Date.now()}_${++_reqCounter}`;
@@ -1376,7 +376,7 @@
     return { label: "Link " + n, type: "unknown" };
   }
 
-  // dock/css.js
+  // css.js
   function getDockCss(theme) {
     return `
   /* === OBS CEF host sizing \u2014 ensures height:100% propagates to the component === */
@@ -1408,8 +408,8 @@
 `;
   }
 
-  // dock/hooks.js
-  var import_react = __toESM(require_react());
+  // hooks.js
+  var import_react = __require("react");
   function useAnimatedValue(target, duration = 800) {
     const [value, setValue] = (0, import_react.useState)(target);
     const ref = (0, import_react.useRef)(target);
@@ -1480,8 +480,8 @@
     return mode;
   }
 
-  // dock/use-dock-state.js
-  var import_react2 = __toESM(require_react());
+  // use-dock-state.js
+  var import_react2 = __require("react");
   function useDockState() {
     const [state, setState] = (0, import_react2.useState)(null);
     const [bridgeAvailable, setBridgeAvailable] = (0, import_react2.useState)(false);
@@ -1634,8 +634,8 @@
     return { state, sendAction, bridgeAvailable };
   }
 
-  // dock/use-simulated-state.js
-  var import_react3 = __toESM(require_react());
+  // use-simulated-state.js
+  var import_react3 = __require("react");
   function useSimulatedState() {
     const [mode, setMode] = (0, import_react3.useState)("studio");
     const [simRelayActive, setSimRelayActive] = (0, import_react3.useState)(false);
@@ -1909,161 +909,185 @@
     return { state, sendAction };
   }
 
-  // dock/ui-components.jsx
-  var import_react4 = __toESM(require_react());
+  // ui-components.jsx
+  var import_react4 = __require("react");
+  var import_jsx_runtime = __require("react/jsx-runtime");
   function Section({ title, icon, badge, badgeColor, defaultOpen = false, compact = false, children, dragHandle }) {
     const [open, setOpen] = (0, import_react4.useState)(defaultOpen);
-    return /* @__PURE__ */ React.createElement("div", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: {
       borderBottom: "1px solid var(--theme-border, #1a1d23)",
       background: open ? "rgba(128,128,128,0.04)" : "transparent",
       transition: "background 0.2s ease"
-    } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "stretch" } }, /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => setOpen(!open),
-        style: {
-          flex: 1,
-          minWidth: 0,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: compact ? "9px 10px" : "10px 12px",
-          border: "none",
-          background: "none",
-          color: "var(--theme-text-muted, #c8ccd4)",
-          cursor: "pointer",
-          fontSize: compact ? 10 : 11,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          fontWeight: 600,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          transition: "color 0.15s ease"
-        },
-        onMouseEnter: (e) => e.currentTarget.style.color = "var(--theme-text, #fff)",
-        onMouseLeave: (e) => e.currentTarget.style.color = "var(--theme-text-muted, #c8ccd4)"
-      },
-      /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, opacity: 0.6, lineHeight: 1 } }, icon),
-      /* @__PURE__ */ React.createElement("span", { style: { flex: 1, textAlign: "left" } }, title),
-      badge != null && /* @__PURE__ */ React.createElement("span", { style: {
-        background: badgeColor || "#2d7aed",
-        color: "var(--theme-bg, #fff)",
-        fontSize: compact ? 7 : 8,
-        fontWeight: 700,
-        padding: compact ? "1px 4px" : "2px 6px",
-        borderRadius: 3,
-        letterSpacing: "0.04em",
-        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-        maxWidth: compact ? 64 : 92,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
-      } }, badge),
-      /* @__PURE__ */ React.createElement(
-        "svg",
-        {
-          width: "10",
-          height: "10",
-          viewBox: "0 0 10 10",
-          style: {
-            transform: open ? "rotate(0deg)" : "rotate(-90deg)",
-            transition: "transform 0.2s ease",
-            opacity: 0.4
-          }
-        },
-        /* @__PURE__ */ React.createElement(
-          "path",
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "stretch" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          "button",
           {
-            d: "M2 3.5L5 6.5L8 3.5",
-            stroke: "currentColor",
-            strokeWidth: "1.5",
-            fill: "none",
-            strokeLinecap: "round",
-            strokeLinejoin: "round"
+            onClick: () => setOpen(!open),
+            style: {
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: compact ? "9px 10px" : "10px 12px",
+              border: "none",
+              background: "none",
+              color: "var(--theme-text-muted, #c8ccd4)",
+              cursor: "pointer",
+              fontSize: compact ? 10 : 11,
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              transition: "color 0.15s ease"
+            },
+            onMouseEnter: (e) => e.currentTarget.style.color = "var(--theme-text, #fff)",
+            onMouseLeave: (e) => e.currentTarget.style.color = "var(--theme-text-muted, #c8ccd4)",
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { fontSize: 13, opacity: 0.6, lineHeight: 1 }, children: icon }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { flex: 1, textAlign: "left" }, children: title }),
+              badge != null && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
+                background: badgeColor || "#2d7aed",
+                color: "var(--theme-bg, #fff)",
+                fontSize: compact ? 7 : 8,
+                fontWeight: 700,
+                padding: compact ? "1px 4px" : "2px 6px",
+                borderRadius: 3,
+                letterSpacing: "0.04em",
+                fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                maxWidth: compact ? 64 : 92,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap"
+              }, children: badge }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "svg",
+                {
+                  width: "10",
+                  height: "10",
+                  viewBox: "0 0 10 10",
+                  style: {
+                    transform: open ? "rotate(0deg)" : "rotate(-90deg)",
+                    transition: "transform 0.2s ease",
+                    opacity: 0.4
+                  },
+                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                    "path",
+                    {
+                      d: "M2 3.5L5 6.5L8 3.5",
+                      stroke: "currentColor",
+                      strokeWidth: "1.5",
+                      fill: "none",
+                      strokeLinecap: "round",
+                      strokeLinejoin: "round"
+                    }
+                  )
+                }
+              )
+            ]
           }
-        )
-      )
-    ), dragHandle), /* @__PURE__ */ React.createElement("div", { style: {
-      maxHeight: open ? 800 : 0,
-      overflow: "hidden",
-      transition: "max-height 0.3s cubic-bezier(0.4,0,0.2,1)",
-      opacity: open ? 1 : 0
-    } }, /* @__PURE__ */ React.createElement("div", { style: { padding: compact ? "2px 10px 10px" : "2px 12px 12px" } }, children)));
+        ),
+        dragHandle
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
+        maxHeight: open ? 800 : 0,
+        overflow: "hidden",
+        transition: "max-height 0.3s cubic-bezier(0.4,0,0.2,1)",
+        opacity: open ? 1 : 0
+      }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { padding: compact ? "2px 10px 10px" : "2px 12px 12px" }, children }) })
+    ] });
   }
   function StatusDot({ color, pulse }) {
-    return /* @__PURE__ */ React.createElement("span", { style: { position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center" } }, pulse && /* @__PURE__ */ React.createElement("span", { style: {
-      position: "absolute",
-      width: 10,
-      height: 10,
-      borderRadius: "50%",
-      background: color,
-      opacity: 0.3,
-      animation: "pulse 2s ease-in-out infinite"
-    } }), /* @__PURE__ */ React.createElement("span", { style: {
-      width: 6,
-      height: 6,
-      borderRadius: "50%",
-      background: color,
-      boxShadow: `0 0 6px ${color}40`
-    } }));
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center" }, children: [
+      pulse && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
+        position: "absolute",
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        background: color,
+        opacity: 0.3,
+        animation: "pulse 2s ease-in-out infinite"
+      } }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        background: color,
+        boxShadow: `0 0 6px ${color}40`
+      } })
+    ] });
   }
-  function BitrateBar({ value, max, color, label }) {
+  function BitrateBar({ value, max, color, label, suffix }) {
     const pct = max > 0 ? Math.min(value / max * 100, 100) : 0;
-    return /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 6 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 3 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" } }, label), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", fontWeight: 600 } }, value >= 1e3 ? (value / 1e3).toFixed(1) + " Mbps" : Math.round(value) + " kbps")), /* @__PURE__ */ React.createElement("div", { style: { height: 4, background: "var(--theme-surface, #1a1d23)", borderRadius: 2, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: {
-      height: "100%",
-      width: `${pct}%`,
-      background: `linear-gradient(90deg, ${color}, ${color}cc)`,
-      borderRadius: 2,
-      transition: "width 0.6s cubic-bezier(0.4,0,0.2,1)",
-      boxShadow: `0 0 8px ${color}30`
-    } })));
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { marginBottom: 6 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { fontSize: 10, color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", display: "inline-flex", alignItems: "center" }, children: [
+          label,
+          suffix
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)", fontWeight: 600 }, children: value >= 1e3 ? (value / 1e3).toFixed(1) + " Mbps" : Math.round(value) + " kbps" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 4, background: "var(--theme-surface, #1a1d23)", borderRadius: 2, overflow: "hidden" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
+        height: "100%",
+        width: `${pct}%`,
+        background: `linear-gradient(90deg, ${color}, ${color}cc)`,
+        borderRadius: 2,
+        transition: "width 0.6s cubic-bezier(0.4,0,0.2,1)",
+        boxShadow: `0 0 8px ${color}30`
+      } }) })
+    ] });
   }
   function ToggleRow({ label, value, color, dimmed, onChange }) {
     const isOn = !!value;
     const isDimmed = dimmed || value === null;
-    return /* @__PURE__ */ React.createElement("div", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
       padding: "6px 0",
       borderBottom: "1px solid var(--theme-border, #13151a)",
       opacity: isDimmed ? 0.45 : 1
-    } }, /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: 10,
-      color: isOn ? "var(--theme-text, #c8ccd4)" : "var(--theme-text-muted, #5a5f6d)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, label), /* @__PURE__ */ React.createElement("button", { onClick: () => {
-      if (!isDimmed && onChange) onChange(!isOn);
-    }, style: {
-      width: 32,
-      height: 16,
-      borderRadius: 8,
-      border: "none",
-      cursor: isDimmed ? "not-allowed" : "pointer",
-      background: isOn ? color || "var(--theme-accent, #2d7aed)" : "var(--theme-border, #2a2d35)",
-      position: "relative",
-      transition: "background 0.2s ease",
-      flexShrink: 0
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      width: 12,
-      height: 12,
-      borderRadius: "50%",
-      background: "var(--theme-text, #fff)",
-      position: "absolute",
-      top: 2,
-      left: isOn ? 18 : 2,
-      transition: "left 0.2s ease",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.3)"
-    } })));
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
+        fontSize: 10,
+        color: isOn ? "var(--theme-text, #c8ccd4)" : "var(--theme-text-muted, #5a5f6d)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: () => {
+        if (!isDimmed && onChange) onChange(!isOn);
+      }, style: {
+        width: 32,
+        height: 16,
+        borderRadius: 8,
+        border: "none",
+        cursor: isDimmed ? "not-allowed" : "pointer",
+        background: isOn ? color || "var(--theme-accent, #2d7aed)" : "var(--theme-border, #2a2d35)",
+        position: "relative",
+        transition: "background 0.2s ease",
+        flexShrink: 0
+      }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
+        width: 12,
+        height: 12,
+        borderRadius: "50%",
+        background: "var(--theme-text, #fff)",
+        position: "absolute",
+        top: 2,
+        left: isOn ? 18 : 2,
+        transition: "left 0.2s ease",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.3)"
+      } }) })
+    ] });
   }
   function EngineStateChips({ activeState, compact = false }) {
-    return /* @__PURE__ */ React.createElement("div", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
       display: "grid",
       gridTemplateColumns: compact ? "1fr 1fr" : "1fr 1fr 1fr",
       gap: 3,
       marginBottom: 8
-    } }, ENGINE_STATES.map((es) => {
+    }, children: ENGINE_STATES.map((es) => {
       const isActive = activeState === es.id;
-      return /* @__PURE__ */ React.createElement("div", { key: es.id, style: {
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
         height: compact ? 20 : 22,
         borderRadius: 3,
         display: "flex",
@@ -2078,12 +1102,12 @@
         color: isActive ? es.color : "var(--theme-text-muted, #5a5f6d)",
         transition: "all 0.25s ease",
         boxShadow: isActive ? `0 0 8px ${es.color}15` : "none"
-      } }, es.short);
-    }));
+      }, children: es.short }, es.id);
+    }) });
   }
   function ConnectionTypeBadge({ type }) {
     const isByor = type === "byor";
-    return /* @__PURE__ */ React.createElement("span", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
       fontSize: 8,
       fontWeight: 700,
       letterSpacing: "0.06em",
@@ -2094,154 +1118,203 @@
       flexShrink: 0,
       border: isByor ? "1px solid #2d7aed30" : "1px solid #2ea04330",
       fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, isByor ? "BYOR" : "MGD");
+    }, children: isByor ? "BYOR" : "MGD" });
   }
   function SecretField({ label, value, copyValue }) {
     const [revealed, setRevealed] = (0, import_react4.useState)(false);
     const hasValue = !!value;
     const displayValue = revealed ? value : hasValue ? "\u2022".repeat(Math.min(String(value).length, 22)) : "\u2014";
-    return /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 5 } }, /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: 8,
-      color: "var(--theme-text-muted, #8b8f98)",
-      textTransform: "uppercase",
-      letterSpacing: "0.04em",
-      marginBottom: 2,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, label), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ React.createElement("span", { style: {
-      flex: 1,
-      fontSize: 9,
-      color: hasValue ? "var(--theme-text, #e0e2e8)" : "var(--theme-text-muted, #5a5f6d)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    } }, displayValue), hasValue && /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => setRevealed(!revealed),
-        style: {
-          border: "none",
-          background: "none",
-          padding: "0 2px",
-          color: "var(--theme-text-muted, #4a4f5c)",
-          fontSize: 8,
-          cursor: "pointer",
-          flexShrink: 0,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-        }
-      },
-      revealed ? "hide" : "show"
-    ), hasValue && /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => cefCopyToClipboard(copyValue || value),
-        style: {
-          border: "none",
-          background: "none",
-          padding: "0 2px",
-          color: "var(--theme-text-muted, #4a4f5c)",
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { marginBottom: 5 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
+        fontSize: 8,
+        color: "var(--theme-text-muted, #8b8f98)",
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        marginBottom: 2,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
+          flex: 1,
           fontSize: 9,
-          cursor: "pointer",
-          flexShrink: 0,
-          lineHeight: 1
-        },
-        title: "Copy"
-      },
-      "\u29C9"
-    )));
+          color: hasValue ? "var(--theme-text, #e0e2e8)" : "var(--theme-text-muted, #5a5f6d)",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap"
+        }, children: displayValue }),
+        hasValue && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "button",
+          {
+            onClick: () => setRevealed(!revealed),
+            style: {
+              border: "none",
+              background: "none",
+              padding: "0 2px",
+              color: "var(--theme-text-muted, #4a4f5c)",
+              fontSize: 8,
+              cursor: "pointer",
+              flexShrink: 0,
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+            },
+            children: revealed ? "hide" : "show"
+          }
+        ),
+        hasValue && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "button",
+          {
+            onClick: () => cefCopyToClipboard(copyValue || value),
+            style: {
+              border: "none",
+              background: "none",
+              padding: "0 2px",
+              color: "var(--theme-text-muted, #4a4f5c)",
+              fontSize: 9,
+              cursor: "pointer",
+              flexShrink: 0,
+              lineHeight: 1
+            },
+            title: "Copy",
+            children: "\u29C9"
+          }
+        )
+      ] })
+    ] });
   }
 
-  // dock/encoder-components.jsx
-  var import_react5 = __toESM(require_react());
+  // scene-components.jsx
+  var import_jsx_runtime2 = __require("react/jsx-runtime");
+
+  // encoder-components.jsx
+  var import_react5 = __require("react");
+  var import_jsx_runtime3 = __require("react/jsx-runtime");
   function OutputBar({ name, bitrateKbps, fps, dropPct, active, maxBitrate, compact = false }) {
     const healthColor = getOutputHealthColor(bitrateKbps, maxBitrate);
     const animBitrate = useAnimatedValue(active ? bitrateKbps || 0 : 0, 600);
     const pct = maxBitrate > 0 ? Math.min(animBitrate / maxBitrate * 100, 100) : 0;
     const inactive = !active;
-    return /* @__PURE__ */ React.createElement("div", { style: { marginBottom: compact ? 6 : 8, opacity: inactive ? 0.4 : 1, transition: "opacity 0.3s ease" } }, /* @__PURE__ */ React.createElement("div", { style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "baseline",
-      marginBottom: 3,
-      fontSize: compact ? 9 : 10,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, /* @__PURE__ */ React.createElement("span", { style: {
-      color: "var(--theme-text, #e0e2e8)",
-      fontWeight: 600,
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap",
-      flex: 1,
-      marginRight: 8
-    } }, name || "Output"), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text-muted, #8b8f98)", flexShrink: 0, whiteSpace: "nowrap" } }, inactive ? "\u2014" : /* @__PURE__ */ React.createElement(React.Fragment, null, bitrateKbps != null ? `${(bitrateKbps / 1e3).toFixed(1)} Mbps` : "\u2014", "  ", fps != null ? `${Math.round(fps)}fps` : "", "  ", dropPct != null ? `${dropPct.toFixed(2)}%` : ""))), /* @__PURE__ */ React.createElement("div", { style: {
-      height: compact ? 3 : 4,
-      background: "var(--theme-border, #2a2d35)",
-      borderRadius: 2,
-      overflow: "hidden"
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      height: "100%",
-      width: `${pct}%`,
-      background: healthColor,
-      borderRadius: 2,
-      transition: "width 0.6s cubic-bezier(0.4,0,0.2,1), background 0.4s ease",
-      boxShadow: inactive ? "none" : `0 0 4px ${healthColor}30`
-    } })));
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { marginBottom: compact ? 6 : 8, opacity: inactive ? 0.4 : 1, transition: "opacity 0.3s ease" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        marginBottom: 3,
+        fontSize: compact ? 9 : 10,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: {
+          color: "var(--theme-text, #e0e2e8)",
+          fontWeight: 600,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          flex: 1,
+          marginRight: 8
+        }, children: name || "Output" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { color: "var(--theme-text-muted, #8b8f98)", flexShrink: 0, whiteSpace: "nowrap" }, children: inactive ? "\u2014" : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+          bitrateKbps != null ? `${(bitrateKbps / 1e3).toFixed(1)} Mbps` : "\u2014",
+          "  ",
+          fps != null ? `${Math.round(fps)}fps` : "",
+          "  ",
+          dropPct != null ? `${dropPct.toFixed(2)}%` : ""
+        ] }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: {
+        height: compact ? 3 : 4,
+        background: "var(--theme-border, #2a2d35)",
+        borderRadius: 2,
+        overflow: "hidden"
+      }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: {
+        height: "100%",
+        width: `${pct}%`,
+        background: healthColor,
+        borderRadius: 2,
+        transition: "width 0.6s cubic-bezier(0.4,0,0.2,1), background 0.4s ease",
+        boxShadow: inactive ? "none" : `0 0 4px ${healthColor}30`
+      } }) })
+    ] });
   }
   function EncoderGroupHeader({ name, resolution, totalBitrateKbps, avgLagMs, compact = false }) {
     if (name === "Ungrouped") return null;
-    return /* @__PURE__ */ React.createElement("div", { style: { marginTop: 8, marginBottom: 6 } }, /* @__PURE__ */ React.createElement("div", { style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      fontSize: compact ? 8 : 9,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      color: "var(--theme-text-muted, #8b8f98)",
-      letterSpacing: "0.05em",
-      fontWeight: 700
-    } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, height: 1, background: "var(--theme-border, #2a2d35)" } }), /* @__PURE__ */ React.createElement("span", null, name.toUpperCase()), resolution && /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: compact ? 7 : 8,
-      padding: "1px 4px",
-      borderRadius: 2,
-      background: "var(--theme-surface, #13151a)",
-      border: "1px solid var(--theme-border, #2a2d35)"
-    } }, resolution), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, height: 1, background: "var(--theme-border, #2a2d35)" } })), /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: compact ? 8 : 9,
-      color: "var(--theme-text-muted, #6b7080)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      textAlign: "center",
-      marginTop: 3
-    } }, "Pool ", totalBitrateKbps != null ? `${(totalBitrateKbps / 1e3).toFixed(1)} Mbps` : "\u2014", "  \u2022  ", "Lag ", avgLagMs != null ? `${avgLagMs.toFixed(1)}ms` : "\u2014"));
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { marginTop: 8, marginBottom: 6 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: compact ? 8 : 9,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+        color: "var(--theme-text-muted, #8b8f98)",
+        letterSpacing: "0.05em",
+        fontWeight: 700
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { flex: 1, height: 1, background: "var(--theme-border, #2a2d35)" } }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: name.toUpperCase() }),
+        resolution && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: {
+          fontSize: compact ? 7 : 8,
+          padding: "1px 4px",
+          borderRadius: 2,
+          background: "var(--theme-surface, #13151a)",
+          border: "1px solid var(--theme-border, #2a2d35)"
+        }, children: resolution }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { flex: 1, height: 1, background: "var(--theme-border, #2a2d35)" } })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: {
+        fontSize: compact ? 8 : 9,
+        color: "var(--theme-text-muted, #6b7080)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+        textAlign: "center",
+        marginTop: 3
+      }, children: [
+        "Pool ",
+        totalBitrateKbps != null ? `${(totalBitrateKbps / 1e3).toFixed(1)} Mbps` : "\u2014",
+        "  \u2022  ",
+        "Lag ",
+        avgLagMs != null ? `${avgLagMs.toFixed(1)}ms` : "\u2014"
+      ] })
+    ] });
   }
   function HiddenOutputsToggle({ items, compact = false }) {
     const [expanded, setExpanded] = (0, import_react5.useState)(false);
     if (!items || items.length === 0) return null;
-    return /* @__PURE__ */ React.createElement("div", { style: { marginTop: 6 } }, /* @__PURE__ */ React.createElement(
-      "div",
-      {
-        onClick: () => setExpanded((v) => !v),
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          cursor: "pointer",
-          fontSize: compact ? 8 : 9,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          color: "var(--theme-text-muted, #6b7080)"
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { marginTop: 6 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        "div",
+        {
+          onClick: () => setExpanded((v) => !v),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            cursor: "pointer",
+            fontSize: compact ? 8 : 9,
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            color: "var(--theme-text-muted, #6b7080)"
+          },
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { children: [
+              "Hidden (",
+              items.length,
+              ")"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: {
+              fontSize: compact ? 7 : 8,
+              color: "var(--theme-accent, #5ba3f5)",
+              textDecoration: "underline",
+              textUnderlineOffset: 2
+            }, children: expanded ? "Hide" : "Show" })
+          ]
         }
-      },
-      /* @__PURE__ */ React.createElement("span", null, "Hidden (", items.length, ")"),
-      /* @__PURE__ */ React.createElement("span", { style: {
-        fontSize: compact ? 7 : 8,
-        color: "var(--theme-accent, #5ba3f5)",
-        textDecoration: "underline",
-        textUnderlineOffset: 2
-      } }, expanded ? "Hide" : "Show")
-    ), expanded && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 4, opacity: 0.5 } }, items.map((item, idx) => /* @__PURE__ */ React.createElement("div", { key: item.id || idx, style: {
-      fontSize: compact ? 8 : 9,
-      color: "var(--theme-text-muted, #6b7080)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      marginBottom: 2
-    } }, item.name || item.platform || `Output ${idx + 1}`, item.active ? " (active)" : ""))));
+      ),
+      expanded && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { marginTop: 4, opacity: 0.5 }, children: items.map((item, idx) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: {
+        fontSize: compact ? 8 : 9,
+        color: "var(--theme-text-muted, #6b7080)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+        marginBottom: 2
+      }, children: [
+        item.name || item.platform || `Output ${idx + 1}`,
+        item.active ? " (active)" : ""
+      ] }, item.id || idx)) })
+    ] });
   }
   function OutputConfigRow({ output, config, onUpdate, compact = false }) {
     const [editing, setEditing] = (0, import_react5.useState)(null);
@@ -2262,7 +1335,7 @@
       }
     };
     const rowFs = compact ? 9 : 10;
-    return /* @__PURE__ */ React.createElement("div", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: {
       display: "flex",
       alignItems: "center",
       gap: 6,
@@ -2270,107 +1343,111 @@
       borderBottom: "1px solid var(--theme-border, #13151a)",
       opacity: isHidden ? 0.4 : 1,
       transition: "opacity 0.2s ease"
-    } }, /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => onUpdate({ ...config, hidden: !isHidden }),
-        title: isHidden ? "Show output" : "Hide output",
-        style: {
-          width: 16,
-          height: 16,
-          flexShrink: 0,
-          cursor: "pointer",
-          background: "none",
-          border: "none",
-          padding: 0,
-          fontSize: 11,
-          lineHeight: 1,
-          color: isHidden ? "var(--theme-text-muted, #3a3d45)" : "#2ea043"
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "button",
+        {
+          onClick: () => onUpdate({ ...config, hidden: !isHidden }),
+          title: isHidden ? "Show output" : "Hide output",
+          style: {
+            width: 16,
+            height: 16,
+            flexShrink: 0,
+            cursor: "pointer",
+            background: "none",
+            border: "none",
+            padding: 0,
+            fontSize: 11,
+            lineHeight: 1,
+            color: isHidden ? "var(--theme-text-muted, #3a3d45)" : "#2ea043"
+          },
+          children: isHidden ? "\u25CB" : "\u25C9"
         }
-      },
-      isHidden ? "\u25CB" : "\u25C9"
-    ), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 0 } }, editing === "name" ? /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        ref: inputRef,
-        defaultValue: displayName,
-        onBlur: (e) => commitEdit("name", e.target.value),
-        onKeyDown: (e) => {
-          if (e.key === "Enter") commitEdit("name", e.target.value);
-          if (e.key === "Escape") setEditing(null);
-        },
-        style: {
-          width: "100%",
-          fontSize: rowFs,
-          padding: "1px 4px",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          background: "var(--theme-surface, #13151a)",
-          color: "var(--theme-text, #e0e2e8)",
-          border: "1px solid var(--theme-accent, #5ba3f5)",
-          borderRadius: 2,
-          outline: "none"
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { flex: 1, minWidth: 0 }, children: editing === "name" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "input",
+        {
+          ref: inputRef,
+          defaultValue: displayName,
+          onBlur: (e) => commitEdit("name", e.target.value),
+          onKeyDown: (e) => {
+            if (e.key === "Enter") commitEdit("name", e.target.value);
+            if (e.key === "Escape") setEditing(null);
+          },
+          style: {
+            width: "100%",
+            fontSize: rowFs,
+            padding: "1px 4px",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            background: "var(--theme-surface, #13151a)",
+            color: "var(--theme-text, #e0e2e8)",
+            border: "1px solid var(--theme-accent, #5ba3f5)",
+            borderRadius: 2,
+            outline: "none"
+          }
         }
-      }
-    ) : /* @__PURE__ */ React.createElement(
-      "span",
-      {
-        onClick: () => setEditing("name"),
-        title: "Click to rename",
-        style: {
-          fontSize: rowFs,
-          cursor: "pointer",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          color: "var(--theme-text, #e0e2e8)",
-          fontWeight: 500,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          display: "block"
+      ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "span",
+        {
+          onClick: () => setEditing("name"),
+          title: "Click to rename",
+          style: {
+            fontSize: rowFs,
+            cursor: "pointer",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            color: "var(--theme-text, #e0e2e8)",
+            fontWeight: 500,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            display: "block"
+          },
+          children: displayName
         }
-      },
-      displayName
-    )), editing === "group" ? /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        ref: inputRef,
-        defaultValue: groupName,
-        placeholder: "Group",
-        onBlur: (e) => commitEdit("group", e.target.value),
-        onKeyDown: (e) => {
-          if (e.key === "Enter") commitEdit("group", e.target.value);
-          if (e.key === "Escape") setEditing(null);
-        },
-        style: {
-          width: 60,
-          fontSize: compact ? 8 : 9,
-          padding: "1px 4px",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          background: "var(--theme-surface, #13151a)",
-          color: "var(--theme-text, #e0e2e8)",
-          border: "1px solid var(--theme-accent, #5ba3f5)",
-          borderRadius: 2,
-          outline: "none"
+      ) }),
+      editing === "group" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "input",
+        {
+          ref: inputRef,
+          defaultValue: groupName,
+          placeholder: "Group",
+          onBlur: (e) => commitEdit("group", e.target.value),
+          onKeyDown: (e) => {
+            if (e.key === "Enter") commitEdit("group", e.target.value);
+            if (e.key === "Escape") setEditing(null);
+          },
+          style: {
+            width: 60,
+            fontSize: compact ? 8 : 9,
+            padding: "1px 4px",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            background: "var(--theme-surface, #13151a)",
+            color: "var(--theme-text, #e0e2e8)",
+            border: "1px solid var(--theme-accent, #5ba3f5)",
+            borderRadius: 2,
+            outline: "none"
+          }
         }
-      }
-    ) : /* @__PURE__ */ React.createElement(
-      "span",
-      {
-        onClick: () => setEditing("group"),
-        title: "Click to set group",
-        style: {
-          fontSize: compact ? 8 : 9,
-          cursor: "pointer",
-          flexShrink: 0,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          color: groupName ? "var(--theme-text-muted, #8b8f98)" : "var(--theme-text-muted, #3a3d45)",
-          background: "var(--theme-surface, #13151a)",
-          padding: "1px 5px",
-          borderRadius: 2,
-          border: "1px solid var(--theme-border, #2a2d35)"
+      ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "span",
+        {
+          onClick: () => setEditing("group"),
+          title: "Click to set group",
+          style: {
+            fontSize: compact ? 8 : 9,
+            cursor: "pointer",
+            flexShrink: 0,
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            color: groupName ? "var(--theme-text-muted, #8b8f98)" : "var(--theme-text-muted, #3a3d45)",
+            background: "var(--theme-surface, #13151a)",
+            padding: "1px 5px",
+            borderRadius: 2,
+            border: "1px solid var(--theme-border, #2a2d35)"
+          },
+          children: groupName || "\u2014"
         }
-      },
-      groupName || "\u2014"
-    ));
+      )
+    ] });
   }
   function OutputConfigPanel({ encoderOutputs, sendAction, compact = false }) {
     const [outputConfig, setOutputConfig] = (0, import_react5.useState)(() => {
@@ -2403,37 +1480,41 @@
       });
     }, [sendAction]);
     if (allOutputs.length === 0) {
-      return /* @__PURE__ */ React.createElement("div", { style: {
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: {
         fontSize: compact ? 9 : 10,
         color: "var(--theme-text-muted, #3a3d45)",
         fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
         padding: "8px 0",
         textAlign: "center"
-      } }, "No outputs detected");
+      }, children: "No outputs detected" });
     }
-    return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: compact ? 7 : 8,
-      color: "var(--theme-text-muted, #5a5f6d)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      padding: "2px 0 6px",
-      letterSpacing: "0.04em"
-    } }, "Click name or group to edit. Toggle visibility with the dot."), allOutputs.map((output) => {
-      const id = output.id || output.name || output.platform;
-      return /* @__PURE__ */ React.createElement(
-        OutputConfigRow,
-        {
-          key: id,
-          output,
-          config: outputConfig[id] || {},
-          onUpdate: (cfg) => handleUpdate(id, cfg),
-          compact
-        }
-      );
-    }));
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: {
+        fontSize: compact ? 7 : 8,
+        color: "var(--theme-text-muted, #5a5f6d)",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+        padding: "2px 0 6px",
+        letterSpacing: "0.04em"
+      }, children: "Click name or group to edit. Toggle visibility with the dot." }),
+      allOutputs.map((output) => {
+        const id = output.id || output.name || output.platform;
+        return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          OutputConfigRow,
+          {
+            output,
+            config: outputConfig[id] || {},
+            onUpdate: (cfg) => handleUpdate(id, cfg),
+            compact
+          },
+          id
+        );
+      })
+    ] });
   }
 
-  // dock/connection-components.jsx
-  var import_react6 = __toESM(require_react());
+  // connection-components.jsx
+  var import_react6 = __require("react");
+  var import_jsx_runtime4 = __require("react/jsx-runtime");
   var MANAGED_REGIONS = [
     { id: "us-east", label: "US East" },
     { id: "us-west", label: "US West" },
@@ -2446,32 +1527,84 @@
     if (status === "error") return "#da3633";
     return "#5a5f6d";
   }
+  function freshnessColor(lastMsAgo) {
+    if (lastMsAgo == null || lastMsAgo === 0) return "#2ea043";
+    if (lastMsAgo < 500) return "#2ea043";
+    if (lastMsAgo < 2e3) return "#d29922";
+    return "#da3633";
+  }
+  function matchSignal(carrier, networkConnections) {
+    if (!carrier || !Array.isArray(networkConnections) || networkConnections.length === 0) return null;
+    const norm = carrier.toLowerCase();
+    for (const nc of networkConnections) {
+      if (!nc.name) continue;
+      const ncNorm = nc.name.toLowerCase();
+      if (ncNorm.includes(norm) || norm.includes(ncNorm.replace(/sim\s*\d+\s*[—\-]\s*/i, "").trim())) {
+        return { signal: nc.signal, type: nc.type, status: nc.status };
+      }
+    }
+    return null;
+  }
+  function SignalBarsIcon({ signal, type, color }) {
+    const bars = [1, 2, 3, 4];
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: { display: "inline-flex", alignItems: "flex-end", gap: 1, marginLeft: 4 }, title: type || "", children: [
+      bars.map((i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: {
+        display: "inline-block",
+        width: 2,
+        height: 2 + i * 2,
+        borderRadius: 0.5,
+        background: i <= signal ? color || "#2ea043" : "var(--theme-border, #2a2d35)"
+      } }, i)),
+      type && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: {
+        fontSize: 7,
+        color: "var(--theme-text-muted, #6b7080)",
+        marginLeft: 2,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: type })
+    ] });
+  }
   function ProvisionDots() {
-    return /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("span", { style: { animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0s" } }, "."), /* @__PURE__ */ React.createElement("span", { style: { animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0.2s" } }, "."), /* @__PURE__ */ React.createElement("span", { style: { animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0.4s" } }, "."));
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0s" }, children: "." }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0.2s" }, children: "." }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { animation: "dotBlink 1.4s ease-in-out infinite", animationDelay: "0.4s" }, children: "." })
+    ] });
   }
   function ManagedProvisionProgress({ step }) {
     const hasStep = step && step.stepNumber > 0;
     const pct = hasStep ? Math.round(step.stepNumber / step.totalSteps * 100) : 15;
-    return /* @__PURE__ */ React.createElement("div", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
       marginTop: 4,
       padding: "5px 8px",
       background: "rgba(210,153,34,0.07)",
       borderRadius: 3,
       border: "1px solid #d2992230"
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: 9,
-      color: "#d29922",
-      marginBottom: 3,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, /* @__PURE__ */ React.createElement("span", null, hasStep ? step.label : "Starting relay", /* @__PURE__ */ React.createElement(ProvisionDots, null)), hasStep && /* @__PURE__ */ React.createElement("span", null, pct, "%")), /* @__PURE__ */ React.createElement("div", { style: { height: 3, borderRadius: 2, background: "var(--theme-border, #2a2d35)", overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: {
-      height: "100%",
-      width: pct + "%",
-      borderRadius: 2,
-      background: "#d29922",
-      transition: "width 0.4s ease"
-    } })));
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
+        display: "flex",
+        justifyContent: "space-between",
+        fontSize: 9,
+        color: "#d29922",
+        marginBottom: 3,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { children: [
+          hasStep ? step.label : "Starting relay",
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ProvisionDots, {})
+        ] }),
+        hasStep && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { children: [
+          pct,
+          "%"
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { height: 3, borderRadius: 2, background: "var(--theme-border, #2a2d35)", overflow: "hidden" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+        height: "100%",
+        width: pct + "%",
+        borderRadius: 2,
+        background: "#d29922",
+        transition: "width 0.4s ease"
+      } }) })
+    ] });
   }
   function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
     const isByor = conn.type === "byor";
@@ -2527,110 +1660,166 @@
       setIsEditing(false);
     };
     if (isEditing) {
-      return /* @__PURE__ */ React.createElement("div", { style: {
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
         marginTop: 6,
         padding: "8px 8px",
         background: "var(--theme-surface, #13151a)",
         borderRadius: 4,
         border: "1px solid var(--theme-border, #2a2d35)"
-      } }, /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 6 } }, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Name"), /* @__PURE__ */ React.createElement(
-        "input",
-        {
-          value: editName,
-          onChange: (e) => setEditName(e.target.value),
-          style: inputStyle
-        }
-      )), isByor && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 6 } }, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Relay Host"), /* @__PURE__ */ React.createElement(
-        "input",
-        {
-          value: editHost,
-          onChange: (e) => setEditHost(e.target.value),
-          placeholder: "relay.example.com",
-          style: inputStyle
-        }
-      )), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "70px minmax(0, 1fr)", gap: 6, marginBottom: 6 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Port"), /* @__PURE__ */ React.createElement(
-        "input",
-        {
-          value: editPort,
-          onChange: (e) => setEditPort(e.target.value.replace(/[^\d]/g, "").slice(0, 5)),
-          inputMode: "numeric",
-          placeholder: "5000",
-          style: inputStyle
-        }
-      )), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Stream ID"), /* @__PURE__ */ React.createElement(
-        "input",
-        {
-          value: editStreamId,
-          onChange: (e) => setEditStreamId(e.target.value),
-          placeholder: "live/stream",
-          style: inputStyle
-        }
-      )))), !isByor && /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 6 } }, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Region"), /* @__PURE__ */ React.createElement(
-        "select",
-        {
-          value: editRegion,
-          onChange: (e) => setEditRegion(e.target.value),
-          style: { ...inputStyle, height: 23 }
-        },
-        MANAGED_REGIONS.map((r) => /* @__PURE__ */ React.createElement("option", { key: r.id, value: r.id }, r.label))
-      )), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6 } }, /* @__PURE__ */ React.createElement("button", { onClick: handleSave, style: {
-        flex: 1,
-        height: 22,
-        borderRadius: 3,
-        border: "none",
-        background: "#2d7aed",
-        color: "#fff",
-        fontSize: 9,
-        fontWeight: 600,
-        cursor: "pointer",
-        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-      } }, "Save"), /* @__PURE__ */ React.createElement("button", { onClick: handleCancelEdit, style: {
-        height: 22,
-        padding: "0 10px",
-        borderRadius: 3,
-        border: "1px solid var(--theme-border, #2a2d35)",
-        background: "var(--theme-panel, #20232b)",
-        color: "var(--theme-text-muted, #8b8f98)",
-        fontSize: 9,
-        cursor: "pointer",
-        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-      } }, "Cancel")));
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginBottom: 6 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Name" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "input",
+            {
+              value: editName,
+              onChange: (e) => setEditName(e.target.value),
+              style: inputStyle
+            }
+          )
+        ] }),
+        isByor && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginBottom: 6 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Relay Host" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "input",
+              {
+                value: editHost,
+                onChange: (e) => setEditHost(e.target.value),
+                placeholder: "relay.example.com",
+                style: inputStyle
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "grid", gridTemplateColumns: "70px minmax(0, 1fr)", gap: 6, marginBottom: 6 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Port" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                "input",
+                {
+                  value: editPort,
+                  onChange: (e) => setEditPort(e.target.value.replace(/[^\d]/g, "").slice(0, 5)),
+                  inputMode: "numeric",
+                  placeholder: "5000",
+                  style: inputStyle
+                }
+              )
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Stream ID" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                "input",
+                {
+                  value: editStreamId,
+                  onChange: (e) => setEditStreamId(e.target.value),
+                  placeholder: "live/stream",
+                  style: inputStyle
+                }
+              )
+            ] })
+          ] })
+        ] }),
+        !isByor && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginBottom: 6 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Region" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "select",
+            {
+              value: editRegion,
+              onChange: (e) => setEditRegion(e.target.value),
+              style: { ...inputStyle, height: 23 },
+              children: MANAGED_REGIONS.map((r) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: r.id, children: r.label }, r.id))
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", gap: 6 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: handleSave, style: {
+            flex: 1,
+            height: 22,
+            borderRadius: 3,
+            border: "none",
+            background: "#2d7aed",
+            color: "#fff",
+            fontSize: 9,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: "Save" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: handleCancelEdit, style: {
+            height: 22,
+            padding: "0 10px",
+            borderRadius: 3,
+            border: "1px solid var(--theme-border, #2a2d35)",
+            background: "var(--theme-panel, #20232b)",
+            color: "var(--theme-text-muted, #8b8f98)",
+            fontSize: 9,
+            cursor: "pointer",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: "Cancel" })
+        ] })
+      ] });
     }
-    return /* @__PURE__ */ React.createElement("div", { style: { marginTop: 6 } }, /* @__PURE__ */ React.createElement("div", { style: {
-      padding: "8px 8px",
-      background: "var(--theme-surface, #13151a)",
-      borderRadius: 4,
-      border: "1px solid var(--theme-border, #2a2d35)",
-      marginBottom: 4
-    } }, isByor && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(SecretField, { label: "Host", value: conn.relay_host_masked || conn.relay_host || "", copyValue: conn.relay_host || conn.relay_host_masked || "" }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 } }, /* @__PURE__ */ React.createElement("span", { style: labelStyle }, "Port"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" } }, conn.relay_port || 5e3)), /* @__PURE__ */ React.createElement(SecretField, { label: "Stream ID", value: conn.stream_id || "", copyValue: conn.stream_id || "" })), !isByor && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 9 } }, /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" } }, "Region"), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text, #e0e2e8)", fontWeight: 600, fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" } }, conn.managed_region || "\u2014")), conn.session_id && /* @__PURE__ */ React.createElement(SecretField, { label: "Session ID", value: conn.session_id, copyValue: conn.session_id }), conn.relay_ip && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 9 } }, /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" } }, "Relay IP"), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text, #e0e2e8)", fontWeight: 600, fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" } }, conn.relay_ip))), conn.status === "error" && conn.error_msg && /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: 9,
-      color: "#da3633",
-      marginTop: 4,
-      padding: "4px 6px",
-      background: "rgba(218,54,51,0.08)",
-      borderRadius: 3,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, conn.error_msg)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 5 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setIsEditing(true), style: {
-      flex: 1,
-      height: 22,
-      borderRadius: 3,
-      border: "1px solid var(--theme-border, #2a2d35)",
-      background: "var(--theme-panel, #20232b)",
-      color: "var(--theme-text-muted, #8b8f98)",
-      fontSize: 9,
-      cursor: "pointer",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Edit"), /* @__PURE__ */ React.createElement("button", { onClick: onRemove, style: {
-      height: 22,
-      padding: "0 10px",
-      borderRadius: 3,
-      border: "1px solid #da363340",
-      background: "rgba(218,54,51,0.06)",
-      color: "#da3633",
-      fontSize: 9,
-      cursor: "pointer",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Remove")));
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginTop: 6 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
+        padding: "8px 8px",
+        background: "var(--theme-surface, #13151a)",
+        borderRadius: 4,
+        border: "1px solid var(--theme-border, #2a2d35)",
+        marginBottom: 4
+      }, children: [
+        isByor && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SecretField, { label: "Host", value: conn.relay_host_masked || conn.relay_host || "", copyValue: conn.relay_host || conn.relay_host_masked || "" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: labelStyle, children: "Port" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }, children: conn.relay_port || 5e3 })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SecretField, { label: "Stream ID", value: conn.stream_id || "", copyValue: conn.stream_id || "" })
+        ] }),
+        !isByor && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 9 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }, children: "Region" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { color: "var(--theme-text, #e0e2e8)", fontWeight: 600, fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }, children: conn.managed_region || "\u2014" })
+          ] }),
+          conn.session_id && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SecretField, { label: "Session ID", value: conn.session_id, copyValue: conn.session_id }),
+          conn.relay_ip && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 9 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }, children: "Relay IP" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { color: "var(--theme-text, #e0e2e8)", fontWeight: 600, fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }, children: conn.relay_ip })
+          ] })
+        ] }),
+        conn.status === "error" && conn.error_msg && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+          fontSize: 9,
+          color: "#da3633",
+          marginTop: 4,
+          padding: "4px 6px",
+          background: "rgba(218,54,51,0.08)",
+          borderRadius: 3,
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: conn.error_msg })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", gap: 5 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: () => setIsEditing(true), style: {
+          flex: 1,
+          height: 22,
+          borderRadius: 3,
+          border: "1px solid var(--theme-border, #2a2d35)",
+          background: "var(--theme-panel, #20232b)",
+          color: "var(--theme-text-muted, #8b8f98)",
+          fontSize: 9,
+          cursor: "pointer",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Edit" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: onRemove, style: {
+          height: 22,
+          padding: "0 10px",
+          borderRadius: 3,
+          border: "1px solid #da363340",
+          background: "rgba(218,54,51,0.06)",
+          color: "#da3633",
+          fontSize: 9,
+          cursor: "pointer",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Remove" })
+      ] })
+    ] });
   }
   function getRelayInlineStat(conn) {
     if (conn.status !== "connected") return null;
@@ -2652,29 +1841,20 @@
     let segments = [];
     if (hasPerLink) {
       const links = conn.per_link.links;
-      const totalKbps = links.reduce((s, l) => s + (l.bitrate_kbps || 0), 0);
       segments = links.map((l) => {
+        const pct = l.sharePct > 0 ? l.sharePct : 100 / links.length;
         const kbps = l.bitrate_kbps || 0;
-        const pct = totalKbps > 0 ? kbps / totalKbps * 100 : 100 / links.length;
-        let color;
-        if (kbps === 0) color = "#5a5f6d";
-        else if (kbps < 100) color = "#da3633";
-        else if (kbps <= 500) color = "#d29922";
-        else color = "#2ea043";
+        const color = kbps === 0 ? "#5a5f6d" : freshnessColor(l.lastMsAgo);
         return { pct, color };
       });
     } else if (conn.stats?.available) {
       const kbps = conn.stats.bitrate_kbps || 0;
-      let color;
-      if (kbps === 0) color = "#5a5f6d";
-      else if (kbps < 100) color = "#da3633";
-      else if (kbps <= 500) color = "#d29922";
-      else color = "#2ea043";
+      const color = kbps === 0 ? "#5a5f6d" : "#2ea043";
       segments = [{ pct: 100, color }];
     } else {
       return null;
     }
-    return /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
       "div",
       {
         onClick,
@@ -2689,18 +1869,18 @@
           cursor: "pointer",
           opacity: isExpanded ? 0.65 : 1,
           transition: "opacity 0.15s"
-        }
-      },
-      segments.map((seg, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { flex: seg.pct, height: "100%", background: seg.color, minWidth: 2 } }))
+        },
+        children: segments.map((seg, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { flex: seg.pct, height: "100%", background: seg.color, minWidth: 2 } }, i))
+      }
     );
   }
-  function RelayLinkBars({ conn }) {
+  function RelayLinkBars({ conn, networkConnections }) {
     if (conn.status !== "connected") return null;
     const hasPerLink = conn.per_link?.available && Array.isArray(conn.per_link?.links) && conn.per_link.links.length > 0;
     const boundedStyle = {
       marginTop: 5,
       paddingLeft: 11,
-      maxHeight: 96,
+      maxHeight: 120,
       overflowY: "auto",
       padding: "4px 6px",
       border: "1px solid #2a2d3550",
@@ -2710,32 +1890,38 @@
     };
     if (hasPerLink) {
       const maxKbps = Math.max(...conn.per_link.links.map((l) => l.bitrate_kbps || 0), 1e3) * 1.25;
-      return /* @__PURE__ */ React.createElement("div", { style: boundedStyle }, conn.per_link.links.map((link, i) => /* @__PURE__ */ React.createElement(
-        BitrateBar,
-        {
-          key: link.carrier || i,
-          label: link.carrier || "Link " + (i + 1),
-          value: link.bitrate_kbps || 0,
-          max: maxKbps,
-          color: "#2d7aed"
-        }
-      )));
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: boundedStyle, children: conn.per_link.links.map((link, i) => {
+        const kbps = link.bitrate_kbps || 0;
+        const color = kbps === 0 ? "#5a5f6d" : freshnessColor(link.lastMsAgo);
+        const sig = matchSignal(link.carrier, networkConnections);
+        return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          BitrateBar,
+          {
+            label: link.carrier || "Link " + (i + 1),
+            value: kbps,
+            max: maxKbps,
+            color,
+            suffix: sig ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SignalBarsIcon, { signal: sig.signal, type: sig.type, color }) : null
+          }
+        ) }, link.carrier || i);
+      }) });
     }
     if (conn.stats?.available && conn.stats.bitrate_kbps > 0) {
-      const maxKbps = Math.max(conn.stats.bitrate_kbps * 1.5, 1e3);
-      return /* @__PURE__ */ React.createElement("div", { style: boundedStyle }, /* @__PURE__ */ React.createElement(
+      const kbps = conn.stats.bitrate_kbps;
+      const maxKbps = Math.max(kbps * 1.5, 1e3);
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: boundedStyle, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
         BitrateBar,
         {
           label: "Total",
-          value: conn.stats.bitrate_kbps,
+          value: kbps,
           max: maxKbps,
-          color: "#2d7aed"
+          color: "#2ea043"
         }
-      ));
+      ) });
     }
     return null;
   }
-  function ConnectionRow({ conn, sendAction, isCompact }) {
+  function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
     const [showDetails, setShowDetails] = (0, import_react6.useState)(false);
     const [showLinks, setShowLinks] = (0, import_react6.useState)(false);
     const statusColor = connStatusColor(conn.status);
@@ -2757,60 +1943,80 @@
     const statusText = isConnected ? "Active" : isConnecting ? "Connecting\u2026" : conn.error_msg || "Error";
     const statusTextColor = isConnected ? "#2ea043" : isConnecting ? "#d29922" : "#da3633";
     const inlineStat = getRelayInlineStat(conn);
-    return /* @__PURE__ */ React.createElement("div", { style: { borderBottom: "1px solid var(--theme-border, #13151a)", padding: "7px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5 } }, /* @__PURE__ */ React.createElement(StatusDot, { color: statusColor, pulse: isConnected || isConnecting }), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflow: "hidden", minWidth: 0, display: "flex", alignItems: "baseline", gap: 5 } }, showStatus && /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: 8,
-      fontWeight: 500,
-      flexShrink: 0,
-      color: statusTextColor,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, statusText), /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: isCompact ? 9 : 10,
-      fontWeight: 600,
-      color: "var(--theme-text, #e0e2e8)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    } }, conn.name), inlineStat && /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: 8,
-      color: "var(--theme-text-muted, #8b8f98)",
-      flexShrink: 0,
-      whiteSpace: "nowrap",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, inlineStat.mbps, " Mbps", inlineStat.rttMs > 0 ? " \xB7 " + inlineStat.rttMs + "ms" : "")), /* @__PURE__ */ React.createElement(MiniHealthBar, { conn, onClick: () => setShowLinks((s) => !s), isExpanded: showLinks }), /* @__PURE__ */ React.createElement(ConnectionTypeBadge, { type: conn.type }), /* @__PURE__ */ React.createElement("button", { onClick: handleAction, style: {
-      height: 20,
-      padding: "0 8px",
-      borderRadius: 3,
-      border: "1px solid var(--theme-border, #2a2d35)",
-      background: "var(--theme-panel, #20232b)",
-      color: actionColor,
-      fontSize: 9,
-      fontWeight: 600,
-      cursor: "pointer",
-      flexShrink: 0,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, actionLabel), /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => setShowDetails(!showDetails),
-        style: {
-          border: "none",
-          background: "none",
-          color: "var(--theme-text-muted, #4a4f5c)",
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { borderBottom: "1px solid var(--theme-border, #13151a)", padding: "7px 0" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 5 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusDot, { color: statusColor, pulse: isConnected || isConnecting }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { flex: 1, overflow: "hidden", minWidth: 0, display: "flex", alignItems: "baseline", gap: 5 }, children: [
+          showStatus && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: {
+            fontSize: 8,
+            fontWeight: 500,
+            flexShrink: 0,
+            color: statusTextColor,
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: statusText }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: {
+            fontSize: isCompact ? 9 : 10,
+            fontWeight: 600,
+            color: "var(--theme-text, #e0e2e8)",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          }, children: conn.name }),
+          inlineStat && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: {
+            fontSize: 8,
+            color: "var(--theme-text-muted, #8b8f98)",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: [
+            inlineStat.mbps,
+            " Mbps",
+            inlineStat.rttMs > 0 ? " \xB7 " + inlineStat.rttMs + "ms" : ""
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MiniHealthBar, { conn, onClick: () => setShowLinks((s) => !s), isExpanded: showLinks }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ConnectionTypeBadge, { type: conn.type }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: handleAction, style: {
+          height: 20,
+          padding: "0 8px",
+          borderRadius: 3,
+          border: "1px solid var(--theme-border, #2a2d35)",
+          background: "var(--theme-panel, #20232b)",
+          color: actionColor,
           fontSize: 9,
+          fontWeight: 600,
           cursor: "pointer",
-          padding: "0 2px",
           flexShrink: 0,
-          display: "flex",
-          alignItems: "center"
-        }
-      },
-      /* @__PURE__ */ React.createElement("span", { style: { fontSize: 8, lineHeight: 1 } }, showDetails ? "\u25B2" : "\u25BC")
-    )), isConnected && /* @__PURE__ */ React.createElement("div", { style: {
-      maxHeight: showLinks ? 200 : 0,
-      overflow: "hidden",
-      transition: "max-height 0.2s ease"
-    } }, /* @__PURE__ */ React.createElement(RelayLinkBars, { conn })), isConnecting && conn.type === "managed" && /* @__PURE__ */ React.createElement(ManagedProvisionProgress, { step: conn.provision_step }), showDetails && /* @__PURE__ */ React.createElement(ConnectionExpandedDetail, { conn, sendAction, onRemove: handleRemove }));
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: actionLabel }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "button",
+          {
+            onClick: () => setShowDetails(!showDetails),
+            style: {
+              border: "none",
+              background: "none",
+              color: "var(--theme-text-muted, #4a4f5c)",
+              fontSize: 9,
+              cursor: "pointer",
+              padding: "0 2px",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center"
+            },
+            children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 8, lineHeight: 1 }, children: showDetails ? "\u25B2" : "\u25BC" })
+          }
+        )
+      ] }),
+      isConnected && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+        maxHeight: showLinks ? 200 : 0,
+        overflow: "hidden",
+        transition: "max-height 0.2s ease"
+      }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RelayLinkBars, { conn, networkConnections }) }),
+      isConnecting && conn.type === "managed" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ManagedProvisionProgress, { step: conn.provision_step }),
+      showDetails && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ConnectionExpandedDetail, { conn, sendAction, onRemove: handleRemove })
+    ] });
   }
   function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLabel, authPending, authLogin, authEntitlement, handleAuthLogin, handleAuthOpenBrowser }) {
     const [name, setName] = (0, import_react6.useState)("");
@@ -2889,199 +2095,258 @@
       fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
     };
     const addDisabled = type === "managed" && (!authAuthenticated || isManagedLimitReached);
-    return /* @__PURE__ */ React.createElement("div", { style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
       marginTop: 6,
       background: "var(--theme-surface, #13151a)",
       border: "1px solid var(--theme-border, #2a2d35)",
       borderRadius: 4,
       padding: "10px 10px 12px"
-    } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", marginBottom: 10 } }, /* @__PURE__ */ React.createElement("span", { style: {
-      flex: 1,
-      fontSize: 10,
-      fontWeight: 700,
-      color: "var(--theme-text, #e0e2e8)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "New Connection"), /* @__PURE__ */ React.createElement("button", { onClick: onClose, style: {
-      border: "none",
-      background: "none",
-      color: "var(--theme-text-muted, #8b8f98)",
-      fontSize: 13,
-      cursor: "pointer",
-      padding: "0 2px",
-      lineHeight: 1
-    } }, "\u2715")), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 8 } }, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Name"), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        value: name,
-        onChange: (e) => setName(e.target.value),
-        placeholder: "e.g. Main Cam \\u2192 My VPS",
-        style: inputStyle,
-        autoFocus: true
-      }
-    )), /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 8 } }, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Type"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 5 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setType("byor"), style: {
-      flex: 1,
-      height: 26,
-      borderRadius: 3,
-      border: type === "byor" ? "1px solid #2d7aed80" : "1px solid var(--theme-border, #2a2d35)",
-      background: type === "byor" ? "#1a3a5a" : "var(--theme-panel, #20232b)",
-      color: type === "byor" ? "#5ba3f5" : "var(--theme-text-muted, #8b8f98)",
-      fontSize: 9,
-      fontWeight: 700,
-      cursor: "pointer",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "BYOR"), /* @__PURE__ */ React.createElement("button", { onClick: () => setType("managed"), style: {
-      flex: 1,
-      height: 26,
-      borderRadius: 3,
-      border: type === "managed" ? "1px solid #2ea04380" : "1px solid var(--theme-border, #2a2d35)",
-      background: type === "managed" ? "#1a3a2a" : "var(--theme-panel, #20232b)",
-      color: type === "managed" ? "#4ade80" : "var(--theme-text-muted, #8b8f98)",
-      fontSize: 9,
-      fontWeight: 700,
-      cursor: "pointer",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Managed"))), type === "byor" && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 7 } }, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Relay Host"), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        value: host,
-        onChange: (e) => setHost(e.target.value),
-        placeholder: "relay.example.com",
-        style: inputStyle
-      }
-    )), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "80px minmax(0,1fr)", gap: 7, marginBottom: 7 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Port"), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        value: port,
-        onChange: (e) => setPort(e.target.value.replace(/[^\d]/g, "").slice(0, 5)),
-        inputMode: "numeric",
-        placeholder: "5000",
-        style: inputStyle
-      }
-    )), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Stream ID ", /* @__PURE__ */ React.createElement("span", { style: { textTransform: "none", letterSpacing: 0, opacity: 0.55 } }, "(optional)")), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        value: streamId,
-        onChange: (e) => setStreamId(e.target.value),
-        placeholder: "live/stream",
-        style: inputStyle
-      }
-    ))), /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: 9,
-      color: "var(--theme-text-muted, #4a4f5c)",
-      marginBottom: 8,
-      padding: "4px 7px",
-      background: "var(--theme-panel, #20232b)",
-      borderRadius: 3,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Sensitive fields are stored encrypted locally (DPAPI)")), type === "managed" && !authAuthenticated && /* @__PURE__ */ React.createElement("div", { style: {
-      marginBottom: 8,
-      padding: "8px 8px",
-      background: "var(--theme-panel, #20232b)",
-      borderRadius: 3,
-      border: "1px solid var(--theme-border, #2a2d35)"
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: 10,
-      color: "var(--theme-text, #e0e2e8)",
-      fontWeight: 600,
-      marginBottom: 4,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Login required"), /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: 9,
-      color: "var(--theme-text-muted, #8b8f98)",
-      marginBottom: 7,
-      lineHeight: 1.5,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Sign in to provision a Telemy Managed Relay."), /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: handleAuthLogin,
-        disabled: authPending,
-        style: {
-          width: "100%",
-          padding: "6px 0",
-          border: "1px solid var(--theme-border, #2a2d35)",
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", alignItems: "center", marginBottom: 10 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: {
+          flex: 1,
+          fontSize: 10,
+          fontWeight: 700,
+          color: "var(--theme-text, #e0e2e8)",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "New Connection" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: onClose, style: {
+          border: "none",
+          background: "none",
+          color: "var(--theme-text-muted, #8b8f98)",
+          fontSize: 13,
+          cursor: "pointer",
+          padding: "0 2px",
+          lineHeight: 1
+        }, children: "\u2715" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginBottom: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Name" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "input",
+          {
+            value: name,
+            onChange: (e) => setName(e.target.value),
+            placeholder: "e.g. Main Cam \\u2192 My VPS",
+            style: inputStyle,
+            autoFocus: true
+          }
+        )
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginBottom: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Type" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", gap: 5 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: () => setType("byor"), style: {
+            flex: 1,
+            height: 26,
+            borderRadius: 3,
+            border: type === "byor" ? "1px solid #2d7aed80" : "1px solid var(--theme-border, #2a2d35)",
+            background: type === "byor" ? "#1a3a5a" : "var(--theme-panel, #20232b)",
+            color: type === "byor" ? "#5ba3f5" : "var(--theme-text-muted, #8b8f98)",
+            fontSize: 9,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: "BYOR" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: () => setType("managed"), style: {
+            flex: 1,
+            height: 26,
+            borderRadius: 3,
+            border: type === "managed" ? "1px solid #2ea04380" : "1px solid var(--theme-border, #2a2d35)",
+            background: type === "managed" ? "#1a3a2a" : "var(--theme-panel, #20232b)",
+            color: type === "managed" ? "#4ade80" : "var(--theme-text-muted, #8b8f98)",
+            fontSize: 9,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: "Managed" })
+        ] })
+      ] }),
+      type === "byor" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginBottom: 7 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Relay Host" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            "input",
+            {
+              value: host,
+              onChange: (e) => setHost(e.target.value),
+              placeholder: "relay.example.com",
+              style: inputStyle
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "grid", gridTemplateColumns: "80px minmax(0,1fr)", gap: 7, marginBottom: 7 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Port" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "input",
+              {
+                value: port,
+                onChange: (e) => setPort(e.target.value.replace(/[^\d]/g, "").slice(0, 5)),
+                inputMode: "numeric",
+                placeholder: "5000",
+                style: inputStyle
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: labelStyle, children: [
+              "Stream ID ",
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { textTransform: "none", letterSpacing: 0, opacity: 0.55 }, children: "(optional)" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "input",
+              {
+                value: streamId,
+                onChange: (e) => setStreamId(e.target.value),
+                placeholder: "live/stream",
+                style: inputStyle
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+          fontSize: 9,
+          color: "var(--theme-text-muted, #4a4f5c)",
+          marginBottom: 8,
+          padding: "4px 7px",
+          background: "var(--theme-panel, #20232b)",
           borderRadius: 3,
-          background: "var(--theme-surface, #13151a)",
-          cursor: authPending ? "not-allowed" : "pointer",
-          color: "#5ba3f5",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Sensitive fields are stored encrypted locally (DPAPI)" })
+      ] }),
+      type === "managed" && !authAuthenticated && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
+        marginBottom: 8,
+        padding: "8px 8px",
+        background: "var(--theme-panel, #20232b)",
+        borderRadius: 3,
+        border: "1px solid var(--theme-border, #2a2d35)"
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+          fontSize: 10,
+          color: "var(--theme-text, #e0e2e8)",
+          fontWeight: 600,
+          marginBottom: 4,
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Login required" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+          fontSize: 9,
+          color: "var(--theme-text-muted, #8b8f98)",
+          marginBottom: 7,
+          lineHeight: 1.5,
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Sign in to provision a Telemy Managed Relay." }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "button",
+          {
+            onClick: handleAuthLogin,
+            disabled: authPending,
+            style: {
+              width: "100%",
+              padding: "6px 0",
+              border: "1px solid var(--theme-border, #2a2d35)",
+              borderRadius: 3,
+              background: "var(--theme-surface, #13151a)",
+              cursor: authPending ? "not-allowed" : "pointer",
+              color: "#5ba3f5",
+              fontSize: 10,
+              fontWeight: 600,
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+              opacity: authPending ? 0.7 : 1
+            },
+            children: authPending ? "Waiting for browser\u2026" : "Sign In"
+          }
+        ),
+        authPending && authLogin && authLogin.authorize_url && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "button",
+          {
+            onClick: handleAuthOpenBrowser,
+            style: {
+              width: "100%",
+              marginTop: 5,
+              padding: "4px 0",
+              border: "1px solid var(--theme-border, #2a2d35)",
+              borderRadius: 3,
+              background: "var(--theme-panel, #20232b)",
+              cursor: "pointer",
+              color: "var(--theme-text-muted, #8b8f98)",
+              fontSize: 9,
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+            },
+            children: "Open Browser"
+          }
+        )
+      ] }),
+      type === "managed" && authAuthenticated && isManagedLimitReached && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+        marginBottom: 8,
+        padding: "6px 8px",
+        background: "rgba(210,153,34,0.08)",
+        borderRadius: 3,
+        border: "1px solid #d2992240"
+      }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
+        fontSize: 9,
+        color: "#d29922",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: [
+        "Connection limit reached for ",
+        authPlanLabel,
+        " plan (",
+        maxConns,
+        " max). Upgrade to add more."
+      ] }) }),
+      type === "managed" && authAuthenticated && !isManagedLimitReached && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginBottom: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: labelStyle, children: "Region" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "select",
+          {
+            value: region,
+            onChange: (e) => setRegion(e.target.value),
+            style: { ...inputStyle, height: 25, cursor: "pointer" },
+            children: MANAGED_REGIONS.map((r) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: r.id, children: r.label }, r.id))
+          }
+        )
+      ] }),
+      error && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+        fontSize: 9,
+        color: "#da3633",
+        marginBottom: 7,
+        padding: "4px 7px",
+        background: "rgba(218,54,51,0.08)",
+        borderRadius: 3,
+        border: "1px solid #da363340",
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: error }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", gap: 5 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: onClose, style: {
+          height: 26,
+          padding: "0 12px",
+          borderRadius: 3,
+          border: "1px solid var(--theme-border, #2a2d35)",
+          background: "var(--theme-panel, #20232b)",
+          color: "var(--theme-text-muted, #8b8f98)",
+          fontSize: 10,
+          cursor: "pointer",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Cancel" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: handleAdd, disabled: addDisabled, style: {
+          flex: 1,
+          height: 26,
+          borderRadius: 3,
+          border: "none",
+          background: addDisabled ? "var(--theme-panel, #20232b)" : "#2d7aed",
+          color: addDisabled ? "var(--theme-text-muted, #5a5f6d)" : "#fff",
           fontSize: 10,
           fontWeight: 600,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          opacity: authPending ? 0.7 : 1
-        }
-      },
-      authPending ? "Waiting for browser\u2026" : "Sign In"
-    ), authPending && authLogin && authLogin.authorize_url && /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: handleAuthOpenBrowser,
-        style: {
-          width: "100%",
-          marginTop: 5,
-          padding: "4px 0",
-          border: "1px solid var(--theme-border, #2a2d35)",
-          borderRadius: 3,
-          background: "var(--theme-panel, #20232b)",
-          cursor: "pointer",
-          color: "var(--theme-text-muted, #8b8f98)",
-          fontSize: 9,
+          cursor: addDisabled ? "not-allowed" : "pointer",
+          opacity: addDisabled ? 0.5 : 1,
           fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-        }
-      },
-      "Open Browser"
-    )), type === "managed" && authAuthenticated && isManagedLimitReached && /* @__PURE__ */ React.createElement("div", { style: {
-      marginBottom: 8,
-      padding: "6px 8px",
-      background: "rgba(210,153,34,0.08)",
-      borderRadius: 3,
-      border: "1px solid #d2992240"
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: 9,
-      color: "#d29922",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Connection limit reached for ", authPlanLabel, " plan (", maxConns, " max). Upgrade to add more.")), type === "managed" && authAuthenticated && !isManagedLimitReached && /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 8 } }, /* @__PURE__ */ React.createElement("div", { style: labelStyle }, "Region"), /* @__PURE__ */ React.createElement(
-      "select",
-      {
-        value: region,
-        onChange: (e) => setRegion(e.target.value),
-        style: { ...inputStyle, height: 25, cursor: "pointer" }
-      },
-      MANAGED_REGIONS.map((r) => /* @__PURE__ */ React.createElement("option", { key: r.id, value: r.id }, r.label))
-    )), error && /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: 9,
-      color: "#da3633",
-      marginBottom: 7,
-      padding: "4px 7px",
-      background: "rgba(218,54,51,0.08)",
-      borderRadius: 3,
-      border: "1px solid #da363340",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, error), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 5 } }, /* @__PURE__ */ React.createElement("button", { onClick: onClose, style: {
-      height: 26,
-      padding: "0 12px",
-      borderRadius: 3,
-      border: "1px solid var(--theme-border, #2a2d35)",
-      background: "var(--theme-panel, #20232b)",
-      color: "var(--theme-text-muted, #8b8f98)",
-      fontSize: 10,
-      cursor: "pointer",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Cancel"), /* @__PURE__ */ React.createElement("button", { onClick: handleAdd, disabled: addDisabled, style: {
-      flex: 1,
-      height: 26,
-      borderRadius: 3,
-      border: "none",
-      background: addDisabled ? "var(--theme-panel, #20232b)" : "#2d7aed",
-      color: addDisabled ? "var(--theme-text-muted, #5a5f6d)" : "#fff",
-      fontSize: 10,
-      fontWeight: 600,
-      cursor: addDisabled ? "not-allowed" : "pointer",
-      opacity: addDisabled ? 0.5 : 1,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Add Relay")));
+        }, children: "Add Relay" })
+      ] })
+    ] });
   }
   function ConnectionListSection({
     relayConnections,
+    networkConnections,
     sendAction,
     authAuthenticated,
     authDisplayName,
@@ -3097,114 +2362,133 @@
   }) {
     const [showAddModal, setShowAddModal] = (0, import_react6.useState)(false);
     const connections = Array.isArray(relayConnections) ? relayConnections : [];
-    return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 6,
-      padding: "5px 8px",
-      background: "var(--theme-surface, #13151a)",
-      borderRadius: 4,
-      border: "1px solid var(--theme-border, #2a2d35)"
-    } }, authAuthenticated ? /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: 9,
-      color: "var(--theme-text, #e0e2e8)",
-      flex: 1,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap",
-      marginRight: 6
-    } }, authDisplayName, /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text-muted, #5a5f6d)", marginLeft: 5 } }, "\xB7", " ", authPlanLabel)) : /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: 9,
-      color: "var(--theme-text-muted, #5a5f6d)",
-      flex: 1,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Sign in for Telemy Relays"), authAuthenticated ? /* @__PURE__ */ React.createElement("button", { onClick: handleAuthLogout, style: {
-      border: "none",
-      background: "none",
-      color: "var(--theme-text-muted, #4a4f5c)",
-      fontSize: 9,
-      cursor: "pointer",
-      padding: 0,
-      flexShrink: 0,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "Sign out") : /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: handleAuthLogin,
-        disabled: authPending,
-        style: {
-          height: 20,
-          padding: "0 8px",
-          borderRadius: 3,
-          border: "1px solid #2d7aed40",
-          background: "#1a3a5a",
-          color: "#5ba3f5",
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 6,
+        padding: "5px 8px",
+        background: "var(--theme-surface, #13151a)",
+        borderRadius: 4,
+        border: "1px solid var(--theme-border, #2a2d35)"
+      }, children: [
+        authAuthenticated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: {
           fontSize: 9,
-          fontWeight: 600,
-          flexShrink: 0,
-          cursor: authPending ? "not-allowed" : "pointer",
+          color: "var(--theme-text, #e0e2e8)",
+          flex: 1,
           fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          opacity: authPending ? 0.7 : 1
-        }
-      },
-      authPending ? "Waiting\u2026" : "Sign In"
-    )), connections.length === 0 && /* @__PURE__ */ React.createElement("div", { style: {
-      textAlign: "center",
-      padding: "14px 0",
-      color: "var(--theme-text-muted, #4a4f5c)",
-      fontSize: 10,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "No relay connections. Press + to add one."), connections.map((conn) => /* @__PURE__ */ React.createElement(ConnectionRow, { key: conn.id, conn, sendAction, isCompact })), !showAddModal && /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        onClick: () => setShowAddModal(true),
-        style: {
-          width: "100%",
-          marginTop: connections.length > 0 ? 6 : 2,
-          height: 26,
-          borderRadius: 4,
-          border: "1px dashed var(--theme-border, #2a2d35)",
-          background: "transparent",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          marginRight: 6
+        }, children: [
+          authDisplayName,
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("span", { style: { color: "var(--theme-text-muted, #5a5f6d)", marginLeft: 5 }, children: [
+            "\xB7",
+            " ",
+            authPlanLabel
+          ] })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: {
+          fontSize: 9,
+          color: "var(--theme-text-muted, #5a5f6d)",
+          flex: 1,
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Sign in for Telemy Relays" }),
+        authAuthenticated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { onClick: handleAuthLogout, style: {
+          border: "none",
+          background: "none",
           color: "var(--theme-text-muted, #4a4f5c)",
-          fontSize: 11,
+          fontSize: 9,
           cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 4,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          transition: "border-color 0.15s, color 0.15s"
-        },
-        onMouseEnter: (e) => {
-          e.currentTarget.style.borderColor = "#2d7aed80";
-          e.currentTarget.style.color = "#5ba3f5";
-        },
-        onMouseLeave: (e) => {
-          e.currentTarget.style.borderColor = "var(--theme-border, #2a2d35)";
-          e.currentTarget.style.color = "var(--theme-text-muted, #4a4f5c)";
+          padding: 0,
+          flexShrink: 0,
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: "Sign out" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          "button",
+          {
+            onClick: handleAuthLogin,
+            disabled: authPending,
+            style: {
+              height: 20,
+              padding: "0 8px",
+              borderRadius: 3,
+              border: "1px solid #2d7aed40",
+              background: "#1a3a5a",
+              color: "#5ba3f5",
+              fontSize: 9,
+              fontWeight: 600,
+              flexShrink: 0,
+              cursor: authPending ? "not-allowed" : "pointer",
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+              opacity: authPending ? 0.7 : 1
+            },
+            children: authPending ? "Waiting\u2026" : "Sign In"
+          }
+        )
+      ] }),
+      connections.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: {
+        textAlign: "center",
+        padding: "14px 0",
+        color: "var(--theme-text-muted, #4a4f5c)",
+        fontSize: 10,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: "No relay connections. Press + to add one." }),
+      connections.map((conn) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ConnectionRow, { conn, sendAction, isCompact, networkConnections }, conn.id)),
+      !showAddModal && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+        "button",
+        {
+          onClick: () => setShowAddModal(true),
+          style: {
+            width: "100%",
+            marginTop: connections.length > 0 ? 6 : 2,
+            height: 26,
+            borderRadius: 4,
+            border: "1px dashed var(--theme-border, #2a2d35)",
+            background: "transparent",
+            color: "var(--theme-text-muted, #4a4f5c)",
+            fontSize: 11,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            transition: "border-color 0.15s, color 0.15s"
+          },
+          onMouseEnter: (e) => {
+            e.currentTarget.style.borderColor = "#2d7aed80";
+            e.currentTarget.style.color = "#5ba3f5";
+          },
+          onMouseLeave: (e) => {
+            e.currentTarget.style.borderColor = "var(--theme-border, #2a2d35)";
+            e.currentTarget.style.color = "var(--theme-text-muted, #4a4f5c)";
+          },
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 14, lineHeight: 1, marginTop: -1 }, children: "+" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 9, letterSpacing: "0.04em" }, children: "Add Relay" })
+          ]
         }
-      },
-      /* @__PURE__ */ React.createElement("span", { style: { fontSize: 14, lineHeight: 1, marginTop: -1 } }, "+"),
-      /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, letterSpacing: "0.04em" } }, "Add Relay")
-    ), showAddModal && /* @__PURE__ */ React.createElement(
-      AddConnectionForm,
-      {
-        onClose: () => setShowAddModal(false),
-        sendAction,
-        authAuthenticated,
-        authPlanLabel,
-        authPending,
-        authLogin,
-        authEntitlement,
-        handleAuthLogin,
-        handleAuthOpenBrowser
-      }
-    ));
+      ),
+      showAddModal && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        AddConnectionForm,
+        {
+          onClose: () => setShowAddModal(false),
+          sendAction,
+          authAuthenticated,
+          authPlanLabel,
+          authPending,
+          authLogin,
+          authEntitlement,
+          handleAuthLogin,
+          handleAuthOpenBrowser
+        }
+      )
+    ] });
   }
 
-  // dock/aegis-dock.jsx
+  // aegis-dock.jsx
+  var import_jsx_runtime5 = __require("react/jsx-runtime");
   var SECTION_ORDER_STORAGE_KEY = "aegis_section_order_v1";
   var DEFAULT_SECTION_ORDER = [
     "scenes",
@@ -3279,7 +2563,10 @@
           available: true,
           links: relay.links.map((l) => ({
             carrier: l.asn_org || l.addr || "Link",
-            bitrate_kbps: Math.round(l.sharePct / 100 * totalKbps)
+            bitrate_kbps: Math.round(l.sharePct / 100 * totalKbps),
+            lastMsAgo: l.lastMsAgo || 0,
+            sharePct: l.sharePct || 0,
+            uptimeS: l.uptimeS || 0
           }))
         };
       }
@@ -3749,7 +3036,7 @@
     const activeTheme = { ...OBS_YAMI_GREY_DEFAULTS, ...theme };
     const themeFontFamily = typeof activeTheme.fontFamily === "string" && activeTheme.fontFamily.trim() ? `'${activeTheme.fontFamily.replace(/'/g, "\\'")}', 'Segoe UI', system-ui, sans-serif` : "'Segoe UI', system-ui, sans-serif";
     const isLightTheme = (0, import_react7.useMemo)(() => isLightColor(activeTheme.bg) || isLightColor(activeTheme.surface), [activeTheme.bg, activeTheme.surface]);
-    return /* @__PURE__ */ React.createElement("div", { ref: dockRootRef, style: {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { ref: dockRootRef, style: {
       width: "100%",
       height: "100%",
       background: activeTheme.bg,
@@ -3768,803 +3055,930 @@
       "--theme-border": activeTheme.border,
       "--theme-scrollbar": activeTheme.scrollbar,
       "--theme-font-family": themeFontFamily
-    } }, /* @__PURE__ */ React.createElement("style", null, getDockCss(activeTheme)), !useBridge && /* @__PURE__ */ React.createElement("div", { style: {
-      background: "linear-gradient(90deg, #b33a00 0%, #cc4400 50%, #b33a00 100%)",
-      color: "#fff",
-      textAlign: "center",
-      fontSize: 10,
-      fontWeight: 700,
-      padding: "4px 0",
-      letterSpacing: "0.12em",
-      flexShrink: 0,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "SIMULATION MODE"), /* @__PURE__ */ React.createElement("div", { style: {
-      height: 2,
-      flexShrink: 0,
-      background: `linear-gradient(90deg, transparent 0%, ${healthColor} 40%, ${healthColor} 60%, transparent 100%)`,
-      boxShadow: `0 0 12px ${healthColor}30, 0 1px 4px ${healthColor}20`,
-      animation: "railPulse 3s ease-in-out infinite",
-      transition: "background 0.6s ease, box-shadow 0.6s ease"
-    } }), /* @__PURE__ */ React.createElement("div", { style: {
-      padding: isCompact ? "8px 10px 7px" : "10px 12px 8px",
-      flexShrink: 0,
-      background: `linear-gradient(180deg, var(--theme-panel, #12141a) 0%, var(--theme-bg, #0e1015) 100%)`,
-      borderBottom: "1px solid var(--theme-border, #1a1d23)",
-      display: "flex",
-      alignItems: "center",
-      gap: isCompact ? 6 : 8,
-      flexWrap: isCompact ? "wrap" : "nowrap"
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      width: isCompact ? 22 : 26,
-      height: isCompact ? 22 : 26,
-      borderRadius: 5,
-      background: `linear-gradient(135deg, ${healthColor}dd 0%, ${healthColor}88 100%)`,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: `0 2px 8px ${healthColor}25`,
-      transition: "background 0.6s ease, box-shadow 0.6s ease"
-    } }, /* @__PURE__ */ React.createElement("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none" }, /* @__PURE__ */ React.createElement("path", { d: "M7 1L12.5 4.25V10.75L7 14L1.5 10.75V4.25L7 1Z", stroke: "currentColor", strokeWidth: "1.5", fill: "none" }), /* @__PURE__ */ React.createElement("circle", { cx: "7", cy: "7.5", r: "2", fill: "currentColor", opacity: "0.9" }))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 0 } }, /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: isCompact ? 11 : 12,
-      fontWeight: 700,
-      color: "var(--theme-text, #e8eaef)",
-      letterSpacing: "0.04em",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, header.title || "Telemy Aegis"), /* @__PURE__ */ React.createElement("div", { style: {
-      fontSize: isCompact ? 7 : 8,
-      color: "var(--theme-text-muted, #5a5f6d)",
-      fontWeight: 500,
-      letterSpacing: "0.06em",
-      textTransform: "uppercase",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    } }, header.subtitle || "OBS + CORE IPC DOCK")), /* @__PURE__ */ React.createElement("div", { style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 4,
-      background: derivedMode === "irl" ? "var(--theme-accent, #1a3a5a)" : "var(--theme-surface, #13151a)",
-      borderRadius: 4,
-      padding: isCompact ? "4px 8px" : "5px 10px",
-      border: `1px solid ${derivedMode === "irl" ? "#2d7aed40" : "var(--theme-border, #1e2028)"}`,
-      flexShrink: 0
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      width: 5,
-      height: 5,
-      borderRadius: "50%",
-      background: derivedMode === "irl" ? "#2d7aed" : "var(--theme-text-muted, #5a5f6d)"
-    } }), /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: isCompact ? 8 : 9,
-      fontWeight: 600,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-      textTransform: "uppercase",
-      letterSpacing: "0.06em",
-      color: derivedMode === "irl" ? "#5ba3f5" : "var(--theme-text-muted, #8b8f98)"
-    } }, derivedMode)), /* @__PURE__ */ React.createElement("div", { style: {
-      display: "flex",
-      alignItems: "center",
-      gap: isCompact ? 4 : 5,
-      flexShrink: 0,
-      background: "var(--theme-surface, #13151a)",
-      borderRadius: 4,
-      padding: isCompact ? "3px 7px" : "4px 8px",
-      border: "1px solid var(--theme-border, #1e2028)"
-    } }, /* @__PURE__ */ React.createElement("div", { style: {
-      width: 5,
-      height: 5,
-      borderRadius: "50%",
-      background: isLive ? "#2ea043" : "#4a4f5c",
-      boxShadow: isLive ? "0 0 6px #2ea04360" : "none",
-      animation: isLive ? "pulse 2s ease-in-out infinite" : "none",
-      flexShrink: 0
-    } }), /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: isCompact ? 8 : 9,
-      fontWeight: 600,
-      color: isLive ? "#4ade80" : "var(--theme-text-muted, #5a5f6d)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, formatTime(elapsedSec)), /* @__PURE__ */ React.createElement("span", { style: { fontSize: isCompact ? 8 : 9, color: "var(--theme-text-muted, #5a5f6d)" } }, "\xB7"), /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: isCompact ? 8 : 9,
-      color: "var(--theme-text-muted, #8b8f98)",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, (animBonded / 1e3).toFixed(1), " Mbps"))), /* @__PURE__ */ React.createElement("div", { className: "aegis-dock-scroll", style: {
-      flex: 1,
-      minHeight: 0,
-      overflowY: "auto",
-      overflowX: "hidden"
-    } }, sectionOrder.map((sectionId) => {
-      const isDragOver = dragOverId === sectionId && dragSrcId !== sectionId;
-      const isDragging = dragSrcId === sectionId;
-      const dragHandleEl = /* @__PURE__ */ React.createElement(
-        "div",
-        {
-          draggable: "true",
-          onDragStart: (e) => {
-            e.stopPropagation();
-            e.dataTransfer.effectAllowed = "move";
-            setDragSrcId(sectionId);
-          },
-          onDragEnd: () => {
-            setDragSrcId(null);
-            setDragOverId(null);
-          },
-          title: "Drag to reorder",
-          style: {
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 24,
-            cursor: "grab",
-            flexShrink: 0,
-            opacity: isDragging ? 0.8 : 0.3,
-            color: "var(--theme-text-muted, #8b8f98)",
-            fontSize: 14,
-            userSelect: "none",
-            transition: "opacity 0.15s"
-          }
-        },
-        "\u22EE\u22EE"
-      );
-      let content = null;
-      if (sectionId === "scenes") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Scenes",
-          icon: "\u25C9",
-          defaultOpen: true,
-          compact: isCompact,
-          badge: activeIntent,
-          badgeColor: SCENE_INTENT_COLORS[activeIntent]?.border || "#4a4f5c",
-          dragHandle: dragHandleEl
-        },
-        /* @__PURE__ */ React.createElement("div", { style: {
-          marginBottom: 6,
-          padding: "6px 7px",
-          borderRadius: 4,
-          border: `1px solid ${toRgba(activeRuleBorderColor, 0.55)}`,
-          background: isLightTheme ? `linear-gradient(135deg, ${toRgba(activeRuleColor, 0.22)} 0%, var(--theme-surface, #13151a) 100%)` : `linear-gradient(135deg, ${toRgba(activeRuleColor, 0.65)} 0%, var(--theme-surface, #13151a) 100%)`
-        } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, /* @__PURE__ */ React.createElement("span", { style: {
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          background: activeScene ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
-          boxShadow: activeScene ? "0 0 6px var(--theme-accent, #5ba3f5)" : "none",
-          flexShrink: 0
-        } }), /* @__PURE__ */ React.createElement("span", { style: {
-          fontSize: isCompact ? 9 : 10,
-          color: "var(--theme-text-muted, #8b8f98)",
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          flexShrink: 0
-        } }, "Active"), /* @__PURE__ */ React.createElement("span", { style: { minWidth: 0, flex: 1, display: "flex", flexDirection: "column", lineHeight: 1.15 } }, /* @__PURE__ */ React.createElement("span", { style: {
-          fontSize: isCompact ? 10 : 11,
-          color: "var(--theme-text, #e0e2e8)",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap"
-        } }, activeSceneDisplayName), /* @__PURE__ */ React.createElement("span", { style: {
-          fontSize: 8,
-          color: "var(--theme-text-muted, #8b8f98)",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap"
-        } }, activeRuleSummary)), pendingScene && /* @__PURE__ */ React.createElement("span", { style: {
-          fontSize: 8,
-          color: "var(--theme-accent, #5ba3f5)",
-          fontWeight: 700,
-          letterSpacing: "0.05em"
-        } }, "SWITCHING"), /* @__PURE__ */ React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: () => setScenePanelExpanded((prev) => !prev),
-            style: {
-              width: 20,
-              height: 20,
-              borderRadius: 3,
-              border: "1px solid var(--theme-border, #2a2d35)",
-              background: "var(--theme-panel, #20232b)",
-              color: scenePanelExpanded ? "var(--theme-accent, #5ba3f5)" : "var(--theme-text-muted, #8b8f98)",
-              fontSize: 11,
-              lineHeight: 1,
-              padding: 0,
-              cursor: "pointer",
-              flexShrink: 0
-            },
-            title: scenePanelExpanded ? "Collapse advanced scene controls" : "Expand advanced scene controls"
-          },
-          scenePanelExpanded ? "\u25B4" : "\u25BE"
-        ))),
-        scenePanelExpanded && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: {
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("style", { children: getDockCss(activeTheme) }),
+      !useBridge && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+        background: "linear-gradient(90deg, #b33a00 0%, #cc4400 50%, #b33a00 100%)",
+        color: "#fff",
+        textAlign: "center",
+        fontSize: 10,
+        fontWeight: 700,
+        padding: "4px 0",
+        letterSpacing: "0.12em",
+        flexShrink: 0,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: "SIMULATION MODE" }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+        height: 2,
+        flexShrink: 0,
+        background: `linear-gradient(90deg, transparent 0%, ${healthColor} 40%, ${healthColor} 60%, transparent 100%)`,
+        boxShadow: `0 0 12px ${healthColor}30, 0 1px 4px ${healthColor}20`,
+        animation: "railPulse 3s ease-in-out infinite",
+        transition: "background 0.6s ease, box-shadow 0.6s ease"
+      } }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+        padding: isCompact ? "8px 10px 7px" : "10px 12px 8px",
+        flexShrink: 0,
+        background: `linear-gradient(180deg, var(--theme-panel, #12141a) 0%, var(--theme-bg, #0e1015) 100%)`,
+        borderBottom: "1px solid var(--theme-border, #1a1d23)",
+        display: "flex",
+        alignItems: "center",
+        gap: isCompact ? 6 : 8,
+        flexWrap: isCompact ? "wrap" : "nowrap"
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+          width: isCompact ? 22 : 26,
+          height: isCompact ? 22 : 26,
+          borderRadius: 5,
+          background: `linear-gradient(135deg, ${healthColor}dd 0%, ${healthColor}88 100%)`,
           display: "flex",
           alignItems: "center",
-          gap: 6,
-          marginBottom: 6,
-          padding: "4px 6px",
+          justifyContent: "center",
+          boxShadow: `0 2px 8px ${healthColor}25`,
+          transition: "background 0.6s ease, box-shadow 0.6s ease"
+        }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("path", { d: "M7 1L12.5 4.25V10.75L7 14L1.5 10.75V4.25L7 1Z", stroke: "currentColor", strokeWidth: "1.5", fill: "none" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("circle", { cx: "7", cy: "7.5", r: "2", fill: "currentColor", opacity: "0.9" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { flex: 1, minWidth: 0 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+            fontSize: isCompact ? 11 : 12,
+            fontWeight: 700,
+            color: "var(--theme-text, #e8eaef)",
+            letterSpacing: "0.04em",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: header.title || "Telemy Aegis" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+            fontSize: isCompact ? 7 : 8,
+            color: "var(--theme-text-muted, #5a5f6d)",
+            fontWeight: 500,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          }, children: header.subtitle || "OBS + CORE IPC DOCK" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          background: derivedMode === "irl" ? "var(--theme-accent, #1a3a5a)" : "var(--theme-surface, #13151a)",
           borderRadius: 4,
-          border: "1px solid var(--theme-border, #2a2d35)",
-          background: "var(--theme-surface, #13151a)"
-        } }, /* @__PURE__ */ React.createElement("span", { style: {
-          fontSize: isCompact ? 8 : 9,
-          color: "var(--theme-text-muted, #8b8f98)",
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          flexShrink: 0,
-          flex: 1
-        } }, "Scene Rules"), /* @__PURE__ */ React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: addAutoSceneRule,
-            style: {
-              height: 21,
-              borderRadius: 3,
-              border: "1px solid var(--theme-border, #2a2d35)",
-              background: "var(--theme-panel, #20232b)",
-              color: "var(--theme-text, #e0e2e8)",
-              fontSize: 10,
-              padding: "0 7px",
-              cursor: "pointer",
-              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-            }
-          },
-          "+ Rule"
-        )), autoSceneRules.map((row) => {
-          const linkedSceneId = sceneIntentLinks[row.id] || "";
-          const linkedScene = (allScenes || []).find((scene) => scene.id === linkedSceneId) || null;
-          const isActive = linkedScene && linkedScene.id === scenes.activeSceneId;
-          const isPending = linkedScene && linkedScene.id === scenes.pendingSceneId;
-          const intentColor = SCENE_INTENT_COLORS[row.intent] || SCENE_INTENT_COLORS.OFFLINE;
-          const isExpanded = expandedRuleId === row.id;
-          const ruleBgColor = normalizeOptionalHexColor(row.bgColor) || intentColor.bg;
-          const ruleBorderColor = normalizeOptionalHexColor(row.bgColor) || intentColor.border;
-          const activeRowBg = isLightTheme ? toRgba(ruleBgColor, 0.14) : ruleBgColor;
-          const activeRowText = isLightTheme || isLightColor(ruleBgColor) ? "var(--theme-text, #1b1d22)" : "var(--theme-text, #e0e2e8)";
-          return /* @__PURE__ */ React.createElement("div", { key: row.id, style: {
-            display: "flex",
-            flexDirection: "column",
-            gap: 5,
-            marginBottom: 5,
-            padding: "5px 6px",
-            borderRadius: 4,
-            border: `1px solid ${isActive ? ruleBorderColor : "var(--theme-border, #2a2d35)"}`,
-            background: isActive ? activeRowBg : "var(--theme-surface, #13151a)"
-          } }, /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 4, alignItems: "center" } }, /* @__PURE__ */ React.createElement(
-            "button",
-            {
-              type: "button",
-              onClick: () => linkedScene && handleSceneSwitch(linkedScene),
-              disabled: !linkedScene,
-              style: {
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 6,
-                border: "none",
-                background: "transparent",
-                color: isActive ? activeRowText : "var(--theme-text, #e0e2e8)",
-                cursor: linkedScene ? "pointer" : "default",
-                textAlign: "left",
-                padding: 0,
-                minWidth: 0
-              }
-            },
-            /* @__PURE__ */ React.createElement("span", { style: {
-              width: 5,
-              height: 5,
-              borderRadius: "50%",
-              background: isActive ? ruleBorderColor : isPending ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
-              boxShadow: isActive ? `0 0 4px ${ruleBorderColor}` : "none",
-              flexShrink: 0
-            } }),
-            /* @__PURE__ */ React.createElement("span", { style: {
-              display: "flex",
-              flexDirection: "column",
-              minWidth: 0,
-              lineHeight: 1.15
-            } }, /* @__PURE__ */ React.createElement("span", { style: {
-              fontSize: isCompact ? 9 : 10,
-              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              color: isActive ? activeRowText : "var(--theme-text, #e0e2e8)"
-            } }, row.label), /* @__PURE__ */ React.createElement("span", { style: {
-              fontSize: 8,
-              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              color: "var(--theme-text-muted, #8b8f98)"
-            } }, `${row.thresholdEnabled ? `<= ${row.thresholdMbps == null ? "unset" : `${Number(row.thresholdMbps).toFixed(1)} Mbps`}` : "Threshold off"} -> ${linkedScene?.name || "Unlinked"}`))
-          ), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 3 } }, isExpanded && /* @__PURE__ */ React.createElement(React.Fragment, null, RULE_BG_PRESETS.map((preset) => {
-            const selected = normalizeOptionalHexColor(row.bgColor) === normalizeOptionalHexColor(preset.color);
-            return /* @__PURE__ */ React.createElement(
-              "button",
-              {
-                key: `${row.id}_${preset.id}`,
-                type: "button",
-                onClick: () => updateAutoSceneRule(row.id, { bgColor: preset.color }),
-                title: preset.label,
-                style: {
-                  width: 14,
-                  height: 14,
-                  borderRadius: 3,
-                  border: selected ? "1px solid var(--theme-accent, #5ba3f5)" : "1px solid var(--theme-border, #2a2d35)",
-                  background: preset.color,
-                  boxShadow: selected ? `0 0 0 1px ${toRgba(preset.color, 0.55)}` : "none",
-                  padding: 0,
-                  cursor: "pointer"
-                }
-              }
-            );
-          }), /* @__PURE__ */ React.createElement(
-            "label",
-            {
-              title: "Custom color",
-              style: {
-                width: 15,
-                height: 15,
-                borderRadius: "50%",
-                border: "1px solid var(--theme-border, #2a2d35)",
-                overflow: "hidden",
-                cursor: "pointer",
-                display: "inline-block",
-                position: "relative",
-                background: normalizeOptionalHexColor(row.bgColor) || "#2a2d35"
-              }
-            },
-            /* @__PURE__ */ React.createElement(
-              "input",
-              {
-                type: "color",
-                value: normalizeOptionalHexColor(row.bgColor) || "#2a2d35",
-                onChange: (e) => updateAutoSceneRule(row.id, { bgColor: e.target.value }),
-                style: {
-                  position: "absolute",
-                  inset: 0,
-                  width: "100%",
-                  height: "100%",
-                  border: "none",
-                  padding: 0,
-                  margin: 0,
-                  background: "transparent",
-                  cursor: "pointer",
-                  opacity: 0
-                }
-              }
-            )
-          )), /* @__PURE__ */ React.createElement(
-            "button",
-            {
-              type: "button",
-              onClick: () => setExpandedRuleId((prev) => prev === row.id ? null : row.id),
-              style: {
-                height: 21,
-                borderRadius: 3,
-                border: "1px solid var(--theme-border, #2a2d35)",
-                background: "var(--theme-panel, #20232b)",
-                color: isExpanded ? "var(--theme-accent, #5ba3f5)" : "var(--theme-text-muted, #8b8f98)",
-                fontSize: 9,
-                padding: "0 8px",
-                cursor: "pointer"
-              }
-            },
-            isExpanded ? "Close" : "Edit"
-          ))), isExpanded && /* @__PURE__ */ React.createElement("div", { style: {
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) auto auto minmax(0, 1fr) auto",
-            gap: 4,
-            alignItems: "center",
-            paddingTop: 2
-          } }, /* @__PURE__ */ React.createElement(
-            "input",
-            {
-              value: row.label,
-              onChange: (e) => updateAutoSceneRule(row.id, { label: e.target.value.slice(0, 40) }),
-              style: {
-                height: 21,
-                borderRadius: 3,
-                border: "1px solid var(--theme-border, #2a2d35)",
-                background: "var(--theme-panel, #20232b)",
-                color: "var(--theme-text, #e0e2e8)",
-                fontSize: 9,
-                padding: "0 6px",
-                minWidth: 80,
-                fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-              }
-            }
-          ), /* @__PURE__ */ React.createElement(
-            "input",
-            {
-              type: "number",
-              step: "0.1",
-              min: "0",
-              value: row.thresholdMbps == null ? "" : row.thresholdMbps,
-              onChange: (e) => {
-                const v = e.target.value;
-                updateAutoSceneRule(row.id, {
-                  thresholdEnabled: true,
-                  thresholdMbps: v === "" ? null : Math.max(0, Number(v) || 0)
-                });
-              },
-              title: "Switch when bitrate is at or below this Mbps value",
-              style: {
-                height: 21,
-                borderRadius: 3,
-                border: "1px solid var(--theme-border, #2a2d35)",
-                background: "var(--theme-panel, #20232b)",
-                color: "var(--theme-text, #e0e2e8)",
-                fontSize: 9,
-                padding: "0 4px",
-                width: 52,
-                textAlign: "right"
-              }
-            }
-          ), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, color: "var(--theme-text-muted, #8b8f98)" } }, "Mbps"), /* @__PURE__ */ React.createElement(
-            "select",
-            {
-              value: linkedSceneId,
-              onChange: (e) => setSceneIntentLink(row.id, e.target.value),
-              style: {
-                height: 21,
-                borderRadius: 3,
-                border: "1px solid var(--theme-border, #2a2d35)",
-                background: "var(--theme-panel, #20232b)",
-                color: "var(--theme-text, #e0e2e8)",
-                fontSize: 9,
-                padding: "0 4px",
-                minWidth: 0
-              }
-            },
-            /* @__PURE__ */ React.createElement("option", { value: "" }, "Select scene..."),
-            (allScenes || []).map((scene) => /* @__PURE__ */ React.createElement("option", { key: scene.id, value: scene.id }, scene.name))
-          ), /* @__PURE__ */ React.createElement(
-            "button",
-            {
-              type: "button",
-              onClick: () => removeAutoSceneRule(row.id),
-              disabled: autoSceneRules.length <= 1,
-              style: {
-                height: 21,
-                borderRadius: 3,
-                border: "1px solid var(--theme-border, #2a2d35)",
-                background: "var(--theme-panel, #20232b)",
-                color: "var(--theme-text-muted, #8b8f98)",
-                fontSize: 10,
-                padding: "0 6px",
-                cursor: autoSceneRules.length <= 1 ? "not-allowed" : "pointer",
-                opacity: autoSceneRules.length <= 1 ? 0.5 : 1
-              }
-            },
-            "Remove"
-          )));
-        })),
-        /* @__PURE__ */ React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: handleAutoSceneSwitchToggle,
-            disabled: !!autoSwitchToggleLock,
-            style: {
-              marginTop: 8,
-              padding: isCompact ? "5px 7px" : "6px 8px",
-              background: "var(--theme-surface, #1a1d23)",
-              borderRadius: 4,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              border: "1px solid var(--theme-border, #2a2d35)",
-              width: "100%",
-              cursor: autoSwitchToggleLock ? "not-allowed" : "pointer",
-              textAlign: "left",
-              opacity: autoSwitchToggleLock ? 0.75 : 1
-            }
-          },
-          /* @__PURE__ */ React.createElement("svg", { width: "10", height: "10", viewBox: "0 0 10 10", fill: "none" }, /* @__PURE__ */ React.createElement(
-            "path",
-            {
-              d: "M1 5C1 2.8 2.8 1 5 1s4 1.8 4 4-1.8 4-4 4",
-              stroke: autoSwitchArmed ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
-              strokeWidth: "1.2",
-              strokeLinecap: "round"
-            }
-          ), /* @__PURE__ */ React.createElement(
-            "path",
-            {
-              d: "M3 7L1 5L3 3",
-              stroke: autoSwitchArmed ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
-              strokeWidth: "1.2",
-              strokeLinecap: "round",
-              strokeLinejoin: "round"
-            }
-          )),
-          /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, color: autoSwitchArmed ? "var(--theme-accent, #5ba3f5)" : "var(--theme-text-muted, #5a5f6d)", fontWeight: 500 } }, "Auto Scene Switch"),
-          /* @__PURE__ */ React.createElement("span", { style: {
+          padding: isCompact ? "4px 8px" : "5px 10px",
+          border: `1px solid ${derivedMode === "irl" ? "#2d7aed40" : "var(--theme-border, #1e2028)"}`,
+          flexShrink: 0
+        }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: derivedMode === "irl" ? "#2d7aed" : "var(--theme-text-muted, #5a5f6d)"
+          } }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
             fontSize: isCompact ? 8 : 9,
             fontWeight: 600,
-            marginLeft: "auto",
-            color: autoSwitchArmed ? "#2ea043" : "#da3633"
-          } }, autoSwitchToggleLock ? isCompact ? "..." : "APPLYING..." : autoSwitchArmed ? "ARMED" : "MANUAL")
-        )
-      );
-      else if (sectionId === "encoders") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Encoders & Uploads",
-          icon: "\u229E",
-          defaultOpen: true,
-          compact: isCompact,
-          badge: allEncoderItems.length > 0 ? String(activeOutputCount) : "0",
-          badgeColor: activeOutputCount > 0 ? "#2ea043" : "var(--theme-border, #3a3d45)",
-          dragHandle: dragHandleEl
-        },
-        allEncoderItems.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { color: "var(--theme-text-muted, #8b8f98)", fontSize: 11, padding: "8px 0", textAlign: "center" } }, "No encoder outputs detected"),
-        encoderOutputs.groups.map((group, gi) => /* @__PURE__ */ React.createElement("div", { key: group.name || gi }, /* @__PURE__ */ React.createElement(
-          EncoderGroupHeader,
-          {
-            name: group.name,
-            resolution: group.resolution,
-            totalBitrateKbps: group.totalBitrateKbps,
-            avgLagMs: group.avgLagMs,
-            compact: isCompact
-          }
-        ), group.items.map((item, ii) => /* @__PURE__ */ React.createElement(
-          OutputBar,
-          {
-            key: item.id || `${gi}-${ii}`,
-            name: item.name || item.platform,
-            bitrateKbps: item.kbps,
-            fps: item.fps,
-            dropPct: item.dropPct,
-            active: item.active !== false,
-            maxBitrate: outputMaxMap[item.id || item.name || item.platform] || outputSectionMax,
-            compact: isCompact
-          }
-        )))),
-        encoderOutputs.hidden?.length > 0 && /* @__PURE__ */ React.createElement(HiddenOutputsToggle, { items: encoderOutputs.hidden, compact: isCompact })
-      );
-      else if (sectionId === "bitrate") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Bitrate",
-          icon: "\u25A5",
-          defaultOpen: true,
-          compact: isCompact,
-          dragHandle: dragHandleEl
-        },
-        /* @__PURE__ */ React.createElement("div", { style: {
-          marginTop: 8,
-          display: "grid",
-          gridTemplateColumns: isUltraCompact ? "1fr" : "1fr 1fr",
-          gap: 4,
-          fontSize: 9,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-        } }, /* @__PURE__ */ React.createElement("div", { style: {
-          background: "var(--theme-surface, #13151a)",
-          borderRadius: 3,
-          padding: "5px 7px",
-          border: "1px solid var(--theme-border, #1e2028)"
-        } }, /* @__PURE__ */ React.createElement("div", { style: { color: "var(--theme-text-muted, #5a5f6d)", marginBottom: 2 } }, "LOW THRESHOLD"), /* @__PURE__ */ React.createElement("div", { style: { color: "#fbbf24", fontWeight: 600 } }, bitrate.lowThresholdMbps != null ? `${bitrate.lowThresholdMbps.toFixed(1)} Mbps` : "\u2014")), /* @__PURE__ */ React.createElement("div", { style: {
-          background: "var(--theme-surface, #13151a)",
-          borderRadius: 3,
-          padding: "5px 7px",
-          border: "1px solid var(--theme-border, #1e2028)"
-        } }, /* @__PURE__ */ React.createElement("div", { style: { color: "var(--theme-text-muted, #5a5f6d)", marginBottom: 2 } }, "BRB THRESHOLD"), /* @__PURE__ */ React.createElement("div", { style: { color: "#da3633", fontWeight: 600 } }, bitrate.brbThresholdMbps != null ? `${bitrate.brbThresholdMbps.toFixed(1)} Mbps` : "\u2014")))
-      );
-      else if (sectionId === "relay") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Relay",
-          icon: "\u2601",
-          compact: isCompact,
-          defaultOpen: true,
-          badge: relayConnections.length > 0 ? String(relayConnections.filter((c) => c.status === "connected").length) + "/" + String(relayConnections.length) : "0",
-          badgeColor: relayConnections.some((c) => c.status === "connected") ? "#2d7aed" : "var(--theme-border, #3a3d45)",
-          dragHandle: dragHandleEl
-        },
-        /* @__PURE__ */ React.createElement(
-          ConnectionListSection,
-          {
-            relayConnections,
-            sendAction,
-            authAuthenticated,
-            authDisplayName,
-            authPlanLabel,
-            authPending,
-            authLogin,
-            authEntitlement,
-            authErrorMessage,
-            handleAuthLogin,
-            handleAuthLogout,
-            handleAuthOpenBrowser,
-            isCompact
-          }
-        )
-      );
-      else if (sectionId === "failover") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Failover Engine",
-          icon: "\u26A1",
-          compact: isCompact,
-          dragHandle: dragHandleEl
-        },
-        /* @__PURE__ */ React.createElement("div", { style: {
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color: derivedMode === "irl" ? "#5ba3f5" : "var(--theme-text-muted, #8b8f98)"
+          }, children: derivedMode })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
           display: "flex",
           alignItems: "center",
-          gap: 4,
-          marginBottom: 8,
-          padding: "6px 8px",
+          gap: isCompact ? 4 : 5,
+          flexShrink: 0,
           background: "var(--theme-surface, #13151a)",
           borderRadius: 4,
-          border: `1px solid ${healthColor}40`
-        } }, /* @__PURE__ */ React.createElement("div", { style: {
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          background: healthColor,
-          boxShadow: `0 0 6px ${healthColor}40`,
-          flexShrink: 0
-        } }), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: healthColor, fontWeight: 600 } }, healthLabel), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, color: "var(--theme-text-muted, #5a5f6d)", marginLeft: "auto" } }, engineState)),
-        /* @__PURE__ */ React.createElement(EngineStateChips, { activeState: engineState, compact: isUltraCompact }),
-        /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: "var(--theme-text-muted, #5a5f6d)", lineHeight: 1.6 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 2 } }, /* @__PURE__ */ React.createElement("span", null, "Response Budget"), /* @__PURE__ */ React.createElement("span", { style: { color: "#2ea043", fontWeight: 600 } }, "< ", failover.responseBudgetMs || 800, "ms")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 2 } }, /* @__PURE__ */ React.createElement("span", null, "Last Transition"), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text-muted, #8b8f98)" } }, failover.lastFailoverLabel || "\u2014")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, /* @__PURE__ */ React.createElement("span", null, "Total Transitions"), /* @__PURE__ */ React.createElement("span", { style: { color: "var(--theme-text-muted, #8b8f98)" } }, failover.totalFailoversLabel || "\u2014")))
-      );
-      else if (sectionId === "quickSettings") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Quick Settings",
-          icon: "\u2699",
-          compact: isCompact,
-          dragHandle: dragHandleEl
-        },
-        settings.filter((setting) => !["manual_override", "auto_scene_switch"].includes(setting.key)).map((setting) => /* @__PURE__ */ React.createElement(
-          ToggleRow,
+          padding: isCompact ? "3px 7px" : "4px 8px",
+          border: "1px solid var(--theme-border, #1e2028)"
+        }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: isLive ? "#2ea043" : "#4a4f5c",
+            boxShadow: isLive ? "0 0 6px #2ea04360" : "none",
+            animation: isLive ? "pulse 2s ease-in-out infinite" : "none",
+            flexShrink: 0
+          } }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+            fontSize: isCompact ? 8 : 9,
+            fontWeight: 600,
+            color: isLive ? "#4ade80" : "var(--theme-text-muted, #5a5f6d)",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: formatTime(elapsedSec) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: isCompact ? 8 : 9, color: "var(--theme-text-muted, #5a5f6d)" }, children: "\xB7" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: {
+            fontSize: isCompact ? 8 : 9,
+            color: "var(--theme-text-muted, #8b8f98)",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+          }, children: [
+            (animBonded / 1e3).toFixed(1),
+            " Mbps"
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "aegis-dock-scroll", style: {
+        flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
+        overflowX: "hidden"
+      }, children: sectionOrder.map((sectionId) => {
+        const isDragOver = dragOverId === sectionId && dragSrcId !== sectionId;
+        const isDragging = dragSrcId === sectionId;
+        const dragHandleEl = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "div",
           {
-            key: setting.key,
-            label: setting.label,
-            value: setting.value,
-            color: SETTING_COLORS[setting.key] || "#2d7aed",
-            dimmed: setting.value === null,
-            onChange: (val) => handleSettingChange(setting.key, val)
-          }
-        ))
-      );
-      else if (sectionId === "outputConfig") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Output Config",
-          icon: "\u2699",
-          compact: isCompact,
-          badge: String(allEncoderItems.length + (encoderOutputs.hidden?.length || 0)),
-          badgeColor: "var(--theme-border, #3a3d45)",
-          dragHandle: dragHandleEl
-        },
-        allEncoderItems.length === 0 ? /* @__PURE__ */ React.createElement("div", { style: { color: "var(--theme-text-muted, #8b8f98)", fontSize: 11, padding: "8px 0", textAlign: "center" } }, "No outputs configured") : /* @__PURE__ */ React.createElement(
-          OutputConfigPanel,
-          {
-            encoderOutputs,
-            sendAction,
-            compact: isCompact
-          }
-        )
-      );
-      else if (sectionId === "eventLog") content = /* @__PURE__ */ React.createElement(
-        Section,
-        {
-          title: "Event Log",
-          icon: "\u25A4",
-          compact: isCompact,
-          badge: String(events.length),
-          badgeColor: "var(--theme-surface, #3a3d45)",
-          dragHandle: dragHandleEl
-        },
-        events.map((e, i) => /* @__PURE__ */ React.createElement("div", { key: e.id || i, style: {
-          display: "flex",
-          gap: 8,
-          padding: "4px 0",
-          borderBottom: i < events.length - 1 ? "1px solid var(--theme-border, #13151a)" : "none",
-          animation: `slideIn 0.3s ease ${i * 0.05}s both`
-        } }, /* @__PURE__ */ React.createElement("span", { style: {
-          fontSize: 9,
-          color: "var(--theme-text-muted, #3a3d45)",
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          flexShrink: 0
-        } }, e.time), /* @__PURE__ */ React.createElement("span", { style: {
-          fontSize: 9,
-          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          color: e.type === "success" ? "#4ade80" : e.type === "warning" ? "#fbbf24" : e.type === "error" ? "#da3633" : "var(--theme-text-muted, #6b7080)",
-          wordBreak: "break-word"
-        } }, e.msg)))
-      );
-      if (!content) return null;
-      return /* @__PURE__ */ React.createElement(
-        "div",
-        {
-          key: sectionId,
-          onDragOver: (e) => {
-            e.preventDefault();
-            if (dragSrcId && dragSrcId !== sectionId) setDragOverId(sectionId);
-          },
-          onDrop: (e) => {
-            e.preventDefault();
-            if (!dragSrcId || dragSrcId === sectionId) {
+            draggable: "true",
+            onDragStart: (e) => {
+              e.stopPropagation();
+              e.dataTransfer.effectAllowed = "move";
+              setDragSrcId(sectionId);
+            },
+            onDragEnd: () => {
               setDragSrcId(null);
               setDragOverId(null);
-              return;
-            }
-            setSectionOrder((prev) => {
-              const next = [...prev];
-              const fromIdx = next.indexOf(dragSrcId);
-              const toIdx = next.indexOf(sectionId);
-              if (fromIdx < 0 || toIdx < 0) return prev;
-              next.splice(fromIdx, 1);
-              next.splice(toIdx, 0, dragSrcId);
-              try {
-                window.localStorage && window.localStorage.setItem(SECTION_ORDER_STORAGE_KEY, JSON.stringify(next));
-              } catch (_) {
-              }
-              return next;
-            });
-            setDragSrcId(null);
-            setDragOverId(null);
-          },
-          style: {
-            outline: isDragOver ? "1px solid var(--theme-accent, #2d7aed)" : "none",
-            opacity: isDragging ? 0.4 : 1,
-            transition: "opacity 0.15s"
+            },
+            title: "Drag to reorder",
+            style: {
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              cursor: "grab",
+              flexShrink: 0,
+              opacity: isDragging ? 0.8 : 0.3,
+              color: "var(--theme-text-muted, #8b8f98)",
+              fontSize: 14,
+              userSelect: "none",
+              transition: "opacity 0.15s"
+            },
+            children: "\u22EE\u22EE"
           }
-        },
-        content
-      );
-    })), /* @__PURE__ */ React.createElement("div", { style: {
-      padding: isCompact ? "6px 10px" : "7px 12px",
-      flexShrink: 0,
-      borderTop: "1px solid var(--theme-border, #1a1d23)",
-      background: "var(--theme-bg, #0c0e13)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 6,
-      flexWrap: isUltraCompact ? "wrap" : "nowrap"
-    } }, /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: 8,
-      color: "var(--theme-text-muted, #3a3d45)",
-      letterSpacing: "0.06em",
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "TELEMY ", version.toUpperCase?.() || version), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ React.createElement("span", { style: {
-      fontSize: 8,
-      color: pipeColor,
-      textShadow: `0 0 4px ${pipeColor}40`
-    } }, "\u25CF"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 8, color: "var(--theme-text-muted, #3a3d45)" } }, pipeLabel))), !useBridge && /* @__PURE__ */ React.createElement("div", { style: {
-      position: "absolute",
-      top: 6,
-      right: 6,
-      fontSize: 7,
-      color: "#da3633",
-      background: "#260d0d",
-      padding: "1px 5px",
-      borderRadius: 2,
-      border: "1px solid #3a1a1a",
-      letterSpacing: "0.06em",
-      fontWeight: 700,
-      opacity: 0.8,
-      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
-    } }, "SIM"));
+        );
+        let content = null;
+        if (sectionId === "scenes") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          Section,
+          {
+            title: "Scenes",
+            icon: "\u25C9",
+            defaultOpen: true,
+            compact: isCompact,
+            badge: activeIntent,
+            badgeColor: SCENE_INTENT_COLORS[activeIntent]?.border || "#4a4f5c",
+            dragHandle: dragHandleEl,
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+                marginBottom: 6,
+                padding: "6px 7px",
+                borderRadius: 4,
+                border: `1px solid ${toRgba(activeRuleBorderColor, 0.55)}`,
+                background: isLightTheme ? `linear-gradient(135deg, ${toRgba(activeRuleColor, 0.22)} 0%, var(--theme-surface, #13151a) 100%)` : `linear-gradient(135deg, ${toRgba(activeRuleColor, 0.65)} 0%, var(--theme-surface, #13151a) 100%)`
+              }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: activeScene ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
+                  boxShadow: activeScene ? "0 0 6px var(--theme-accent, #5ba3f5)" : "none",
+                  flexShrink: 0
+                } }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                  fontSize: isCompact ? 9 : 10,
+                  color: "var(--theme-text-muted, #8b8f98)",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                  flexShrink: 0
+                }, children: "Active" }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: { minWidth: 0, flex: 1, display: "flex", flexDirection: "column", lineHeight: 1.15 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                    fontSize: isCompact ? 10 : 11,
+                    color: "var(--theme-text, #e0e2e8)",
+                    fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }, children: activeSceneDisplayName }),
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                    fontSize: 8,
+                    color: "var(--theme-text-muted, #8b8f98)",
+                    fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }, children: activeRuleSummary })
+                ] }),
+                pendingScene && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                  fontSize: 8,
+                  color: "var(--theme-accent, #5ba3f5)",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em"
+                }, children: "SWITCHING" }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => setScenePanelExpanded((prev) => !prev),
+                    style: {
+                      width: 20,
+                      height: 20,
+                      borderRadius: 3,
+                      border: "1px solid var(--theme-border, #2a2d35)",
+                      background: "var(--theme-panel, #20232b)",
+                      color: scenePanelExpanded ? "var(--theme-accent, #5ba3f5)" : "var(--theme-text-muted, #8b8f98)",
+                      fontSize: 11,
+                      lineHeight: 1,
+                      padding: 0,
+                      cursor: "pointer",
+                      flexShrink: 0
+                    },
+                    title: scenePanelExpanded ? "Collapse advanced scene controls" : "Expand advanced scene controls",
+                    children: scenePanelExpanded ? "\u25B4" : "\u25BE"
+                  }
+                )
+              ] }) }),
+              scenePanelExpanded && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 6,
+                  padding: "4px 6px",
+                  borderRadius: 4,
+                  border: "1px solid var(--theme-border, #2a2d35)",
+                  background: "var(--theme-surface, #13151a)"
+                }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                    fontSize: isCompact ? 8 : 9,
+                    color: "var(--theme-text-muted, #8b8f98)",
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                    flexShrink: 0,
+                    flex: 1
+                  }, children: "Scene Rules" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: addAutoSceneRule,
+                      style: {
+                        height: 21,
+                        borderRadius: 3,
+                        border: "1px solid var(--theme-border, #2a2d35)",
+                        background: "var(--theme-panel, #20232b)",
+                        color: "var(--theme-text, #e0e2e8)",
+                        fontSize: 10,
+                        padding: "0 7px",
+                        cursor: "pointer",
+                        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+                      },
+                      children: "+ Rule"
+                    }
+                  )
+                ] }),
+                autoSceneRules.map((row) => {
+                  const linkedSceneId = sceneIntentLinks[row.id] || "";
+                  const linkedScene = (allScenes || []).find((scene) => scene.id === linkedSceneId) || null;
+                  const isActive = linkedScene && linkedScene.id === scenes.activeSceneId;
+                  const isPending = linkedScene && linkedScene.id === scenes.pendingSceneId;
+                  const intentColor = SCENE_INTENT_COLORS[row.intent] || SCENE_INTENT_COLORS.OFFLINE;
+                  const isExpanded = expandedRuleId === row.id;
+                  const ruleBgColor = normalizeOptionalHexColor(row.bgColor) || intentColor.bg;
+                  const ruleBorderColor = normalizeOptionalHexColor(row.bgColor) || intentColor.border;
+                  const activeRowBg = isLightTheme ? toRgba(ruleBgColor, 0.14) : ruleBgColor;
+                  const activeRowText = isLightTheme || isLightColor(ruleBgColor) ? "var(--theme-text, #1b1d22)" : "var(--theme-text, #e0e2e8)";
+                  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 5,
+                    marginBottom: 5,
+                    padding: "5px 6px",
+                    borderRadius: 4,
+                    border: `1px solid ${isActive ? ruleBorderColor : "var(--theme-border, #2a2d35)"}`,
+                    background: isActive ? activeRowBg : "var(--theme-surface, #13151a)"
+                  }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 4, alignItems: "center" }, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+                        "button",
+                        {
+                          type: "button",
+                          onClick: () => linkedScene && handleSceneSwitch(linkedScene),
+                          disabled: !linkedScene,
+                          style: {
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 6,
+                            border: "none",
+                            background: "transparent",
+                            color: isActive ? activeRowText : "var(--theme-text, #e0e2e8)",
+                            cursor: linkedScene ? "pointer" : "default",
+                            textAlign: "left",
+                            padding: 0,
+                            minWidth: 0
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                              width: 5,
+                              height: 5,
+                              borderRadius: "50%",
+                              background: isActive ? ruleBorderColor : isPending ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
+                              boxShadow: isActive ? `0 0 4px ${ruleBorderColor}` : "none",
+                              flexShrink: 0
+                            } }),
+                            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: {
+                              display: "flex",
+                              flexDirection: "column",
+                              minWidth: 0,
+                              lineHeight: 1.15
+                            }, children: [
+                              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                                fontSize: isCompact ? 9 : 10,
+                                fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                color: isActive ? activeRowText : "var(--theme-text, #e0e2e8)"
+                              }, children: row.label }),
+                              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                                fontSize: 8,
+                                fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                color: "var(--theme-text-muted, #8b8f98)"
+                              }, children: `${row.thresholdEnabled ? `<= ${row.thresholdMbps == null ? "unset" : `${Number(row.thresholdMbps).toFixed(1)} Mbps`}` : "Threshold off"} -> ${linkedScene?.name || "Unlinked"}` })
+                            ] })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 3 }, children: [
+                        isExpanded && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+                          RULE_BG_PRESETS.map((preset) => {
+                            const selected = normalizeOptionalHexColor(row.bgColor) === normalizeOptionalHexColor(preset.color);
+                            return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                              "button",
+                              {
+                                type: "button",
+                                onClick: () => updateAutoSceneRule(row.id, { bgColor: preset.color }),
+                                title: preset.label,
+                                style: {
+                                  width: 14,
+                                  height: 14,
+                                  borderRadius: 3,
+                                  border: selected ? "1px solid var(--theme-accent, #5ba3f5)" : "1px solid var(--theme-border, #2a2d35)",
+                                  background: preset.color,
+                                  boxShadow: selected ? `0 0 0 1px ${toRgba(preset.color, 0.55)}` : "none",
+                                  padding: 0,
+                                  cursor: "pointer"
+                                }
+                              },
+                              `${row.id}_${preset.id}`
+                            );
+                          }),
+                          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                            "label",
+                            {
+                              title: "Custom color",
+                              style: {
+                                width: 15,
+                                height: 15,
+                                borderRadius: "50%",
+                                border: "1px solid var(--theme-border, #2a2d35)",
+                                overflow: "hidden",
+                                cursor: "pointer",
+                                display: "inline-block",
+                                position: "relative",
+                                background: normalizeOptionalHexColor(row.bgColor) || "#2a2d35"
+                              },
+                              children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                                "input",
+                                {
+                                  type: "color",
+                                  value: normalizeOptionalHexColor(row.bgColor) || "#2a2d35",
+                                  onChange: (e) => updateAutoSceneRule(row.id, { bgColor: e.target.value }),
+                                  style: {
+                                    position: "absolute",
+                                    inset: 0,
+                                    width: "100%",
+                                    height: "100%",
+                                    border: "none",
+                                    padding: 0,
+                                    margin: 0,
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    opacity: 0
+                                  }
+                                }
+                              )
+                            }
+                          )
+                        ] }),
+                        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                          "button",
+                          {
+                            type: "button",
+                            onClick: () => setExpandedRuleId((prev) => prev === row.id ? null : row.id),
+                            style: {
+                              height: 21,
+                              borderRadius: 3,
+                              border: "1px solid var(--theme-border, #2a2d35)",
+                              background: "var(--theme-panel, #20232b)",
+                              color: isExpanded ? "var(--theme-accent, #5ba3f5)" : "var(--theme-text-muted, #8b8f98)",
+                              fontSize: 9,
+                              padding: "0 8px",
+                              cursor: "pointer"
+                            },
+                            children: isExpanded ? "Close" : "Edit"
+                          }
+                        )
+                      ] })
+                    ] }),
+                    isExpanded && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) auto auto minmax(0, 1fr) auto",
+                      gap: 4,
+                      alignItems: "center",
+                      paddingTop: 2
+                    }, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                        "input",
+                        {
+                          value: row.label,
+                          onChange: (e) => updateAutoSceneRule(row.id, { label: e.target.value.slice(0, 40) }),
+                          style: {
+                            height: 21,
+                            borderRadius: 3,
+                            border: "1px solid var(--theme-border, #2a2d35)",
+                            background: "var(--theme-panel, #20232b)",
+                            color: "var(--theme-text, #e0e2e8)",
+                            fontSize: 9,
+                            padding: "0 6px",
+                            minWidth: 80,
+                            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+                          }
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                        "input",
+                        {
+                          type: "number",
+                          step: "0.1",
+                          min: "0",
+                          value: row.thresholdMbps == null ? "" : row.thresholdMbps,
+                          onChange: (e) => {
+                            const v = e.target.value;
+                            updateAutoSceneRule(row.id, {
+                              thresholdEnabled: true,
+                              thresholdMbps: v === "" ? null : Math.max(0, Number(v) || 0)
+                            });
+                          },
+                          title: "Switch when bitrate is at or below this Mbps value",
+                          style: {
+                            height: 21,
+                            borderRadius: 3,
+                            border: "1px solid var(--theme-border, #2a2d35)",
+                            background: "var(--theme-panel, #20232b)",
+                            color: "var(--theme-text, #e0e2e8)",
+                            fontSize: 9,
+                            padding: "0 4px",
+                            width: 52,
+                            textAlign: "right"
+                          }
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 9, color: "var(--theme-text-muted, #8b8f98)" }, children: "Mbps" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+                        "select",
+                        {
+                          value: linkedSceneId,
+                          onChange: (e) => setSceneIntentLink(row.id, e.target.value),
+                          style: {
+                            height: 21,
+                            borderRadius: 3,
+                            border: "1px solid var(--theme-border, #2a2d35)",
+                            background: "var(--theme-panel, #20232b)",
+                            color: "var(--theme-text, #e0e2e8)",
+                            fontSize: 9,
+                            padding: "0 4px",
+                            minWidth: 0
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "", children: "Select scene..." }),
+                            (allScenes || []).map((scene) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: scene.id, children: scene.name }, scene.id))
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                        "button",
+                        {
+                          type: "button",
+                          onClick: () => removeAutoSceneRule(row.id),
+                          disabled: autoSceneRules.length <= 1,
+                          style: {
+                            height: 21,
+                            borderRadius: 3,
+                            border: "1px solid var(--theme-border, #2a2d35)",
+                            background: "var(--theme-panel, #20232b)",
+                            color: "var(--theme-text-muted, #8b8f98)",
+                            fontSize: 10,
+                            padding: "0 6px",
+                            cursor: autoSceneRules.length <= 1 ? "not-allowed" : "pointer",
+                            opacity: autoSceneRules.length <= 1 ? 0.5 : 1
+                          },
+                          children: "Remove"
+                        }
+                      )
+                    ] })
+                  ] }, row.id);
+                })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+                "button",
+                {
+                  type: "button",
+                  onClick: handleAutoSceneSwitchToggle,
+                  disabled: !!autoSwitchToggleLock,
+                  style: {
+                    marginTop: 8,
+                    padding: isCompact ? "5px 7px" : "6px 8px",
+                    background: "var(--theme-surface, #1a1d23)",
+                    borderRadius: 4,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    border: "1px solid var(--theme-border, #2a2d35)",
+                    width: "100%",
+                    cursor: autoSwitchToggleLock ? "not-allowed" : "pointer",
+                    textAlign: "left",
+                    opacity: autoSwitchToggleLock ? 0.75 : 1
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("svg", { width: "10", height: "10", viewBox: "0 0 10 10", fill: "none", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                        "path",
+                        {
+                          d: "M1 5C1 2.8 2.8 1 5 1s4 1.8 4 4-1.8 4-4 4",
+                          stroke: autoSwitchArmed ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
+                          strokeWidth: "1.2",
+                          strokeLinecap: "round"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                        "path",
+                        {
+                          d: "M3 7L1 5L3 3",
+                          stroke: autoSwitchArmed ? "var(--theme-accent, #5ba3f5)" : "var(--theme-border, #3a3d45)",
+                          strokeWidth: "1.2",
+                          strokeLinecap: "round",
+                          strokeLinejoin: "round"
+                        }
+                      )
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 9, color: autoSwitchArmed ? "var(--theme-accent, #5ba3f5)" : "var(--theme-text-muted, #5a5f6d)", fontWeight: 500 }, children: "Auto Scene Switch" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                      fontSize: isCompact ? 8 : 9,
+                      fontWeight: 600,
+                      marginLeft: "auto",
+                      color: autoSwitchArmed ? "#2ea043" : "#da3633"
+                    }, children: autoSwitchToggleLock ? isCompact ? "..." : "APPLYING..." : autoSwitchArmed ? "ARMED" : "MANUAL" })
+                  ]
+                }
+              )
+            ]
+          }
+        );
+        else if (sectionId === "encoders") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          Section,
+          {
+            title: "Encoders & Uploads",
+            icon: "\u229E",
+            defaultOpen: true,
+            compact: isCompact,
+            badge: allEncoderItems.length > 0 ? String(activeOutputCount) : "0",
+            badgeColor: activeOutputCount > 0 ? "#2ea043" : "var(--theme-border, #3a3d45)",
+            dragHandle: dragHandleEl,
+            children: [
+              allEncoderItems.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { color: "var(--theme-text-muted, #8b8f98)", fontSize: 11, padding: "8px 0", textAlign: "center" }, children: "No encoder outputs detected" }),
+              encoderOutputs.groups.map((group, gi) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  EncoderGroupHeader,
+                  {
+                    name: group.name,
+                    resolution: group.resolution,
+                    totalBitrateKbps: group.totalBitrateKbps,
+                    avgLagMs: group.avgLagMs,
+                    compact: isCompact
+                  }
+                ),
+                group.items.map((item, ii) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  OutputBar,
+                  {
+                    name: item.name || item.platform,
+                    bitrateKbps: item.kbps,
+                    fps: item.fps,
+                    dropPct: item.dropPct,
+                    active: item.active !== false,
+                    maxBitrate: outputMaxMap[item.id || item.name || item.platform] || outputSectionMax,
+                    compact: isCompact
+                  },
+                  item.id || `${gi}-${ii}`
+                ))
+              ] }, group.name || gi)),
+              encoderOutputs.hidden?.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(HiddenOutputsToggle, { items: encoderOutputs.hidden, compact: isCompact })
+            ]
+          }
+        );
+        else if (sectionId === "bitrate") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          Section,
+          {
+            title: "Bitrate",
+            icon: "\u25A5",
+            defaultOpen: true,
+            compact: isCompact,
+            dragHandle: dragHandleEl,
+            children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+              marginTop: 8,
+              display: "grid",
+              gridTemplateColumns: isUltraCompact ? "1fr" : "1fr 1fr",
+              gap: 4,
+              fontSize: 9,
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+            }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+                background: "var(--theme-surface, #13151a)",
+                borderRadius: 3,
+                padding: "5px 7px",
+                border: "1px solid var(--theme-border, #1e2028)"
+              }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { color: "var(--theme-text-muted, #5a5f6d)", marginBottom: 2 }, children: "LOW THRESHOLD" }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { color: "#fbbf24", fontWeight: 600 }, children: bitrate.lowThresholdMbps != null ? `${bitrate.lowThresholdMbps.toFixed(1)} Mbps` : "\u2014" })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+                background: "var(--theme-surface, #13151a)",
+                borderRadius: 3,
+                padding: "5px 7px",
+                border: "1px solid var(--theme-border, #1e2028)"
+              }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { color: "var(--theme-text-muted, #5a5f6d)", marginBottom: 2 }, children: "BRB THRESHOLD" }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { color: "#da3633", fontWeight: 600 }, children: bitrate.brbThresholdMbps != null ? `${bitrate.brbThresholdMbps.toFixed(1)} Mbps` : "\u2014" })
+              ] })
+            ] })
+          }
+        );
+        else if (sectionId === "relay") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          Section,
+          {
+            title: "Relay",
+            icon: "\u2601",
+            compact: isCompact,
+            defaultOpen: true,
+            badge: relayConnections.length > 0 ? String(relayConnections.filter((c) => c.status === "connected").length) + "/" + String(relayConnections.length) : "0",
+            badgeColor: relayConnections.some((c) => c.status === "connected") ? "#2d7aed" : "var(--theme-border, #3a3d45)",
+            dragHandle: dragHandleEl,
+            children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              ConnectionListSection,
+              {
+                relayConnections,
+                networkConnections: conns,
+                sendAction,
+                authAuthenticated,
+                authDisplayName,
+                authPlanLabel,
+                authPending,
+                authLogin,
+                authEntitlement,
+                authErrorMessage,
+                handleAuthLogin,
+                handleAuthLogout,
+                handleAuthOpenBrowser,
+                isCompact
+              }
+            )
+          }
+        );
+        else if (sectionId === "failover") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          Section,
+          {
+            title: "Failover Engine",
+            icon: "\u26A1",
+            compact: isCompact,
+            dragHandle: dragHandleEl,
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                marginBottom: 8,
+                padding: "6px 8px",
+                background: "var(--theme-surface, #13151a)",
+                borderRadius: 4,
+                border: `1px solid ${healthColor}40`
+              }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: healthColor,
+                  boxShadow: `0 0 6px ${healthColor}40`,
+                  flexShrink: 0
+                } }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 10, color: healthColor, fontWeight: 600 }, children: healthLabel }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 9, color: "var(--theme-text-muted, #5a5f6d)", marginLeft: "auto" }, children: engineState })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EngineStateChips, { activeState: engineState, compact: isUltraCompact }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { fontSize: 9, color: "var(--theme-text-muted, #5a5f6d)", lineHeight: 1.6 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 2 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "Response Budget" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: { color: "#2ea043", fontWeight: 600 }, children: [
+                    "< ",
+                    failover.responseBudgetMs || 800,
+                    "ms"
+                  ] })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 2 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "Last Transition" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { color: "var(--theme-text-muted, #8b8f98)" }, children: failover.lastFailoverLabel || "\u2014" })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", justifyContent: "space-between" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "Total Transitions" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { color: "var(--theme-text-muted, #8b8f98)" }, children: failover.totalFailoversLabel || "\u2014" })
+                ] })
+              ] })
+            ]
+          }
+        );
+        else if (sectionId === "quickSettings") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          Section,
+          {
+            title: "Quick Settings",
+            icon: "\u2699",
+            compact: isCompact,
+            dragHandle: dragHandleEl,
+            children: settings.filter((setting) => !["manual_override", "auto_scene_switch"].includes(setting.key)).map((setting) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              ToggleRow,
+              {
+                label: setting.label,
+                value: setting.value,
+                color: SETTING_COLORS[setting.key] || "#2d7aed",
+                dimmed: setting.value === null,
+                onChange: (val) => handleSettingChange(setting.key, val)
+              },
+              setting.key
+            ))
+          }
+        );
+        else if (sectionId === "outputConfig") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          Section,
+          {
+            title: "Output Config",
+            icon: "\u2699",
+            compact: isCompact,
+            badge: String(allEncoderItems.length + (encoderOutputs.hidden?.length || 0)),
+            badgeColor: "var(--theme-border, #3a3d45)",
+            dragHandle: dragHandleEl,
+            children: allEncoderItems.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { color: "var(--theme-text-muted, #8b8f98)", fontSize: 11, padding: "8px 0", textAlign: "center" }, children: "No outputs configured" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              OutputConfigPanel,
+              {
+                encoderOutputs,
+                sendAction,
+                compact: isCompact
+              }
+            )
+          }
+        );
+        else if (sectionId === "eventLog") content = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          Section,
+          {
+            title: "Event Log",
+            icon: "\u25A4",
+            compact: isCompact,
+            badge: String(events.length),
+            badgeColor: "var(--theme-surface, #3a3d45)",
+            dragHandle: dragHandleEl,
+            children: events.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+              display: "flex",
+              gap: 8,
+              padding: "4px 0",
+              borderBottom: i < events.length - 1 ? "1px solid var(--theme-border, #13151a)" : "none",
+              animation: `slideIn 0.3s ease ${i * 0.05}s both`
+            }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                fontSize: 9,
+                color: "var(--theme-text-muted, #3a3d45)",
+                fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                flexShrink: 0
+              }, children: e.time }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+                fontSize: 9,
+                fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                color: e.type === "success" ? "#4ade80" : e.type === "warning" ? "#fbbf24" : e.type === "error" ? "#da3633" : "var(--theme-text-muted, #6b7080)",
+                wordBreak: "break-word"
+              }, children: e.msg })
+            ] }, e.id || i))
+          }
+        );
+        if (!content) return null;
+        return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "div",
+          {
+            onDragOver: (e) => {
+              e.preventDefault();
+              if (dragSrcId && dragSrcId !== sectionId) setDragOverId(sectionId);
+            },
+            onDrop: (e) => {
+              e.preventDefault();
+              if (!dragSrcId || dragSrcId === sectionId) {
+                setDragSrcId(null);
+                setDragOverId(null);
+                return;
+              }
+              setSectionOrder((prev) => {
+                const next = [...prev];
+                const fromIdx = next.indexOf(dragSrcId);
+                const toIdx = next.indexOf(sectionId);
+                if (fromIdx < 0 || toIdx < 0) return prev;
+                next.splice(fromIdx, 1);
+                next.splice(toIdx, 0, dragSrcId);
+                try {
+                  window.localStorage && window.localStorage.setItem(SECTION_ORDER_STORAGE_KEY, JSON.stringify(next));
+                } catch (_) {
+                }
+                return next;
+              });
+              setDragSrcId(null);
+              setDragOverId(null);
+            },
+            style: {
+              outline: isDragOver ? "1px solid var(--theme-accent, #2d7aed)" : "none",
+              opacity: isDragging ? 0.4 : 1,
+              transition: "opacity 0.15s"
+            },
+            children: content
+          },
+          sectionId
+        );
+      }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: {
+        padding: isCompact ? "6px 10px" : "7px 12px",
+        flexShrink: 0,
+        borderTop: "1px solid var(--theme-border, #1a1d23)",
+        background: "var(--theme-bg, #0c0e13)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 6,
+        flexWrap: isUltraCompact ? "wrap" : "nowrap"
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { style: {
+          fontSize: 8,
+          color: "var(--theme-text-muted, #3a3d45)",
+          letterSpacing: "0.06em",
+          fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+        }, children: [
+          "TELEMY ",
+          version.toUpperCase?.() || version
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: {
+            fontSize: 8,
+            color: pipeColor,
+            textShadow: `0 0 4px ${pipeColor}40`
+          }, children: "\u25CF" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 8, color: "var(--theme-text-muted, #3a3d45)" }, children: pipeLabel })
+        ] })
+      ] }),
+      !useBridge && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: {
+        position: "absolute",
+        top: 6,
+        right: 6,
+        fontSize: 7,
+        color: "#da3633",
+        background: "#260d0d",
+        padding: "1px 5px",
+        borderRadius: 2,
+        border: "1px solid #3a1a1a",
+        letterSpacing: "0.06em",
+        fontWeight: 700,
+        opacity: 0.8,
+        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)"
+      }, children: "SIM" })
+    ] });
+  }
+
+  // aegis-dock-entry.jsx
+  var import_jsx_runtime6 = __require("react/jsx-runtime");
+  try {
+    const root = document.getElementById("root");
+    if (!root) {
+      document.body.innerHTML = '<pre style="color:red;padding:10px">ERROR: #root element not found</pre>';
+    } else {
+      (0, import_client.createRoot)(root).render(/* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AegisDock, {}));
+    }
+  } catch (err) {
+    document.body.innerHTML = '<pre style="color:red;padding:10px;white-space:pre-wrap">MOUNT ERROR: ' + String(err && err.stack || err) + "</pre>";
   }
 })();
-/*! Bundled license information:
-
-react/cjs/react.development.js:
-  (**
-   * @license React
-   * react.development.js
-   *
-   * Copyright (c) Meta Platforms, Inc. and affiliates.
-   *
-   * This source code is licensed under the MIT license found in the
-   * LICENSE file in the root directory of this source tree.
-   *)
-*/
