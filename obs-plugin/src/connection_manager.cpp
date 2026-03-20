@@ -366,13 +366,28 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
     }
 
     std::string req_id = request_id;
+    // Cancel any in-flight relay-start worker and join it outside the lock so
+    // it cannot outlive this object on plugin unload (use-after-free fix).
     {
-        std::lock_guard<std::mutex> lk(worker_mu_);
-        if (start_worker_.joinable()) {
-            start_cancel_.store(true);
-            start_worker_.detach();
+        std::thread old_worker;
+        {
+            std::lock_guard<std::mutex> lk(worker_mu_);
+            if (start_worker_.joinable()) {
+                start_cancel_.store(true);
+                old_worker = std::move(start_worker_);
+            }
+        }
+        if (old_worker.joinable()) {
+            old_worker.join();
             blog(LOG_INFO, "[aegis-cm] relay_start: cancelled previous worker");
         }
+    }
+    // Bail if Shutdown() ran while we were waiting for the old worker.
+    if (!initialized_) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lk(worker_mu_);
         start_cancel_.store(false);
         start_worker_ = std::thread([this, relay, jwt, req_id, heartbeat_interval_sec]() {
             try {
@@ -665,13 +680,16 @@ std::string ConnectionManager::AddConnection(const RelayConnectionConfig& config
 void ConnectionManager::UpdateConnection(const std::string& id,
                                          const RelayConnectionConfig& updated)
 {
-    std::lock_guard<std::mutex> lock(connections_mu_);
-    for (auto& conn : connections_) {
-        if (conn.id == id) {
-            conn = updated;
-            break;
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        for (auto& conn : connections_) {
+            if (conn.id == id) {
+                conn = updated;
+                break;
+            }
         }
     }
+    SaveConnections();
 }
 
 void ConnectionManager::RemoveConnection(const std::string& id)
@@ -710,7 +728,8 @@ void ConnectionManager::Connect(const std::string& id, const std::string& jwt)
         ConnectDirect(config.relay_host, config.relay_port,
                       config.stream_id.empty() ? "" : config.stream_id);
     }
-    // Managed: handled via StartManagedRelayAsync (called by action dispatch).
+    // Managed: routed to StartManagedRelayAsync at the action dispatch layer
+    // (connection_connect action). Nothing to do here for managed connections.
     (void)jwt;
 }
 
@@ -739,7 +758,8 @@ void ConnectionManager::Disconnect(const std::string& id, const std::string& jwt
             it->status = "idle";
         }
     }
-    // Managed: handled via StopManagedRelayAsync (called by action dispatch).
+    // Managed: routed to StopManagedRelayAsync at the action dispatch layer
+    // (connection_disconnect action). Nothing to do here for managed connections.
     (void)jwt;
 }
 

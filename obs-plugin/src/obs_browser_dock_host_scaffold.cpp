@@ -1252,17 +1252,15 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
 
     LoadBootstrapPage();
 #else
+    // No dock host backend is enabled in this build (neither AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF
+    // nor AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE). The dock is unavailable; mark the page
+    // unloaded so the rest of the plugin degrades gracefully (no JS bridge, no metric injection).
     blog(
-        LOG_INFO,
-        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s (Qt/CEF embedding TODO)",
+        LOG_WARNING,
+        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s:"
+        " no dock host backend enabled, dock unavailable",
         kDockId,
         kDockTitle);
-
-    // Future implementation responsibilities:
-    // - create/load browser dock widget/page
-    // - inject/load aegis-dock-bridge-host.js + aegis-dock-browser-host-bootstrap.js
-    // - call aegis_obs_browser_dock_host_scaffold_set_js_executor(...)
-    // - call aegis_obs_browser_dock_host_scaffold_on_page_ready() after bootstrap is ready
     aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
 #endif
 }
