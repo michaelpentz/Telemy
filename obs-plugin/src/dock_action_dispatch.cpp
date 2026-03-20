@@ -2,6 +2,7 @@
 #include "dock_replay_cache.h"
 #include "config_vault.h"
 #include "relay_client.h"
+#include "connection_manager.h"
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
 
@@ -45,17 +46,13 @@ void LogSceneSnapshot(const char* reason);
 // ---------------------------------------------------------------------------
 // Extern globals — defined in obs_plugin_entry.cpp
 // ---------------------------------------------------------------------------
-extern aegis::HttpsClient g_http;
-extern aegis::Vault       g_vault;
-extern aegis::PluginConfig g_config;
+extern aegis::HttpsClient                             g_http;
+extern aegis::Vault                                   g_vault;
+extern aegis::PluginConfig                            g_config;
 extern std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
-extern std::mutex g_auth_state_mu;
-extern aegis::PluginAuthState g_auth_state;
-extern std::unique_ptr<aegis::RelayClient> g_relay;
-extern std::mutex g_relay_worker_mu;
-extern std::thread g_relay_start_worker;
-extern std::thread g_relay_stop_worker;
-extern std::atomic<bool> g_relay_start_cancel;
+extern std::mutex                                     g_auth_state_mu;
+extern aegis::PluginAuthState                         g_auth_state;
+extern aegis::ConnectionManager                       g_connection_manager;
 
 // ---------------------------------------------------------------------------
 // Module-local globals
@@ -1176,13 +1173,6 @@ bool DispatchDockAction(const std::string& action_json,
             LOG_INFO,
             "[aegis-obs-plugin] dock action relay_start: request_id=%s",
             request_id.c_str());
-        if (!g_relay) {
-            blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_start request_id=%s error=relay_not_configured",
-                request_id.c_str());
-            EmitDockActionResult(action_type, request_id, "failed", false, "relay_not_configured", "");
-            return false;
-        }
         const std::string jwt = CurrentControlPlaneJwtForActions();
         if (jwt.empty()) {
             blog(LOG_WARNING,
@@ -1191,139 +1181,8 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "failed", false, "no_control_plane_auth", "");
             return false;
         }
-        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        std::string req_id = request_id;
-        int heartbeat_interval = g_config.relay_heartbeat_interval_sec;
-        {
-            std::lock_guard<std::mutex> lk(g_relay_worker_mu);
-            // Signal any running worker to stop, then detach it so we don't
-            // block the UI thread.  The old worker will notice the flag and
-            // exit on its next poll iteration.
-            if (g_relay_start_worker.joinable()) {
-                g_relay_start_cancel.store(true);
-                g_relay_start_worker.detach();
-                blog(LOG_INFO,
-                    "[aegis-obs-plugin] relay_start: cancelled previous worker");
-            }
-            g_relay_start_cancel.store(false);
-            g_relay_start_worker = std::thread([jwt, req_id, heartbeat_interval]() {
-            try {
-                auto session = g_relay->Start(jwt);
-                if (session) {
-                    if (session->status == "provisioning") {
-                        EmitDockActionResult("relay_start", req_id, "provisioning", true, "",
-                                             BuildRelaySessionDetailJson(*session));
-
-                        const auto deadline =
-                            std::chrono::steady_clock::now() + std::chrono::seconds(180);
-                        while (std::chrono::steady_clock::now() < deadline) {
-                            if (g_relay_start_cancel.load()) {
-                                blog(LOG_INFO,
-                                    "[aegis-obs-plugin] relay_start cancelled: request_id=%s",
-                                    req_id.c_str());
-                                return;
-                            }
-                            auto polled = g_relay->GetActive(jwt);
-                            if (!polled) {
-                                const auto now = std::chrono::steady_clock::now();
-                                if (now >= deadline) {
-                                    break;
-                                }
-                                const auto remaining = deadline - now;
-                                const auto sleep_for = std::min(
-                                    std::chrono::seconds(2),
-                                    std::chrono::duration_cast<std::chrono::seconds>(remaining));
-                                std::this_thread::sleep_for(sleep_for);
-                                continue;
-                            }
-
-                            if (!polled->provision_step.empty()) {
-                                ProvisionStepInfo info = stepToInfo(polled->provision_step);
-                                std::ostringstream progress;
-                                progress << "{\"step\":\"" << JsonEscape(polled->provision_step) << "\""
-                                         << ",\"stepNumber\":" << info.number
-                                         << ",\"totalSteps\":6"
-                                         << ",\"label\":\"" << JsonEscape(info.label) << "\""
-                                         << "}";
-                                EmitDockActionResult("relay_provision_progress", req_id, "progress", true, "",
-                                                     progress.str());
-                            }
-
-                            if (polled->status == "active") {
-                                if (g_relay_start_cancel.load()) return;
-                                g_relay->StartHeartbeatLoop(jwt, polled->session_id, heartbeat_interval);
-                                blog(LOG_INFO,
-                                    "[aegis-obs-plugin] relay_start completed: request_id=%s session_id=[redacted] region=%s status=%s",
-                                    req_id.c_str(),
-                                    polled->region.c_str(),
-                                    polled->status.c_str());
-                                EmitDockActionResult("relay_start", req_id, "completed", true, "",
-                                                     BuildRelaySessionDetailJson(*polled));
-                                return;
-                            }
-
-                            if (polled->status == "failed" || polled->status == "stopped") {
-                                blog(LOG_WARNING,
-                                    "[aegis-obs-plugin] relay_start failed: request_id=%s error=relay_start_failed",
-                                    req_id.c_str());
-                                EmitDockActionResult("relay_start", req_id, "failed", false,
-                                                     "relay_start_failed", "");
-                                return;
-                            }
-
-                            const auto now = std::chrono::steady_clock::now();
-                            if (now >= deadline) {
-                                break;
-                            }
-                            const auto remaining = deadline - now;
-                            const auto sleep_for = std::min(
-                                std::chrono::seconds(2),
-                                std::chrono::duration_cast<std::chrono::seconds>(remaining));
-                            std::this_thread::sleep_for(sleep_for);
-                        }
-
-                        if (g_relay_start_cancel.load()) {
-                            blog(LOG_INFO,
-                                "[aegis-obs-plugin] relay_start cancelled: request_id=%s",
-                                req_id.c_str());
-                            return;
-                        }
-                        blog(LOG_WARNING,
-                            "[aegis-obs-plugin] relay_start failed: request_id=%s error=provision_timeout",
-                            req_id.c_str());
-                        EmitDockActionResult("relay_start", req_id, "failed", false, "provision_timeout", "");
-                        return;
-                    }
-
-                    if (session->status == "active") {
-                        g_relay->StartHeartbeatLoop(jwt, session->session_id, heartbeat_interval);
-                        blog(LOG_INFO,
-                            "[aegis-obs-plugin] relay_start completed: request_id=%s session_id=[redacted] region=%s status=%s",
-                            req_id.c_str(),
-                            session->region.c_str(),
-                            session->status.c_str());
-                        EmitDockActionResult("relay_start", req_id, "completed", true, "",
-                                             BuildRelaySessionDetailJson(*session));
-                    } else {
-                        blog(LOG_WARNING,
-                            "[aegis-obs-plugin] relay_start failed: request_id=%s error=relay_start_failed",
-                            req_id.c_str());
-                        EmitDockActionResult("relay_start", req_id, "failed", false, "relay_start_failed", "");
-                    }
-                } else {
-                    blog(LOG_WARNING,
-                        "[aegis-obs-plugin] relay_start failed: request_id=%s error=relay_start_failed",
-                        req_id.c_str());
-                    EmitDockActionResult("relay_start", req_id, "failed", false, "relay_start_failed", "");
-                }
-            } catch (const std::exception& e) {
-                blog(LOG_WARNING,
-                    "[aegis-obs-plugin] relay_start exception: request_id=%s error=%s",
-                    req_id.c_str(), e.what());
-                EmitDockActionResult("relay_start", req_id, "failed", false, JsonEscape(e.what()), "");
-            }
-            });
-        }
+        g_connection_manager.StartManagedRelayAsync(
+            jwt, request_id, g_config.relay_heartbeat_interval_sec);
         return true;
     }
 
@@ -1332,46 +1191,15 @@ bool DispatchDockAction(const std::string& action_json,
             LOG_INFO,
             "[aegis-obs-plugin] dock action relay_stop: request_id=%s",
             request_id.c_str());
-        if (!g_relay || !g_relay->HasActiveSession()) {
+        if (!g_connection_manager.HasActiveSession()) {
             blog(LOG_WARNING,
                 "[aegis-obs-plugin] dock action failed: type=relay_stop request_id=%s error=no_active_session",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "no_active_session", "");
             return false;
         }
-        auto session = g_relay->CurrentSession();
-        std::string jwt = CurrentControlPlaneJwtForActions();
-        std::string sid = session ? session->session_id : "";
-        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        std::string req_id = request_id;
-        {
-            std::lock_guard<std::mutex> lk(g_relay_worker_mu);
-            if (g_relay_stop_worker.joinable()) {
-                g_relay_stop_worker.join();
-            }
-            g_relay_stop_worker = std::thread([jwt, sid, req_id]() {
-                try {
-                    g_relay->StopHeartbeatLoop();
-                    bool ok = g_relay->Stop(jwt, sid);
-                    if (ok) {
-                        blog(LOG_INFO,
-                            "[aegis-obs-plugin] relay_stop completed: request_id=%s",
-                            req_id.c_str());
-                        EmitDockActionResult("relay_stop", req_id, "completed", true, "", "");
-                    } else {
-                        blog(LOG_WARNING,
-                            "[aegis-obs-plugin] relay_stop failed: request_id=%s error=relay_stop_failed",
-                            req_id.c_str());
-                        EmitDockActionResult("relay_stop", req_id, "failed", false, "relay_stop_failed", "");
-                    }
-                } catch (const std::exception& e) {
-                    blog(LOG_WARNING,
-                        "[aegis-obs-plugin] relay_stop exception: request_id=%s error=%s",
-                        req_id.c_str(), e.what());
-                    EmitDockActionResult("relay_stop", req_id, "failed", false, JsonEscape(e.what()), "");
-                }
-            });
-        }
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        g_connection_manager.StopManagedRelayAsync(jwt, request_id);
         return true;
     }
 
@@ -1380,14 +1208,6 @@ bool DispatchDockAction(const std::string& action_json,
             LOG_INFO,
             "[aegis-obs-plugin] dock action relay_connect_direct: request_id=%s",
             request_id.c_str());
-        if (!g_relay) {
-            blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=relay_not_configured",
-                request_id.c_str());
-            EmitDockActionResult(action_type, request_id, "failed", false, "relay_not_configured", "");
-            return false;
-        }
-
         std::string relay_host = g_config.byor_relay_host;
         std::string stream_id = g_config.byor_stream_id;
         int relay_port = g_config.byor_relay_port;
@@ -1415,8 +1235,8 @@ bool DispatchDockAction(const std::string& action_json,
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         const std::string effective_stream_id =
             stream_id.empty() ? stream_token : stream_id;
-        g_relay->ConnectDirect(relay_host, relay_port, effective_stream_id);
-        auto session = g_relay->CurrentSession();
+        g_connection_manager.ConnectDirect(relay_host, relay_port, effective_stream_id);
+        auto session = g_connection_manager.CurrentSession();
         if (!session) {
             EmitDockActionResult(action_type, request_id, "failed", false, "relay_connect_direct_failed", "");
             return false;
@@ -1436,7 +1256,7 @@ bool DispatchDockAction(const std::string& action_json,
             LOG_INFO,
             "[aegis-obs-plugin] dock action relay_disconnect_direct: request_id=%s",
             request_id.c_str());
-        if (!g_relay || !g_relay->IsBYORMode() || !g_relay->HasActiveSession()) {
+        if (!g_connection_manager.IsBYORMode() || !g_connection_manager.HasActiveSession()) {
             blog(LOG_WARNING,
                 "[aegis-obs-plugin] dock action failed: type=relay_disconnect_direct request_id=%s error=no_active_byor_session",
                 request_id.c_str());
@@ -1445,7 +1265,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
 
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
-        g_relay->DisconnectDirect();
+        g_connection_manager.DisconnectDirect();
         blog(LOG_INFO,
             "[aegis-obs-plugin] relay_disconnect_direct completed: request_id=%s",
             request_id.c_str());
@@ -1588,17 +1408,9 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "failed", false, "save_failed", "");
             return false;
         }
-        if (g_relay) {
-            const std::string new_host = g_config.relay_api_host;
+        if (!g_config.relay_api_host.empty()) {
             const auto new_key = g_vault.Get("relay_shared_key");
-            g_relay->Reconfigure(new_host, new_key.value_or(""));
-        } else if (!g_config.relay_api_host.empty()) {
-            const auto new_key = g_vault.Get("relay_shared_key");
-            g_relay = std::make_unique<aegis::RelayClient>(
-                g_http, g_config.relay_api_host, new_key.value_or(""));
-            blog(LOG_INFO,
-                "[aegis-obs-plugin] relay client created from save_config: host=%s",
-                g_config.relay_api_host.c_str());
+            g_connection_manager.Reconfigure(g_config.relay_api_host, new_key.value_or(""));
         }
 
         blog(LOG_INFO,
@@ -1652,6 +1464,135 @@ bool DispatchDockAction(const std::string& action_json,
             request_id.c_str());
         EmitDockActionResult(action_type, request_id, "rejected", false, "vault_keys_disabled", "");
         return false;
+    }
+
+    if (action_type == "connection_add") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action connection_add: request_id=%s",
+             request_id.c_str());
+        std::string name, type, relay_host, stream_id, managed_region;
+        int relay_port = 5000;
+        (void)TryExtractJsonStringField(action_json, "name", &name);
+        (void)TryExtractJsonStringField(action_json, "conn_type", &type);
+        (void)TryExtractJsonStringField(action_json, "relay_host", &relay_host);
+        (void)TryExtractJsonStringField(action_json, "stream_id", &stream_id);
+        (void)TryExtractJsonStringField(action_json, "managed_region", &managed_region);
+        (void)TryExtractJsonIntField(action_json, "relay_port", &relay_port);
+        if (name.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_name", "");
+            return false;
+        }
+        aegis::RelayConnectionConfig config;
+        config.name           = name;
+        config.type           = type.empty() ? "byor" : type;
+        config.relay_host     = relay_host;
+        config.relay_port     = relay_port;
+        config.stream_id      = stream_id;
+        config.managed_region = managed_region;
+        config.status         = "idle";
+        // Generate a simple UUID-like ID from timestamp + counter.
+        {
+            static std::mutex id_mu;
+            static uint64_t   id_seq = 0;
+            std::lock_guard<std::mutex> lk(id_mu);
+            const auto now_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
+            config.id = "conn_" + std::to_string(now_ms) + "_" + std::to_string(++id_seq);
+        }
+        const std::string new_id = g_connection_manager.AddConnection(config);
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] connection_add completed: id=%s name=%s type=%s",
+             new_id.c_str(), name.c_str(), config.type.c_str());
+        EmitDockActionResult(action_type, request_id, "completed", true, "",
+                             "{\"id\":\"" + new_id + "\"}");
+        EmitCurrentStatusSnapshotToDock("connection_add", false);
+        return true;
+    }
+
+    if (action_type == "connection_remove") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action connection_remove: request_id=%s",
+             request_id.c_str());
+        std::string conn_id;
+        (void)TryExtractJsonStringField(action_json, "id", &conn_id);
+        if (conn_id.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
+            return false;
+        }
+        g_connection_manager.RemoveConnection(conn_id);
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] connection_remove completed: id=%s", conn_id.c_str());
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        EmitCurrentStatusSnapshotToDock("connection_remove", false);
+        return true;
+    }
+
+    if (action_type == "connection_connect") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action connection_connect: request_id=%s",
+             request_id.c_str());
+        std::string conn_id;
+        (void)TryExtractJsonStringField(action_json, "id", &conn_id);
+        if (conn_id.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
+            return false;
+        }
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        g_connection_manager.Connect(conn_id, jwt);
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        return true;
+    }
+
+    if (action_type == "connection_disconnect") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action connection_disconnect: request_id=%s",
+             request_id.c_str());
+        std::string conn_id;
+        (void)TryExtractJsonStringField(action_json, "id", &conn_id);
+        if (conn_id.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
+            return false;
+        }
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        g_connection_manager.Disconnect(conn_id, jwt);
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        return true;
+    }
+
+    if (action_type == "connection_update") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action connection_update: request_id=%s",
+             request_id.c_str());
+        std::string conn_id, name, relay_host, stream_id, managed_region;
+        int relay_port = 5000;
+        (void)TryExtractJsonStringField(action_json, "id", &conn_id);
+        (void)TryExtractJsonStringField(action_json, "name", &name);
+        (void)TryExtractJsonStringField(action_json, "relay_host", &relay_host);
+        (void)TryExtractJsonStringField(action_json, "stream_id", &stream_id);
+        (void)TryExtractJsonStringField(action_json, "managed_region", &managed_region);
+        (void)TryExtractJsonIntField(action_json, "relay_port", &relay_port);
+        if (conn_id.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
+            return false;
+        }
+        // Find and update existing connection.
+        auto conns = g_connection_manager.ListConnections();
+        for (auto& c : conns) {
+            if (c.id == conn_id) {
+                if (!name.empty())           c.name = name;
+                if (!relay_host.empty())     c.relay_host = relay_host;
+                if (relay_port > 0)          c.relay_port = relay_port;
+                if (!stream_id.empty())      c.stream_id = stream_id;
+                if (!managed_region.empty()) c.managed_region = managed_region;
+                g_connection_manager.UpdateConnection(conn_id, c);
+                break;
+            }
+        }
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        EmitCurrentStatusSnapshotToDock("connection_update", false);
+        return true;
     }
 
     blog(

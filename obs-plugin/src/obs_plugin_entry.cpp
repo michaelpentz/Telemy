@@ -1,5 +1,6 @@
 #include "dock_js_bridge_api.h"
 #include "config_vault.h"
+#include "connection_manager.h"
 #include "metrics_collector.h"
 #include "https_client.h"
 #include "relay_client.h"
@@ -17,6 +18,7 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QTimer>
 #include <algorithm>
@@ -62,17 +64,13 @@ bool g_dock_action_selftest_attempted = false;
 // Globals — defined here (single definition), referenced via extern by
 // dock_action_dispatch.cpp.
 // ---------------------------------------------------------------------------
-aegis::Vault       g_vault;
-aegis::PluginConfig g_config;
-aegis::HttpsClient g_http;
-std::unique_ptr<aegis::RelayClient> g_relay;
+aegis::Vault                                  g_vault;
+aegis::PluginConfig                           g_config;
+aegis::HttpsClient                            g_http;
+aegis::ConnectionManager                      g_connection_manager;
 std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
-std::mutex g_relay_worker_mu;
-std::thread g_relay_start_worker;
-std::thread g_relay_stop_worker;
-std::atomic<bool> g_relay_start_cancel{false};
-std::mutex g_auth_state_mu;
-aegis::PluginAuthState g_auth_state;
+std::mutex                                    g_auth_state_mu;
+aegis::PluginAuthState                        g_auth_state;
 
 namespace {
 
@@ -404,55 +402,61 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
     }
 
     const auto& snapshot = g_metrics.Latest();
-    const std::string mode = EffectiveDockModeFromConfig();
+    const std::string mode   = EffectiveDockModeFromConfig();
     const std::string health = DeriveHealthFromSnapshot(snapshot);
+
+    // All relay state and stats come from ConnectionManager's cached values
+    // (updated by its background stats thread — no network I/O on the tick thread).
+    const auto relay_session_holder = g_connection_manager.CurrentSession();
+    const aegis::RelaySession* relay_session_ptr = relay_session_holder.has_value()
+                                                       ? &(*relay_session_holder) : nullptr;
     std::string relay_status = "inactive";
     std::string relay_region;
-    const aegis::RelaySession* relay_session_ptr = nullptr;
-    std::optional<aegis::RelaySession> relay_session_holder;
-    if (g_relay && g_relay->HasActiveSession()) {
-        relay_session_holder = g_relay->CurrentSession();
-        if (relay_session_holder) {
-            relay_status = relay_session_holder->status;
-            relay_region = relay_session_holder->region;
-            relay_session_ptr = &(*relay_session_holder);
-        }
+    if (relay_session_ptr) {
+        relay_status = relay_session_ptr->status;
+        relay_region = relay_session_ptr->region;
     }
 
-    // Poll SLS stats every ~2 seconds (4 ticks at 500ms) when relay is active
-    const aegis::RelayStats* relay_stats_ptr = nullptr;
-    aegis::RelayStats relay_stats;
-    if (g_relay && g_relay->HasActiveSession() && relay_session_ptr) {
-        static int stats_poll_counter = 0;
-        if (++stats_poll_counter >= 4) {
-            stats_poll_counter = 0;
-            g_relay->PollRelayStats(relay_session_ptr->public_ip);
-        }
-        relay_stats = g_relay->CurrentStats();
-        relay_stats_ptr = &relay_stats;
-    }
+    aegis::RelayStats relay_stats = g_connection_manager.CurrentStats();
+    const aegis::RelayStats* relay_stats_ptr =
+        relay_stats.available ? &relay_stats : nullptr;
 
-    // Poll per-link stats on the same cadence as SLS stats
-    const aegis::PerLinkSnapshot* per_link_ptr = nullptr;
-    aegis::PerLinkSnapshot per_link_stats;
-    if (g_relay && g_relay->HasActiveSession() && relay_session_ptr) {
-        static int per_link_poll_counter = 0;
-        if (++per_link_poll_counter >= 4) {
-            per_link_poll_counter = 0;
-            g_relay->PollPerLinkStats(relay_session_ptr->public_ip);
-        }
-        per_link_stats = g_relay->CurrentPerLinkStats();
-        per_link_ptr = &per_link_stats;
-    }
+    aegis::PerLinkSnapshot per_link = g_connection_manager.CurrentPerLinkStats();
+    const aegis::PerLinkSnapshot* per_link_ptr =
+        per_link.available ? &per_link : nullptr;
+
+    aegis::ConnectionSnapshot connection_snapshot = g_connection_manager.CurrentSnapshot();
 
     std::string json =
         g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region,
-                                           relay_session_ptr, relay_stats_ptr, per_link_ptr);
+                                           relay_session_ptr, relay_stats_ptr, per_link_ptr,
+                                           &connection_snapshot);
     QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(json));
     if (doc.isObject()) {
         QJsonObject payload = doc.object();
         payload.insert(QStringLiteral("settings"), BuildDockSettingsJsonFromConfig());
         payload.insert(QStringLiteral("auth"), BuildAuthSnapshotJson());
+        // Serialize relay connection configs (v0.0.5 multi-connection model)
+        {
+            const auto conn_configs = g_connection_manager.ListConnections();
+            QJsonArray relay_conns_arr;
+            for (const auto& c : conn_configs) {
+                QJsonObject obj;
+                obj[QStringLiteral("id")]             = QString::fromStdString(c.id);
+                obj[QStringLiteral("name")]           = QString::fromStdString(c.name);
+                obj[QStringLiteral("type")]           = QString::fromStdString(c.type);
+                obj[QStringLiteral("relay_host")]     = QString::fromStdString(c.relay_host);
+                obj[QStringLiteral("relay_port")]     = c.relay_port;
+                obj[QStringLiteral("stream_id")]      = QString::fromStdString(c.stream_id);
+                obj[QStringLiteral("managed_region")] = QString::fromStdString(c.managed_region);
+                obj[QStringLiteral("session_id")]     = QString::fromStdString(c.session_id);
+                obj[QStringLiteral("status")]         = QString::fromStdString(
+                    c.status.empty() ? "idle" : c.status);
+                obj[QStringLiteral("error_msg")]      = QString::fromStdString(c.error_msg);
+                relay_conns_arr.append(obj);
+            }
+            payload.insert(QStringLiteral("relay_connections"), relay_conns_arr);
+        }
         json = QJsonDocument(payload).toJson(QJsonDocument::Compact).toStdString();
     }
     json = AugmentSnapshotJsonWithTheme(json);
@@ -925,16 +929,23 @@ bool obs_module_load(void) {
     if (aegis::IsExplicitInsecureHttpHost(g_config.relay_api_host)) {
         blog(LOG_WARNING,
              "[aegis-obs-plugin] relay client skipped: relay_api_host uses insecure http://");
+        g_connection_manager.Initialize(&g_vault, &g_http, "", "",
+                                        g_config.relay_heartbeat_interval_sec);
     } else if (!g_config.relay_api_host.empty()) {
         g_auth = std::make_unique<aegis::ControlPlaneAuthClient>(g_http, g_config.relay_api_host);
-        g_relay = std::make_unique<aegis::RelayClient>(
-            g_http, g_config.relay_api_host, relay_shared_key.value_or(""));
+        g_connection_manager.Initialize(&g_vault, &g_http,
+                                        g_config.relay_api_host,
+                                        relay_shared_key.value_or(""),
+                                        g_config.relay_heartbeat_interval_sec);
         blog(LOG_INFO,
-            "[aegis-obs-plugin] relay client initialized: host=%s shared_key=%s",
+            "[aegis-obs-plugin] connection manager initialized: host=%s shared_key=%s",
             g_config.relay_api_host.c_str(),
             relay_shared_key.has_value() ? "configured" : "missing");
     } else {
-        blog(LOG_INFO, "[aegis-obs-plugin] relay client skipped: relay_api_host not configured");
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] relay client skipped: relay_api_host not configured");
+        g_connection_manager.Initialize(&g_vault, &g_http, "", "",
+                                        g_config.relay_heartbeat_interval_sec);
     }
 
     if (!g_obs_timer_registered) {
@@ -994,39 +1005,17 @@ void obs_module_unload(void) {
     ShutdownBrowserDockHostBridge();
     ClearDockReplayCache();
 
-    // Emergency relay teardown
-    if (g_relay && g_relay->HasActiveSession()) {
+    // Emergency relay teardown + shutdown ConnectionManager.
+    if (g_connection_manager.HasActiveSession()) {
         blog(LOG_INFO, "[aegis-obs-plugin] relay emergency stop on unload");
-        if (g_relay->IsBYORMode()) {
-            g_relay->DisconnectDirect();
-        } else {
-            const std::string jwt = CurrentControlPlaneJwt();
-            if (!jwt.empty()) {
-                g_relay->EmergencyRelayStop(jwt);
-            } else {
-                blog(LOG_WARNING,
-                    "[aegis-obs-plugin] relay emergency stop skipped: no control-plane jwt available");
-            }
-        }
+        const std::string jwt = CurrentControlPlaneJwt();
+        g_connection_manager.EmergencyStop(jwt);
     }
-    // Signal cancellation and join any outstanding relay worker threads
-    // before destroying g_relay.
-    g_relay_start_cancel.store(true);
-    {
-        std::lock_guard<std::mutex> lk(g_relay_worker_mu);
-        if (g_relay_start_worker.joinable()) {
-            blog(LOG_INFO, "[aegis-obs-plugin] joining relay_start worker on unload");
-            g_relay_start_worker.join();
-        }
-        if (g_relay_stop_worker.joinable()) {
-            blog(LOG_INFO, "[aegis-obs-plugin] joining relay_stop worker on unload");
-            g_relay_stop_worker.join();
-        }
-    }
-    // Destroy g_relay before g_http -- RelayClient holds a reference to g_http.
-    g_relay.reset();
+    // Shutdown ConnectionManager (stops background thread, joins workers,
+    // destroys RelayClient) before g_http is destroyed.
+    g_connection_manager.Shutdown();
     g_auth.reset();
-    blog(LOG_INFO, "[aegis-obs-plugin] relay client destroyed");
+    blog(LOG_INFO, "[aegis-obs-plugin] connection manager destroyed");
 }
 
 const char* obs_module_description(void) {

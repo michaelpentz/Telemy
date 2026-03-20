@@ -18,6 +18,7 @@ namespace aegis {
 struct RelaySession;
 struct RelayStats;
 struct PerLinkSnapshot;
+struct ConnectionSnapshot;
 
 // ─── Per-output telemetry ────────────────────────────────────────────────────
 
@@ -94,7 +95,8 @@ public:
         const std::string& relay_region,    // "" if none
         const aegis::RelaySession* relay_session = nullptr,
         const aegis::RelayStats* relay_stats = nullptr,
-        const aegis::PerLinkSnapshot* per_link_stats = nullptr
+        const aegis::PerLinkSnapshot* per_link_stats = nullptr,
+        const aegis::ConnectionSnapshot* connection_snapshot = nullptr
     ) const;
 
     /// Read-only access to the most recent snapshot.

@@ -22,6 +22,7 @@ set(PLUGIN_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 # Test executable
 # --------------------------------------------------------------------------
 add_executable(aegis-tests
+    test_connection_manager.cpp
     test_parse_session_response.cpp
     test_json_extract.cpp
     test_config_vault.cpp
@@ -29,6 +30,7 @@ add_executable(aegis-tests
     json_helpers_impl.cpp
     # Compile the source files under test directly into the test binary.
     # This avoids needing to link against the full OBS plugin module.
+    ${PLUGIN_SRC_DIR}/connection_manager.cpp
     ${PLUGIN_SRC_DIR}/relay_client.cpp
     ${PLUGIN_SRC_DIR}/config_vault.cpp
 )
