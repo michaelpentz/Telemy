@@ -8,6 +8,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPalette>
+#include <QFont>
+#include <QFile>
+#include <QIODevice>
 #include <algorithm>
 #include <cmath>
 #include <mutex>
@@ -175,6 +178,49 @@ ObsDockThemeSlots qt_palette_to_theme() {
     out.accent = ColorToCssHex(accent).toStdString();
     out.border = ColorToCssHex(border).toStdString();
     out.scrollbar = ColorToCssHex(scrollbar).toStdString();
+
+    // Sample Qt application font family
+    const QFont appFont = app->font();
+    out.fontFamily = appFont.family().toStdString();
+
+    // OBS doesn't propagate FontScale/Density to QApplication::font().
+    // Read them directly from the OBS user config file (user.ini).
+    int obsFontScale = 9;   // OBS default
+    int obsDensity   = 0;   // OBS default
+    {
+        QString iniPath = QString::fromStdString(
+            std::string(getenv("APPDATA") ? getenv("APPDATA") : "")) +
+            "/obs-studio/user.ini";
+        QFile iniFile(iniPath);
+        if (iniFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            bool inAppearance = false;
+            while (!iniFile.atEnd()) {
+                QString line = iniFile.readLine().trimmed();
+                if (line.startsWith('[')) {
+                    inAppearance = (line.compare("[Appearance]", Qt::CaseInsensitive) == 0);
+                    continue;
+                }
+                if (!inAppearance) continue;
+                if (line.startsWith("FontScale=")) {
+                    bool ok = false;
+                    int v = line.mid(10).toInt(&ok);
+                    if (ok && v > 0) obsFontScale = v;
+                }
+                if (line.startsWith("Density=")) {
+                    bool ok = false;
+                    int v = line.mid(8).toInt(&ok);
+                    if (ok) obsDensity = v;
+                }
+            }
+            iniFile.close();
+        }
+    }
+    // Convert point size to pixel size at 96 DPI, then apply density offset
+    out.fontSizePx = qRound(static_cast<double>(obsFontScale) * 96.0 / 72.0) + obsDensity;
+    if (out.fontSizePx < 8) out.fontSizePx = 8; // floor
+
+    blog(LOG_INFO, "[aegis-obs-plugin] font sample: family=%s sizePx=%d (obsFontScale=%d obsDensity=%d)",
+         out.fontFamily.c_str(), out.fontSizePx, obsFontScale, obsDensity);
     out.valid = true;
     return out;
 }
@@ -192,6 +238,8 @@ QJsonObject QtThemeToJsonObject(const ObsDockThemeSlots& theme) {
     obj.insert(QStringLiteral("accent"), QString::fromStdString(theme.accent));
     obj.insert(QStringLiteral("border"), QString::fromStdString(theme.border));
     obj.insert(QStringLiteral("scrollbar"), QString::fromStdString(theme.scrollbar));
+    obj.insert(QStringLiteral("fontFamily"), QString::fromStdString(theme.fontFamily));
+    obj.insert(QStringLiteral("fontSizePx"), theme.fontSizePx);
     return obj;
 }
 
@@ -207,7 +255,7 @@ void RefreshCachedObsDockThemeFromQt(const char* reason) {
         std::lock_guard<std::mutex> lock(g_obs_dock_theme_mu);
         const std::string next_sig = theme.valid
             ? (theme.bg + "|" + theme.surface + "|" + theme.panel + "|" + theme.text + "|" +
-               theme.textMuted + "|" + theme.accent + "|" + theme.border + "|" + theme.scrollbar)
+               theme.textMuted + "|" + theme.accent + "|" + theme.border + "|" + theme.scrollbar + "|" + theme.fontFamily + "|" + std::to_string(theme.fontSizePx))
             : std::string();
         changed = (next_sig != g_obs_dock_theme_signature);
         g_obs_dock_theme_cache = theme;
