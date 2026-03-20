@@ -4,12 +4,12 @@
 // Gathers telemetry directly from OBS C APIs, Win32 system APIs, and
 // optionally NVIDIA NVML — no network hop, no external process.
 // Thread-safety: Poll() and BuildStatusSnapshotJson() are expected to be called
-// from the same OBS tick thread. Latest() returns a const ref suitable for
-// read-only access from the same thread; cross-thread use requires external
-// synchronization.
+// from the OBS tick thread. Latest() is safe to call from any thread — it
+// returns a copy of current_ taken under mu_.
 
 #include <cstdint>
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -99,8 +99,8 @@ public:
         const aegis::ConnectionSnapshot* connection_snapshot = nullptr
     ) const;
 
-    /// Read-only access to the most recent snapshot.
-    const MetricsSnapshot& Latest() const { return current_; }
+    /// Returns a copy of the most recent snapshot. Safe to call from any thread.
+    MetricsSnapshot Latest() const;
 
     // Per-output delta tracking (public so enum callback can reference the type).
     struct OutputDelta {
@@ -116,6 +116,7 @@ private:
     void InitNvml();
     void ShutdownNvml();
 
+    mutable std::mutex mu_;    // guards current_
     MetricsSnapshot current_{};
 
     // ── CPU delta tracking ───────────────────────────────────────────────
