@@ -10,6 +10,7 @@ export function useSimulatedState() {
   const [simRelayActive, setSimRelayActive] = useState(false);
   const [simRelayData, setSimRelayData] = useState({
     relayHostname: "byor.telemy.test",
+    streamToken: "live_sim001",
     ingestUrl: "srtla://byor.telemy.test:5000",
     pairToken: "ABCD-1234-EFGH",
     region: "custom",
@@ -138,6 +139,7 @@ export function useSimulatedState() {
       uptimeSec: simRelayActive ? elapsed : 0,
       graceRemainingSeconds: null,
       relayHostname: simRelayActive ? (simRelayData.relayHostname || null) : null,
+      streamToken: simRelayActive ? (simRelayData.streamToken || null) : null,
       ingestUrl: simRelayActive ? (simRelayData.ingestUrl || null) : null,
       pairToken: simRelayActive ? (simRelayData.pairToken || null) : null,
       graceWindowSeconds: null,
@@ -237,6 +239,7 @@ export function useSimulatedState() {
           setSimRelayActive(true);
           setSimRelayData({
             relayHostname: "k7mx2p.telemyapp.com",
+            streamToken: "live_sim001",
             ingestUrl: "srtla://k7mx2p.telemyapp.com:5000",
             pairToken: "ABCD-1234-EFGH",
             region: "us-east-1",

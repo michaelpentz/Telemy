@@ -157,6 +157,11 @@ export default function AegisDock() {
   const relayConnections = (ds.relay_connections || []).map(conn => {
     if (conn.status !== "connected") return conn;
     const enriched = { ...conn };
+    // Managed connections get relay_host + stream_id from the active session
+    if (conn.type === "managed") {
+      if (relay.relayHostname) enriched.relay_host = relay.relayHostname;
+      if (relay.streamToken) enriched.stream_id = relay.streamToken;
+    }
     if (relay.perLinkAvailable && Array.isArray(relay.links) && relay.links.length > 0) {
       const totalKbps = relay.ingestBitrateKbps || 0;
       enriched.per_link = {

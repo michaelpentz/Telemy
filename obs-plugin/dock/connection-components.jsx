@@ -112,12 +112,25 @@ function ManagedProvisionProgress({ step }) {
   );
 }
 
+// Build an SRT player URL from host + publisher stream ID.
+// Converts live_xxx → play_xxx; prepends play_ if no recognized prefix.
+function buildSrtPlayerUrl(host, streamId) {
+  if (!host) return null;
+  let playId = streamId || "";
+  if (playId.startsWith("live_")) {
+    playId = "play_" + playId.slice(5);
+  } else if (playId && !playId.startsWith("play_")) {
+    playId = "play_" + playId;
+  }
+  return "srt://" + host + ":4000" + (playId ? "?streamid=" + playId : "");
+}
+
 // --- Expanded detail: secrets + per-link + edit/remove ---
 function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
   const isByor = conn.type === "byor";
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(conn.name || "");
-  const [editHost, setEditHost] = useState(conn.relay_host_masked || conn.relay_host || "");
+  const [editHost, setEditHost] = useState(conn.relay_host || "");
   const [editPort, setEditPort] = useState(String(conn.relay_port || 5000));
   const [editStreamId, setEditStreamId] = useState(conn.stream_id || "");
   const [editRegion, setEditRegion] = useState(conn.managed_region || "us-east");
@@ -156,7 +169,7 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
 
   const handleCancelEdit = () => {
     setEditName(conn.name || "");
-    setEditHost(conn.relay_host_masked || conn.relay_host || "");
+    setEditHost(conn.relay_host || "");
     setEditPort(String(conn.relay_port || 5000));
     setEditStreamId(conn.stream_id || "");
     setEditRegion(conn.managed_region || "us-east");
@@ -252,7 +265,7 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
       }}>
         {isByor && (
           <div>
-            <SecretField label="Host" value={conn.relay_host_masked || conn.relay_host || ""} copyValue={conn.relay_host || conn.relay_host_masked || ""} />
+            <SecretField label="Host" value={conn.relay_host || ""} copyValue={conn.relay_host || ""} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
               <span style={labelStyle}>Port</span>
               <span style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>
@@ -278,6 +291,13 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
               </div>
             )}
           </div>
+        )}
+        {conn.relay_host && (
+          <SecretField
+            label="Media Source URL"
+            value={buildSrtPlayerUrl(conn.relay_host, conn.stream_id)}
+            copyValue={buildSrtPlayerUrl(conn.relay_host, conn.stream_id)}
+          />
         )}
         {conn.status === "error" && conn.error_msg && (
           <div style={{
