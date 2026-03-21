@@ -28,6 +28,7 @@ var (
 	ErrIdempotencyMismatch = errors.New("idempotency mismatch")
 	ErrRelayHealthRejected = errors.New("relay health rejected")
 	ErrConflict            = errors.New("conflict")
+	ErrNoRelayCapacity     = errors.New("no relay capacity available")
 )
 
 type Store struct {
@@ -1092,4 +1093,143 @@ func generateStreamToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// AssignRelay atomically picks the least-loaded healthy server in region (falling
+// back to any region), increments its current_sessions, and inserts a relay_assignments
+// row. Returns ErrNoRelayCapacity if no server is available.
+func (s *Store) AssignRelay(ctx context.Context, userID, sessionID, connectionID, region, streamToken string) (*model.RelayAssignment, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Pick least-loaded healthy server — prefer region, fall back to any.
+	const pickQ = `
+SELECT rp.server_id, rp.host, host(rp.ip) as ip
+FROM relay_pool rp
+WHERE rp.status = 'active'
+  AND rp.health_status = 'healthy'
+  AND rp.current_sessions < rp.max_sessions
+ORDER BY
+    CASE WHEN rp.region = $1 THEN 0 ELSE 1 END,
+    rp.current_sessions ASC
+LIMIT 1
+FOR UPDATE SKIP LOCKED`
+
+	var serverID, host, ip string
+	err = tx.QueryRow(ctx, pickQ, region).Scan(&serverID, &host, &ip)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNoRelayCapacity
+		}
+		return nil, err
+	}
+
+	// Increment session count.
+	const incrQ = `UPDATE relay_pool SET current_sessions = current_sessions + 1 WHERE server_id = $1`
+	if _, err := tx.Exec(ctx, incrQ, serverID); err != nil {
+		return nil, err
+	}
+
+	// Insert assignment row.
+	const insertQ = `
+INSERT INTO relay_assignments (user_id, session_id, connection_id, server_id, stream_token)
+VALUES ($1, $2, NULLIF($3, ''), $4, $5)
+RETURNING id`
+	var id int
+	if err := tx.QueryRow(ctx, insertQ, userID, sessionID, connectionID, serverID, streamToken).Scan(&id); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &model.RelayAssignment{
+		ID:           id,
+		UserID:       userID,
+		SessionID:    sessionID,
+		ConnectionID: connectionID,
+		ServerID:     serverID,
+		StreamToken:  streamToken,
+		Host:         host,
+		IP:           ip,
+	}, nil
+}
+
+// GetRelayAssignment returns the active assignment for a session (released_at IS NULL).
+func (s *Store) GetRelayAssignment(ctx context.Context, sessionID string) (*model.RelayAssignment, error) {
+	const q = `
+SELECT ra.id, ra.user_id, ra.session_id, coalesce(ra.connection_id,''), ra.server_id, ra.stream_token,
+       rp.host, host(rp.ip)
+FROM relay_assignments ra
+JOIN relay_pool rp ON rp.server_id = ra.server_id
+WHERE ra.session_id = $1 AND ra.released_at IS NULL
+LIMIT 1`
+
+	var a model.RelayAssignment
+	if err := s.db.QueryRow(ctx, q, sessionID).Scan(
+		&a.ID, &a.UserID, &a.SessionID, &a.ConnectionID, &a.ServerID, &a.StreamToken, &a.Host, &a.IP,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+// ReleaseRelay marks the assignment released and decrements current_sessions.
+// Idempotent: safe to call if already released.
+func (s *Store) ReleaseRelay(ctx context.Context, sessionID string) error {
+	const q = `
+UPDATE relay_pool SET current_sessions = GREATEST(0, current_sessions - 1)
+WHERE server_id = (
+    SELECT server_id FROM relay_assignments
+    WHERE session_id = $1 AND released_at IS NULL
+)
+RETURNING server_id`
+	var serverID string
+	err := s.db.QueryRow(ctx, q, sessionID).Scan(&serverID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	const markQ = `UPDATE relay_assignments SET released_at = NOW() WHERE session_id = $1 AND released_at IS NULL`
+	_, err = s.db.Exec(ctx, markQ, sessionID)
+	return err
+}
+
+// ListActiveRelayServers returns all active relay pool servers for health monitoring.
+func (s *Store) ListActiveRelayServers(ctx context.Context) ([]model.RelayPoolServer, error) {
+	const q = `
+SELECT server_id, provider, host, host(ip), region, status, current_sessions, max_sessions, coalesce(health_status,'unknown')
+FROM relay_pool
+WHERE status IN ('active', 'draining')
+ORDER BY server_id`
+
+	rows, err := s.db.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []model.RelayPoolServer
+	for rows.Next() {
+		var srv model.RelayPoolServer
+		if err := rows.Scan(&srv.ServerID, &srv.Provider, &srv.Host, &srv.IP, &srv.Region, &srv.Status, &srv.CurrentSessions, &srv.MaxSessions, &srv.HealthStatus); err != nil {
+			return nil, err
+		}
+		out = append(out, srv)
+	}
+	return out, rows.Err()
+}
+
+// UpdateRelayServerHealth sets health_status and last_health_check for a pool server.
+func (s *Store) UpdateRelayServerHealth(ctx context.Context, serverID, healthStatus string) error {
+	const q = `UPDATE relay_pool SET health_status = $2, last_health_check = NOW() WHERE server_id = $1`
+	_, err := s.db.Exec(ctx, q, serverID, healthStatus)
+	return err
 }

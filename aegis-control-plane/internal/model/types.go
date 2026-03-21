@@ -137,3 +137,26 @@ type RelayManifestEntry struct {
 	DefaultInstanceType string
 	UpdatedAt           time.Time
 }
+
+type RelayPoolServer struct {
+	ServerID        string
+	Provider        string
+	Host            string
+	IP              string
+	Region          string
+	Status          string
+	CurrentSessions int
+	MaxSessions     int
+	HealthStatus    string
+}
+
+type RelayAssignment struct {
+	ID           int
+	UserID       string
+	SessionID    string
+	ConnectionID string
+	ServerID     string
+	StreamToken  string
+	Host         string // joined from relay_pool
+	IP           string // joined from relay_pool
+}
