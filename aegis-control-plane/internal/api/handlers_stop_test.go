@@ -43,6 +43,7 @@ type mockStore struct {
 	listActiveSessionsFn       func(context.Context, string) ([]model.Session, error)
 	getUsageCurrentFn          func(context.Context, string) (*model.UsageCurrent, error)
 	getRelayEntitlementFn      func(context.Context, string) (*model.RelayEntitlement, error)
+	listUserStreamSlotsFn      func(context.Context, string) ([]model.UserStreamSlot, error)
 	recordRelayHealthEventFn   func(context.Context, store.RelayHealthInput) error
 	listRelayManifestFn        func(context.Context) ([]model.RelayManifestEntry, error)
 	updateProvisionStepFn      func(context.Context, string, string) error
@@ -206,6 +207,13 @@ func (m *mockStore) GetRelayEntitlement(ctx context.Context, userID string) (*mo
 		return m.getRelayEntitlementFn(ctx, userID)
 	}
 	return &model.RelayEntitlement{Allowed: true, PlanTier: "pro", PlanStatus: "active"}, nil
+}
+
+func (m *mockStore) ListUserStreamSlots(ctx context.Context, userID string) ([]model.UserStreamSlot, error) {
+	if m.listUserStreamSlotsFn != nil {
+		return m.listUserStreamSlotsFn(ctx, userID)
+	}
+	return nil, store.ErrNotFound
 }
 
 func (m *mockStore) RecordRelayHealth(ctx context.Context, in store.RelayHealthInput) error {

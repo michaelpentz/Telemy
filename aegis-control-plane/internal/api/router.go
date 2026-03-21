@@ -49,6 +49,7 @@ type Store interface {
 	ClaimCompletedPluginLoginAttempt(ctx context.Context, attemptID, pollTokenHash string, authIn store.CreateAuthSessionInput) (*model.PluginLoginAttempt, *model.AuthSession, error)
 	RecordRelayHealth(rctx context.Context, in store.RelayHealthInput) error
 	ListRelayManifest(rctx context.Context) ([]model.RelayManifestEntry, error)
+	ListUserStreamSlots(ctx context.Context, userID string) ([]model.UserStreamSlot, error)
 	GetUserRelaySlug(ctx context.Context, userID string) (string, error)
 	GetUserEIP(ctx context.Context, userID string) (string, string, error)
 	SetUserEIP(ctx context.Context, userID, allocationID, publicIP string) error
@@ -91,6 +92,7 @@ func NewRouter(cfg config.Config, st Store, prov relay.Provisioner, dnsClient *d
 			authed.Get("/auth/session", s.handleAuthSession)
 			authed.Post("/auth/logout", s.handleAuthLogout)
 			authed.Post("/user/regenerate-token", s.handleUserRegenerateToken)
+			authed.Get("/user/stream-slots", s.handleUserStreamSlots)
 			authed.Post("/relay/start", s.handleRelayStart)
 			authed.Get("/relay/active", s.handleRelayActive)
 			authed.Post("/relay/stop", s.handleRelayStop)

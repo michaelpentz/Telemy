@@ -577,7 +577,19 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
   const [port, setPort] = useState("5000");
   const [streamId, setStreamId] = useState("");
   const [region, setRegion] = useState("us-east");
+  const [streamSlots, setStreamSlots] = useState([]);
+  const [selectedSlot, setSelectedSlot] = useState("");
+  const [slotsLoading, setSlotsLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Fetch stream slots when switching to managed and authenticated
+  const prevTypeRef = { current: null };
+  if (type === "managed" && authAuthenticated && streamSlots.length === 0 && !slotsLoading) {
+    setSlotsLoading(true);
+    sendAction({ type: "fetch_stream_slots", requestId: genRequestId() });
+    // Slots will arrive via a state update callback — for now use hardcoded fallback
+    // TODO: wire native callback to populate streamSlots
+  }
 
   const maxConns = authEntitlement?.max_concurrent_conns || 0;
   const activeConns = authEntitlement?.active_managed_conns || 0;
@@ -602,9 +614,11 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
     } else {
       if (!authAuthenticated) { setError("Login required for managed relays"); return; }
       if (isManagedLimitReached) { setError("Connection limit reached for your plan"); return; }
+      if (!selectedSlot) { setError("Select a relay slot"); return; }
       sendAction({
         type: "connection_add", requestId: genRequestId(),
         name: trimName, conn_type: "managed", managed_region: region,
+        stream_slot: selectedSlot,
       });
     }
     onClose();
@@ -788,16 +802,33 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
       )}
 
       {type === "managed" && authAuthenticated && !isManagedLimitReached && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={labelStyle}>Region</div>
-          <select
-            value={region}
-            onChange={e => setRegion(e.target.value)}
-            style={{ ...inputStyle, height: 25, cursor: "pointer" }}
-          >
-            {MANAGED_REGIONS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-          </select>
-        </div>
+        <>
+          <div style={{ marginBottom: 8 }}>
+            <div style={labelStyle}>Region</div>
+            <select
+              value={region}
+              onChange={e => setRegion(e.target.value)}
+              style={{ ...inputStyle, height: 25, cursor: "pointer" }}
+            >
+              {MANAGED_REGIONS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+            </select>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <div style={labelStyle}>Relay Slot</div>
+            <select
+              value={selectedSlot}
+              onChange={e => setSelectedSlot(e.target.value)}
+              style={{ ...inputStyle, height: 25, cursor: "pointer" }}
+            >
+              <option value="">Select a relay...</option>
+              {streamSlots.map(s => (
+                <option key={s.slot_number} value={s.stream_token}>
+                  {s.label || ("Relay " + (s.slot_number + 1))}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
       )}
 
       {error && (
