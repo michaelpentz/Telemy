@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-19
 **Author:** Michael Pentz
-**Status:** Draft — supersedes `2026-03-18-v005-plan.md`
+**Status:** In Progress — Phase 1 complete, Phase 2 C++ core complete — supersedes `2026-03-18-v005-plan.md`
 **Baseline:** v0.0.4 (commit `e9ce030`)
 **Phase 1:** Complete (field renames, EIP extraction, templatized bootstrap, provider config)
 
@@ -461,6 +461,20 @@ The `BYORProvisioner` struct from `2026-03-18-byor-implementation-spec.md` is **
   ]
 }
 ```
+
+### 2.5 Phase 2 Implementation Status (2026-03-20)
+
+The following Phase 2 C++ items are **complete**:
+
+- **ConnectionManager** (`connection_manager.cpp/.h`) — owns all RelayClient instances, background stats polling thread, CRUD, SaveConnections/LoadConnections
+- **MetricsCollector background thread** — `Start()`/`Stop()`/`PollLoop()` implemented; Poll() no longer on OBS render thread
+- **E2E gap fixes** — snapshot push on connect/disconnect, `relay_host_masked` field, `not_found` errors for unknown connection IDs
+- **Dock UI polish** — separate font/density axes, C1 sanitizer, density-aware spacing, per-link freshness indicators
+
+Remaining Phase 2 work:
+- Dock connection list UI (add/remove/edit connections, + button, connection rows)
+- `connection_id`-scoped managed relay provisioning with inline progress
+- Logged-out state ("Log in for managed relays" prompt)
 
 ### 2.5 What Existing Phase 2 Code is Reusable vs Needs Rework
 

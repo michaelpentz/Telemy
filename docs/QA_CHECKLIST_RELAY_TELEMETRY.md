@@ -33,6 +33,8 @@ This checklist verifies the flow of relay stats from the AWS Relay to the OBS Do
 - [x] **Relay IPC Round-Trip:** Confirmed (Start → Provisioning → Active → Stop → Stopped).
 - [x] **API Connectivity:** Confirmed (C++ RelayClient → Go Control Plane via HTTPS).
 - [x] **Dock Telemetry Path:** Confirmed (SLS stats API → C++ → JSON Snapshot → CEF Injection → React UI).
+- [x] **E2E Gap Fixes:** DONE (2026-03-20). Snapshot push on connect/disconnect, relay_host_masked, not_found for unknown IDs.
+- [x] **MetricsCollector Background Thread:** DONE (2026-03-20). Polling moved off OBS render thread; Start()/Stop()/PollLoop() verified.
 - [ ] **Per-link Relay Telemetry:** PENDING (requires `srtla_rec` fork to expose per-link metadata).
 
 ## 8. Test Cases (v0.0.5)

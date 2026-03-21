@@ -21,6 +21,7 @@ Thumbs.db
 # Go
 aegis-control-plane/bin/
 aegis-control-plane/tmp/
+aegis-control-plane/dist/
 
 # Coordination docs (outside repo)
 HANDOFF_STATUS.md

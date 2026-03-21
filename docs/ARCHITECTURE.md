@@ -31,13 +31,13 @@ OBS Process
 OBS module lifecycle hooks:
 - `obs_module_load()` â€” initializes all components, registers 500ms tick callback, creates dock host
 - `obs_module_unload()` â€” joins relay worker threads, tears down relay (emergency shutdown), cleans up resources
-- **Tick callback** â€” drives MetricsCollector polling at configurable `metrics_poll_interval_ms` (default 500ms, clamped 100-5000ms), pushes JSON snapshots to dock via CEF
+- **Tick callback** â€” reads cached MetricsCollector snapshot via `Latest()` and pushes JSON to dock via CEF; does not block on polling
 - **Action dispatch** â€” routes dock UI actions (`switch_scene`, `relay_start`, `relay_stop`, `save_scene_prefs`, `load_scene_prefs`) to native handlers
 - **Secret isolation** â€” `vault_get` and `vault_keys` actions are rejected from the dock; `load_config` returns `relay_shared_key_present` (boolean) instead of the actual key
 
 ### MetricsCollector (`src/metrics_collector.cpp`)
 
-Polls three data sources every 500ms:
+Runs on a dedicated background thread (`Start()`/`Stop()`/`PollLoop()`). Polls three data sources every 500ms and caches the result under a mutex. The OBS tick callback reads the cached snapshot via `Latest()` — no metric I/O on the render thread.
 
 | Source | API | Metrics |
 |--------|-----|---------|
