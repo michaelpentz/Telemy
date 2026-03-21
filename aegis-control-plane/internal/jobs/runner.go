@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/telemyapp/aegis-control-plane/internal/metrics"
+	"github.com/telemyapp/aegis-control-plane/internal/model"
+	"github.com/telemyapp/aegis-control-plane/internal/relay"
 )
 
 type Store interface {
@@ -13,14 +15,21 @@ type Store interface {
 	RollupLiveSessionDurations(context.Context) error
 	ReconcileOutageFromHealth(context.Context) error
 	UpsertUsageRollups(context.Context) error
+	ListActiveRelayServers(context.Context) ([]model.RelayPoolServer, error)
+	UpdateRelayServerHealth(context.Context, string, string) error
 }
 
 type Runner struct {
 	store Store
+	sls   *relay.SLSClient
 }
 
-func NewRunner(store Store) *Runner {
-	return &Runner{store: store}
+func NewRunner(store Store, sls ...*relay.SLSClient) *Runner {
+	r := &Runner{store: store}
+	if len(sls) > 0 {
+		r.sls = sls[0]
+	}
+	return r
 }
 
 func (r *Runner) Start(ctx context.Context) {
@@ -37,6 +46,27 @@ func (r *Runner) Start(ctx context.Context) {
 		}
 		return r.store.UpsertUsageRollups(c)
 	})
+	if r.sls != nil {
+		go r.runEvery(ctx, "pool_health_check", 60*time.Second, r.checkPoolHealth)
+	}
+}
+
+func (r *Runner) checkPoolHealth(ctx context.Context) error {
+	servers, err := r.store.ListActiveRelayServers(ctx)
+	if err != nil {
+		return err
+	}
+	for _, srv := range servers {
+		healthy, _ := r.sls.HealthCheck(ctx, srv.Host)
+		status := "healthy"
+		if !healthy {
+			status = "unhealthy"
+		}
+		if err := r.store.UpdateRelayServerHealth(ctx, srv.ServerID, status); err != nil {
+			log.Printf("pool_health: update failed server_id=%s err=%v", srv.ServerID, err)
+		}
+	}
+	return nil
 }
 
 func (r *Runner) runEvery(ctx context.Context, name string, interval time.Duration, fn func(context.Context) error) {

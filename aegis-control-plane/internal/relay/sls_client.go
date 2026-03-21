@@ -125,6 +125,23 @@ func (c *SLSClient) DeleteStreamID(ctx context.Context, id string) error {
 	return c.checkStatus(resp)
 }
 
+// HealthCheck probes the SLS health endpoint for a specific relay host.
+func (c *SLSClient) HealthCheck(ctx context.Context, host string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+":8090/health", nil)
+	if err != nil {
+		return false, fmt.Errorf("sls: build health request: %w", err)
+	}
+	c.setAuth(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, nil
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode >= 200 && resp.StatusCode < 300, nil
+}
+
 func (c *SLSClient) setAuth(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 }

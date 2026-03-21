@@ -65,8 +65,8 @@ func LoadFromEnv() (Config, error) {
 	if cfg.PluginLoginCompleteKey == "" {
 		return Config{}, fmt.Errorf("AEGIS_PLUGIN_LOGIN_COMPLETE_KEY is required")
 	}
-	if cfg.RelayProvider != "fake" && cfg.RelayProvider != "aws" && cfg.RelayProvider != "byor" {
-		return Config{}, fmt.Errorf("AEGIS_RELAY_PROVIDER must be one of fake|aws|byor")
+	if cfg.RelayProvider != "fake" && cfg.RelayProvider != "aws" && cfg.RelayProvider != "byor" && cfg.RelayProvider != "pool" {
+		return Config{}, fmt.Errorf("AEGIS_RELAY_PROVIDER must be one of fake|aws|byor|pool")
 	}
 	if cfg.RelayProvider == "aws" && len(cfg.AWSAMIMap) == 0 {
 		return Config{}, fmt.Errorf("AEGIS_AWS_AMI_MAP is required for aws relay provider")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/telemyapp/aegis-control-plane/internal/config"
 	"github.com/telemyapp/aegis-control-plane/internal/jobs"
+	"github.com/telemyapp/aegis-control-plane/internal/relay"
 	"github.com/telemyapp/aegis-control-plane/internal/store"
 )
 
@@ -33,7 +34,7 @@ func main() {
 	}
 
 	st := store.New(pool, cfg.RelayDomain)
-	jobs.NewRunner(st).Start(ctx)
+	jobs.NewRunner(st, relay.NewSLSClient("", cfg.RelaySharedKey)).Start(ctx)
 
 	log.Printf("aegis-jobs worker started")
 	<-ctx.Done()

@@ -13,6 +13,7 @@ import (
 	"github.com/telemyapp/aegis-control-plane/internal/api"
 	"github.com/telemyapp/aegis-control-plane/internal/config"
 	"github.com/telemyapp/aegis-control-plane/internal/dns"
+	"github.com/telemyapp/aegis-control-plane/internal/jobs"
 	"github.com/telemyapp/aegis-control-plane/internal/model"
 	"github.com/telemyapp/aegis-control-plane/internal/relay"
 	"github.com/telemyapp/aegis-control-plane/internal/store"
@@ -59,9 +60,12 @@ func main() {
 			log.Fatalf("init aws provisioner: %v", err)
 		}
 		prov = awsProv
+	case "pool":
+		prov = relay.NewPoolProvisioner(st, cfg.RelaySharedKey)
 	default:
 		prov = relay.NewFakeProvisioner()
 	}
+	jobs.NewRunner(st, relay.NewSLSClient("", cfg.RelaySharedKey)).Start(appCtx)
 	dnsClient := dns.NewClient(cfg.RelayDomain)
 	appServer, handler := api.NewRouter(cfg, st, prov, dnsClient, api.WithAppContext(appCtx))
 

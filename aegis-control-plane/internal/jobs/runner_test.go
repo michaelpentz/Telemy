@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/telemyapp/aegis-control-plane/internal/metrics"
+	"github.com/telemyapp/aegis-control-plane/internal/model"
 )
 
 // stubStore implements Store for testing.
@@ -32,6 +33,14 @@ func (s *stubStore) ReconcileOutageFromHealth(_ context.Context) error {
 
 func (s *stubStore) UpsertUsageRollups(_ context.Context) error {
 	return s.upsertErr
+}
+
+func (s *stubStore) ListActiveRelayServers(_ context.Context) ([]model.RelayPoolServer, error) {
+	return nil, nil
+}
+
+func (s *stubStore) UpdateRelayServerHealth(_ context.Context, _ string, _ string) error {
+	return nil
 }
 
 func TestRunOnce_Success(t *testing.T) {

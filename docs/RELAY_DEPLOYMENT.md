@@ -264,6 +264,26 @@ To add a new node to the pool:
 
 ---
 
+
+## Control Plane Scaling
+
+The control plane runs as a single process by default (`cmd/api/main.go`), handling both HTTP requests and background jobs (pool health checks, session rollups, outage reconciliation) as goroutines.
+
+For higher load, the jobs can be split into a standalone worker:
+
+| Binary | What it runs | When to use |
+|--------|-------------|-------------|
+| `cmd/api/main.go` | API server + all background jobs | Default single-server deployment (current Advin setup) |
+| `cmd/jobs/main.go` | Background jobs only (no HTTP) | When API request handling and background processing need independent scaling |
+
+To run them separately:
+
+1. Deploy `cmd/api/main.go` as the API server (disable its built-in jobs runner by removing the `jobs.NewRunner` call, or leave it — running jobs in both processes is safe since they use idempotent DB operations).
+2. Deploy `cmd/jobs/main.go` as a second process or container on the same or different host. It needs the same `AEGIS_DATABASE_URL` and `AEGIS_RELAY_SHARED_KEY` environment variables.
+
+For the current scale (single Advin VPS, <10 concurrent streamers), the single-process model is sufficient.
+
+---
 ## Legacy: AWS EC2 Relay (Retired 2026-03-20)
 
 The previous relay architecture used ephemeral AWS EC2 instances provisioned on demand via user-data scripts. Key details for historical reference:
