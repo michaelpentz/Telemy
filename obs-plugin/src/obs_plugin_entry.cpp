@@ -48,6 +48,26 @@ static constexpr float kSwitchPumpMinIntervalSec   = 0.05f;  // scene-switch dra
 static constexpr float kHealthDegradedDropPct      = 0.05f;  // per-output drop % threshold
 static constexpr float kHealthDegradedMissPct      = 0.05f;  // render-miss % threshold
 
+// Mask a relay host for display: "my-relay.example.com" → "my-relay.e***.com"
+static std::string MaskRelayHost(const std::string& host) {
+    if (host.empty()) return host;
+    const auto dot1 = host.find('.');
+    if (dot1 == std::string::npos) {
+        return host.substr(0, 1) + "***";
+    }
+    const auto dot2 = host.rfind('.');
+    if (dot2 == dot1) {
+        // One dot: "example.com" → "e***.com"
+        return host.substr(0, 1) + "***" + host.substr(dot2);
+    }
+    // Two+ dots: "my-relay.example.com" → "my-relay.e***.com"
+    const std::string prefix        = host.substr(0, dot1 + 1);
+    const std::string domain        = host.substr(dot1 + 1, dot2 - dot1 - 1);
+    const std::string tld           = host.substr(dot2);
+    const std::string masked_domain = domain.empty() ? "***" : (domain.substr(0, 1) + "***");
+    return prefix + masked_domain + tld;
+}
+
 bool g_obs_timer_registered = false;
 bool g_frontend_event_callback_registered = false;
 bool g_frontend_exit_seen = false;
@@ -396,11 +416,8 @@ std::string DeriveHealthFromSnapshot(const aegis::MetricsSnapshot& snapshot) {
 // ---------------------------------------------------------------------------
 // Status snapshot emission — called from dock_action_dispatch.cpp
 // ---------------------------------------------------------------------------
-bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
-    if (force_poll) {
-        g_metrics.Poll();
-    }
-
+bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
+    // Poll() now runs in its own background thread (Start()/PollLoop()).
     const auto& snapshot = g_metrics.Latest();
     const std::string mode   = EffectiveDockModeFromConfig();
     const std::string health = DeriveHealthFromSnapshot(snapshot);
@@ -446,6 +463,8 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll) {
                 obj[QStringLiteral("name")]           = QString::fromStdString(c.name);
                 obj[QStringLiteral("type")]           = QString::fromStdString(c.type);
                 obj[QStringLiteral("relay_host")]     = QString::fromStdString(c.relay_host);
+                obj[QStringLiteral("relay_host_masked")] =
+                    QString::fromStdString(MaskRelayHost(c.relay_host));
                 obj[QStringLiteral("relay_port")]     = c.relay_port;
                 obj[QStringLiteral("stream_id")]      = QString::fromStdString(c.stream_id);
                 obj[QStringLiteral("managed_region")] = QString::fromStdString(c.managed_region);
@@ -951,6 +970,8 @@ bool obs_module_load(void) {
                                         g_config.relay_heartbeat_interval_sec);
     }
 
+    g_metrics.Start(g_config.metrics_poll_interval_ms);
+
     if (!g_obs_timer_registered) {
         obs_add_tick_callback(SwitchScenePumpTick, nullptr);
         g_obs_timer_registered = true;
@@ -1007,6 +1028,9 @@ void obs_module_unload(void) {
     SetDockSceneSnapshotEmitter({});
     ShutdownBrowserDockHostBridge();
     ClearDockReplayCache();
+
+    // Stop metrics background thread before relay teardown.
+    g_metrics.Stop();
 
     // Emergency relay teardown + shutdown ConnectionManager.
     if (g_connection_manager.HasActiveSession()) {

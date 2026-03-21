@@ -80,8 +80,33 @@ MetricsCollector::MetricsCollector() {
 }
 
 MetricsCollector::~MetricsCollector() {
+    Stop();
     ShutdownNvml();
     METRICS_LOG_INFO("MetricsCollector destroyed");
+}
+
+void MetricsCollector::Start(int poll_interval_ms) {
+    poll_stop_.store(false);
+    poll_thread_ = std::thread(&MetricsCollector::PollLoop, this, poll_interval_ms);
+    METRICS_LOG_INFO("MetricsCollector poll thread started (interval=%dms)", poll_interval_ms);
+}
+
+void MetricsCollector::Stop() {
+    poll_stop_.store(true);
+    poll_cv_.notify_all();
+    if (poll_thread_.joinable()) {
+        poll_thread_.join();
+    }
+}
+
+void MetricsCollector::PollLoop(int poll_interval_ms) {
+    using namespace std::chrono;
+    const auto interval = milliseconds(std::max(100, std::min(poll_interval_ms, 5000)));
+    while (!poll_stop_.load()) {
+        Poll();
+        std::unique_lock<std::mutex> lock(poll_cv_mu_);
+        poll_cv_.wait_for(lock, interval, [this] { return poll_stop_.load(); });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1595,10 +1595,19 @@ bool DispatchDockAction(const std::string& action_json,
                 jwt, request_id, g_config.relay_heartbeat_interval_sec);
             return true;
         }
+        if (it == conns.end()) {
+            blog(LOG_WARNING,
+                 "[aegis-obs-plugin] dock action failed: type=connection_connect"
+                 " request_id=%s error=not_found",
+                 request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "not_found", "");
+            return false;
+        }
         // BYOR: synchronous direct connect.
         const std::string jwt = CurrentControlPlaneJwtForActions();
         g_connection_manager.Connect(conn_id, jwt);
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        EmitCurrentStatusSnapshotToDock("connection_connect", false);
         return true;
     }
 
@@ -1633,10 +1642,19 @@ bool DispatchDockAction(const std::string& action_json,
             g_connection_manager.StopManagedRelayAsync(jwt, request_id);
             return true;
         }
+        if (it == conns.end()) {
+            blog(LOG_WARNING,
+                 "[aegis-obs-plugin] dock action failed: type=connection_disconnect"
+                 " request_id=%s error=not_found",
+                 request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "failed", false, "not_found", "");
+            return false;
+        }
         // BYOR: synchronous direct disconnect.
         const std::string jwt = CurrentControlPlaneJwtForActions();
         g_connection_manager.Disconnect(conn_id, jwt);
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        EmitCurrentStatusSnapshotToDock("connection_disconnect", false);
         return true;
     }
 
