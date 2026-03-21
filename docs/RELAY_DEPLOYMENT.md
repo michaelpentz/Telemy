@@ -6,7 +6,7 @@ Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/sr
 
 **Pipeline:** IRL Pro (bonded cellular) → SRTLA → relay VPS → SRT → OBS
 
-**Current relay:** kc1 (Kansas City) — `kc1.relay.telemyapp.com` → `kc1.relay.telemyapp.com`
+**Current relay:** kc1 (Kansas City) — `kc1.relay.telemyapp.com`
 
 ---
 
@@ -14,7 +14,7 @@ Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/sr
 
 | Name | Host | IP | Provider | Spec | Location |
 |------|------|----|----------|------|----------|
-| kc1 | `kc1.relay.telemyapp.com` | `kc1.relay.telemyapp.com` | Advin Servers | KVM Standard XS — 4vCPU / 8GB / 64GB NVMe / 32TB BW | Kansas City, US |
+| kc1 | `kc1.relay.telemyapp.com` | `<relay-ip>` | Advin Servers | KVM Standard XS — 4vCPU / 8GB / 64GB NVMe / 32TB BW | Kansas City, US |
 
 DNS records are Cloudflare **DNS-only** (not proxied) — direct UDP routing is required for SRT/SRTLA.
 
@@ -99,11 +99,11 @@ Stream IDs for real users are registered by the control plane during session pro
 UFW rules on kc1:
 - **UDP 4000–5000**: Open to all for SRT/SRTLA ingest
 - **TCP 22**: Open to admin IPs only
-- **TCP 3000, 8090, 5080**: Restricted to control plane IP (`<redacted-ec2-ip>`)
+- **TCP 3000, 8090, 5080**: Restricted to control plane IP (`<cp-ip>`)
 
 To update the control plane IP restriction after migration:
 ```bash
-sudo ufw delete allow from <redacted-ec2-ip> to any port 3000
+sudo ufw delete allow from <cp-ip> to any port 3000
 sudo ufw allow from <new-cp-ip> to any port 3000
 # Repeat for 8090 and 5080
 ```
@@ -113,8 +113,6 @@ sudo ufw allow from <new-cp-ip> to any port 3000
 ## SSH Access
 
 ```bash
-ssh <user>@kc1.relay.telemyapp.com
-# or
 ssh <user>@kc1.relay.telemyapp.com
 ```
 
@@ -278,7 +276,7 @@ For higher load, the jobs can be split into a standalone worker:
 
 To run them separately:
 
-1. Deploy `cmd/api/main.go` as the API server (disable its built-in jobs runner by removing the `jobs.NewRunner` call, or leave it � running jobs in both processes is safe since they use idempotent DB operations).
+1. Deploy `cmd/api/main.go` as the API server (disable its built-in jobs runner by removing the `jobs.NewRunner` call, or leave it � running jobs in both processes is safe since they use idempotent DB operations).
 2. Deploy `cmd/jobs/main.go` as a second process or container on the same or different host. It needs the same `AEGIS_DATABASE_URL` and `AEGIS_RELAY_SHARED_KEY` environment variables.
 
 For the current scale (single Advin VPS, <10 concurrent streamers), the single-process model is sufficient.

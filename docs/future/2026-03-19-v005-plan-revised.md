@@ -588,7 +588,7 @@ At the end of Phase 3:
 
 ## Phase 4: Control Plane Migration (Week 3–4)
 
-Move control plane from AWS EC2 (`<redacted-ec2-ip>`, ~$20/mo) to Advin VPS (`kc1.relay.telemyapp.com`, shared with relay). Detailed plan: `docs/plans/2026-03-20-api-migration-advin.md`. Net savings: ~$18-20/mo. DNS cutover via Cloudflare (seconds, orange cloud). EC2 stays live for 24h post-cutover as rollback target.
+Move control plane from AWS EC2 (~$20/mo) to Advin VPS (shared with relay). Detailed plan: `docs/plans/2026-03-20-api-migration-advin.md`. Net savings: ~$18-20/mo. DNS cutover via Cloudflare (seconds, orange cloud). EC2 stays live for 24h post-cutover as rollback target.
 
 AWS is still used for relay EC2 provisioning (AWSProvisioner path) even after the control plane migrates — the Advin box just runs the API and database, not relay instances. Once Phase 3 PoolProvisioner is live and traffic migrated, the AWSProvisioner path can be deprecated.
 
