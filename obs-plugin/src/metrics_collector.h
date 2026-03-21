@@ -3,14 +3,16 @@
 // Native OBS metrics collector for the Aegis OBS plugin.
 // Gathers telemetry directly from OBS C APIs, Win32 system APIs, and
 // optionally NVIDIA NVML — no network hop, no external process.
-// Thread-safety: Poll() and BuildStatusSnapshotJson() are expected to be called
-// from the OBS tick thread. Latest() is safe to call from any thread — it
-// returns a copy of current_ taken under mu_.
+// Thread-safety: Poll() runs in a dedicated background thread started by Start().
+// BuildStatusSnapshotJson() and Latest() are safe to call from any thread.
 
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace aegis {
@@ -82,7 +84,13 @@ public:
     MetricsCollector(MetricsCollector&&) = delete;
     MetricsCollector& operator=(MetricsCollector&&) = delete;
 
-    /// Called from OBS tick callback at ~2 Hz (every 500 ms).
+    /// Start background poll thread. Call from obs_module_load.
+    void Start(int poll_interval_ms = 500);
+
+    /// Stop background poll thread. Blocks until joined. Call from obs_module_unload.
+    void Stop();
+
+    /// Poll once — collects OBS/system/GPU metrics into current_.
     void Poll();
 
     /// Build a JSON string matching the dock state contract.
@@ -110,6 +118,13 @@ public:
     };
 
 private:
+    // Background poll thread.
+    std::thread             poll_thread_;
+    std::atomic<bool>       poll_stop_{false};
+    std::mutex              poll_cv_mu_;
+    std::condition_variable poll_cv_;
+    void PollLoop(int poll_interval_ms);
+
     void CollectObsGlobal();
     void CollectOutputs();
     void CollectSystem();
