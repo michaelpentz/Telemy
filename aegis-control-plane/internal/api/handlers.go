@@ -258,6 +258,27 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 		return
 	}
 
+	if providerName == "pool" {
+		if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepCreatingStream); err != nil {
+			log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepCreatingStream, err)
+		}
+		if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepReady); err != nil {
+			log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepReady, err)
+		}
+		if slug, slugErr := s.store.GetUserRelaySlug(ctx, userID); slugErr == nil && slug != "" && s.dns != nil {
+			if dnsErr := s.dns.CreateOrUpdateRecord(slug, prov.PublicIP); dnsErr != nil {
+				log.Printf("dns: create record failed session_id=%s slug=%s err=%v", sessionID, slug, dnsErr)
+			}
+		}
+		if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
+			log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
+			s.deprovisionAndStop(sessionID, userID, region, prov.InstanceID, provisioner)
+			return
+		}
+		log.Printf("provision_pipeline: completed session_id=%s", sessionID)
+		return
+	}
+
 	if providerName == "byor" {
 		if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepReady); err != nil {
 			log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepReady, err)
