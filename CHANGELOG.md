@@ -3,6 +3,27 @@
 All notable changes to telemy-v0.0.5 will be documented in this file.
 
 
+## [0.0.5-dev] - 2026-03-20
+
+### Fixed - E2E Gaps
+
+- **Snapshot push on connect/disconnect** — `connection_connect` and `connection_disconnect` (BYOR path) now emit a fresh telemetry snapshot immediately after completion, so the dock reflects updated state without waiting for the next 500ms tick.
+- **relay_host_masked field** — `MaskRelayHost()` added; relay connections snapshot now includes a `relay_host_masked` field (e.g. `"my-relay.e***.com"`) for safe display in the dock without exposing the full host.
+- **not_found error for unknown connection IDs** — `connection_connect` and `connection_disconnect` now return a `not_found` error when the given `connection_id` doesn't exist. Previously they silently succeeded, masking misconfigured dock state.
+
+### Added - MetricsCollector Background Thread
+
+- **Start()/Stop()/PollLoop()** — MetricsCollector now runs polling on its own background thread instead of the OBS render thread. `Start()` launches the thread; `Stop()` signals and joins it. `Poll()` is no longer called directly from the OBS tick callback — the tick only reads the cached snapshot via `Latest()`. Eliminates any render-thread stalls from metric collection.
+
+### Added - Dock UI
+
+- **Separate font and density axes** — Font size and UI density are now independent settings. Font scale controls text size; density controls spacing/padding. Previously linked.
+- **C1 sanitizer** — Added C++ sanitizer for C1 control characters (U+0080–U+009F) that break JSON parsing. Prevents OBS output names containing these characters from corrupting the telemetry snapshot.
+- **Density-aware dock spacing** — Dock layout spacing now scales with the density setting.
+- **Per-link freshness indicators** — Each relay link row shows a freshness indicator based on `last_ms_ago`. Links not updated within 3s fade to indicate staleness.
+- **Dynamic OBS font scaling** — Dock font size adjusts dynamically based on the font scale setting rather than requiring a reload.
+- **C++ char sanitizer** — Shared C++ string sanitizer for output/encoder names strips control characters before JSON serialization.
+
 ## [0.0.5-dev] - 2026-03-18
 
 ### Added - Phase 1: Provider Abstraction
