@@ -508,18 +508,22 @@ At the end of Phase 2:
 
 ---
 
-## Phase 3: Hetzner Shared Relay + Multi-Connection (Week 2–3)
+## Phase 3: Shared Relay Pool — Provider-Agnostic (Week 2–3)
 
-**Goal:** Managed connections provision onto shared always-on Hetzner relays in <2 seconds. Multiple managed connections per user are supported.
+**Status (2026-03-20):** Batch 1 complete — `relay_pool`/`relay_assignments` schema + `AssignRelay`/`ReleaseRelay` store methods committed (`8a50824`). Initial deployment target: Advin Servers kc1 (Kansas City, `kc1.relay.telemyapp.com`).
+
+**Goal:** Managed connections provision onto shared always-on relay pool nodes in <2 seconds. Multiple managed connections per user are supported. Code is fully provider-agnostic — any VPS running the srtla-receiver stack can be registered.
+
+**Detailed implementation plan:** `docs/plans/2026-03-20-phase3-relay-pool.md` (9 tasks across 4 batches, Codex dispatch map included).
 
 ### 3.1 Relay Pool Schema
 
-Migration `0010_relay_pool.sql` (unchanged from original plan, renumbered):
+Migration `0013_relay_pool.sql` — **committed in `8a50824`**:
 
 ```sql
 CREATE TABLE relay_pool (
     server_id         TEXT PRIMARY KEY,
-    provider          TEXT NOT NULL DEFAULT 'hetzner',
+    provider          TEXT NOT NULL,          -- 'advin', 'hetzner', 'custom', etc.
     host              TEXT NOT NULL,
     ip                INET NOT NULL,
     region            TEXT NOT NULL,
@@ -544,38 +548,49 @@ CREATE TABLE relay_assignments (
 );
 ```
 
-The `relay_instances` table is phased out for the Hetzner path. See original plan §3.1 for the full redesign rationale.
+The `relay_instances` table is phased out for pool-provisioned relays.
 
-### 3.2 HetznerProvisioner
+### 3.2 PoolProvisioner
 
-Unchanged from original plan §3.2. The `connection_id` flows through as part of the provision request metadata, stored in `relay_assignments.connection_id` so the pool assignment can be correlated back to the plugin connection.
+`internal/relay/pool_provisioner.go` — implements the existing `relay.Provisioner` interface. Calls `store.AssignRelay()` to atomically pick a server and `SLSClient.CreateStreamIDs()` to register the stream ID pair on the relay. Provider-agnostic — no cloud API calls, no instance creation.
+
+See `docs/plans/2026-03-20-phase3-relay-pool.md` §T6 for the full implementation prompt.
 
 ### 3.3 Per-Connection Assignment
 
-Each managed connection gets its own relay assignment — even if two connections from the same user land on the same relay server (same IP, different stream tokens). The assignment logic (§3.5 of the original plan) is unchanged; it operates per session/connection, not per user.
+Each managed connection gets its own relay assignment — even if two connections from the same user land on the same relay server (same IP, different stream tokens). The assignment logic operates per session/connection, not per user.
 
 **DNS for shared relays:** Multiple users share the same relay IP. DNS record (`{slug}.relay.telemyapp.com`) points to the shared server. For multi-connection, the OBS plugin displays the relay hostname in the connection's expanded detail section. Different connections to the same relay server will show the same hostname — that's correct and expected.
 
 ### 3.4 Provision Pipeline Inline Progress
 
-The existing 6-step provision pipeline drives the inline `ManagedProvisionProgress` bar in the connection row. The SSE or WebSocket events (or the polling the plugin already does) are scoped by `connection_id` / `session_id`. The dock matches events to connection rows by `connection_id`.
+Pool provisioner is near-instant (<2 seconds — no cloud API, no boot wait). The inline `ManagedProvisionProgress` bar flashes through quickly. The dock matches provisioning events to connection rows by `connection_id`.
 
-For Hetzner, provision is near-instant (§3.6 option A from original plan). The inline bar flashes through quickly.
+### 3.5 Phase 3 Batch Status
 
-### 3.5 Phase 3 Deliverable
+| Batch | Tasks | Status |
+|-------|-------|--------|
+| Batch 1 | T1: Migration SQL, T2: SLS client, T3: Docs update, T4: Store methods | ✅ **Committed** `8a50824` |
+| Batch 2 | T5: handlers.go fast-path | ⏳ Pending |
+| Batch 3 | T6: PoolProvisioner, T7: Health monitor | ⏳ Pending (needs Batch 1) |
+| Batch 4 | T8: Config wiring, T9: Tests | ⏳ Pending (needs Batch 3) |
+
+### 3.6 Phase 3 Deliverable
 
 At the end of Phase 3:
-1. Paid user adds a Managed connection → assigned to Hetzner relay in <2 seconds
+1. Paid user adds a Managed connection → assigned to Advin/kc1 relay in <2 seconds
 2. Second managed connection (same user) → independently assigned, potentially same or different relay server
 3. Both connections show independently in the Connection List, each with their own stats
 4. Stop one connection → that stream token removed from relay, server stays running; other connection unaffected
-5. Cost: ~$0.50/user/month vs $9–13/user/month on AWS
+5. Cost: ~$0.25–0.50/user/month vs $9–13/user/month on AWS EC2
 
 ---
 
 ## Phase 4: Control Plane Migration (Week 3–4)
 
-Unchanged from original plan §4 (§4.1–4.5). Hetzner CX22 (~$5/mo), PostgreSQL migration, DNS cutover, 48h EC2 overlap.
+Move control plane from AWS EC2 (`<redacted-ec2-ip>`, ~$20/mo) to Advin VPS (`kc1.relay.telemyapp.com`, shared with relay). Detailed plan: `docs/plans/2026-03-20-api-migration-advin.md`. Net savings: ~$18-20/mo. DNS cutover via Cloudflare (seconds, orange cloud). EC2 stays live for 24h post-cutover as rollback target.
+
+AWS is still used for relay EC2 provisioning (AWSProvisioner path) even after the control plane migrates — the Advin box just runs the API and database, not relay instances. Once Phase 3 PoolProvisioner is live and traffic migrated, the AWSProvisioner path can be deprecated.
 
 **Additional verification for multi-connection:**
 

@@ -2,186 +2,167 @@
 
 ## Overview
 
-Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) to provide bonded SRT relay for IRL streaming. The control plane provisions ephemeral EC2 instances that auto-install srtla-receiver via user-data. Each user gets a permanent Elastic IP that persists across relay provision cycles for stable DNS.
+Aegis relay instances run [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) to provide bonded SRT relay for IRL streaming. The relay stack runs on an always-on VPS (Advin Servers) rather than ephemeral cloud instances. The control plane manages stream ID provisioning and session lifecycle; the relay hardware is persistent.
 
-**Pipeline:** IRL Pro (bonded cellular) -> SRTLA -> EC2 relay (Elastic IP) -> SRT -> OBS
+**Pipeline:** IRL Pro (bonded cellular) → SRTLA → relay VPS → SRT → OBS
+
+**Current relay:** kc1 (Kansas City) — `kc1.relay.telemyapp.com` → `kc1.relay.telemyapp.com`
+
+---
+
+## Active Relay Nodes
+
+| Name | Host | IP | Provider | Spec | Location |
+|------|------|----|----------|------|----------|
+| kc1 | `kc1.relay.telemyapp.com` | `kc1.relay.telemyapp.com` | Advin Servers | KVM Standard XS — 4vCPU / 8GB / 64GB NVMe / 32TB BW | Kansas City, US |
+
+DNS records are Cloudflare **DNS-only** (not proxied) — direct UDP routing is required for SRT/SRTLA.
+
+---
 
 ## Software Stack
 
 | Component | Purpose |
 |-----------|---------|
-| Amazon Linux 2023 | Base OS (x86_64 or aarch64) |
+| Ubuntu 24.04 | Base OS |
 | Docker + Compose | Container runtime |
 | srtla-receiver | Bonded SRT relay (Custom fork: `ghcr.io/michaelpentz/srtla-receiver:latest`) |
-| GeoLite2-ASN | MaxMind ASN database for carrier identification (~7MB) |
+| IPinfo Lite mmdb | ASN database for carrier identification (volume-mounted at `/opt/srtla-receiver/data/ipinfo_lite.mmdb`) |
 
 srtla-receiver provides:
 - **SRTLA bonded ingest** — accepts bonded connections from IRL Pro
 - **SRT player output** — single SRT stream for OBS consumption
 - **SRT direct sender** — non-bonded SRT fallback
-- **Management UI** — web UI for stream creation and monitoring
-- **Backend API** — REST API for aggregate stats (port 8090)
-- **Per-Link API** — REST API for individual connection stats (port 5080)
-- **ASN Carrier Identification** — When a GeoLite2-ASN.mmdb database is present at `/usr/share/GeoIP/`, the per-link stats API includes an `asn_org` field per connection identifying the carrier (e.g., "T-Mobile USA, Inc."). Requires a free MaxMind GeoLite2 license.
+- **SLS Management UI** — web UI for stream creation and monitoring (port 3000)
+- **SLS Stats API** — REST API for aggregate stats (port 8090)
+- **Per-Link Stats API** — REST API for individual connection stats (port 5080)
+- **ASN Carrier Identification** — IPinfo Lite mmdb provides `asn_org` field per connection (e.g., "T-Mobile USA, Inc.")
+
+---
 
 ## Port Map
 
-| Port | Protocol | Purpose | Security Group |
-|------|----------|---------|----------------|
-| 5000 | UDP | SRTLA bonded ingest (IRL Pro srtla://) | 0.0.0.0/0 |
-| 4001 | UDP | SRT publisher (SLS ingest) | 0.0.0.0/0 |
-| 4000 | UDP | SRT player (SLS output for OBS) | 0.0.0.0/0 |
-| 22   | TCP | SSH Access (Diagnostics) | 0.0.0.0/0 (or admin IP) |
-| 3000 | TCP | SLS Management UI | Restricted (SSH Tunnel recommended) |
-| 8090 | TCP | SLS Backend API (Aggregate stats) | Restricted to OBS/Plugin IPs |
-| 5080 | TCP | Per-link Stats API (srtla_rec) | Restricted to OBS/Plugin IPs |
+| Port | Protocol | Purpose | Firewall |
+|------|----------|---------|----------|
+| 5000 | UDP | SRTLA bonded ingest (IRL Pro `srtla://`) | Open to 0.0.0.0/0 |
+| 4001 | UDP | SRT publisher / SLS ingest | Open to 0.0.0.0/0 |
+| 4000 | UDP | SRT player (SLS output for OBS) | Open to 0.0.0.0/0 |
+| 22   | TCP | SSH access | Restricted to admin IPs |
+| 3000 | TCP | SLS Management UI | Restricted to control plane IP |
+| 8090 | TCP | SLS Stats API (aggregate) | Restricted to control plane IP |
+| 5080 | TCP | Per-link Stats API (srtla_rec) | Restricted to control plane IP |
 
 **Note:** `srtla_rec` acts as a raw UDP proxy on port 5000, forwarding bonded traffic to `localhost:4001` where SLS handles the SRT session.
 
-## Security Group
+---
 
-Security group: `aegis-relay-sg` (`<RELAY_SG_ID>`)
+## Connection URLs
 
-- **UDP 4000-5000**: Open to all (`0.0.0.0/0`) for dynamic cellular ingest.
-- **TCP 22**: Open for SSH diagnostics using `{ssh_key_file}`.
-- **TCP 8090, 5080**: Must be accessible from the streamer's OBS machine to enable real-time dock telemetry. 
-- **TCP 3000**: Restricted to admin/control-plane IPs.
+| Use Case | URL Format |
+|----------|-----------|
+| IRL Pro SRTLA bonded ingest | `srtla://kc1.relay.telemyapp.com:5000` with stream ID `live_{token}` |
+| OBS SRT direct publish | `srt://kc1.relay.telemyapp.com:4001` with stream ID `live_{token}` |
+| OBS Media Source (viewer pull) | `srt://kc1.relay.telemyapp.com:4000?streamid=play_{token}` |
 
-## Hardening & Admin Material
+The OBS dock displays a one-line copy field for the media source URL. The `buildSrtPlayerUrl()` function in the dock automatically converts `live_` prefix to `play_` prefix.
 
-The relay bootstrap process has been hardened to minimize sensitive material leakage:
-- **Admin API Key**: Temporarily written to `/opt/srtla-receiver/data/.apikey` for stream auto-creation, then restricted.
-- **Log Masking**: Stream-management responses are no longer logged to broad transient locations.
-- **Cleanup**: Ephemeral setup markers in `/tmp` are minimized.
+---
+
+## SLS Management API
+
+The SLS management API on port 3000 uses `/api/stream-ids` (not `/api/v1/`).
+
+**API key** is stored in `/opt/srtla-receiver/data/.apikey` on the relay node.
+
+```bash
+# List registered stream IDs
+curl -s -H "Authorization: Bearer <apikey>" http://localhost:3000/api/stream-ids | jq .
+
+# Register a new stream ID pair
+curl -s -X POST \
+  -H "Authorization: Bearer <apikey>" \
+  -H "Content-Type: application/json" \
+  -d '{"publish":"live_abc123","play":"play_abc123"}' \
+  http://localhost:3000/api/stream-ids
+```
+
+Registered stream IDs on kc1:
+- `live_aegis` / `play_aegis` — development/testing
+- `live_test123` / `play_test123` — secondary test pair
+
+Stream IDs for real users are registered by the control plane during session provisioning.
+
+---
+
+## Firewall Configuration (UFW)
+
+UFW rules on kc1:
+- **UDP 4000–5000**: Open to all for SRT/SRTLA ingest
+- **TCP 22**: Open to admin IPs only
+- **TCP 3000, 8090, 5080**: Restricted to control plane IP (`<redacted-ec2-ip>`)
+
+To update the control plane IP restriction after migration:
+```bash
+sudo ufw delete allow from <redacted-ec2-ip> to any port 3000
+sudo ufw allow from <new-cp-ip> to any port 3000
+# Repeat for 8090 and 5080
+```
+
+---
 
 ## SSH Access
 
-To diagnose a relay instance:
 ```bash
-ssh -i {ssh_key_file} ec2-user@{relay_ip}
+ssh <user>@kc1.relay.telemyapp.com
+# or
+ssh <user>@kc1.relay.telemyapp.com
 ```
 
-## Automatic Provisioning
+---
 
-The control plane provisions the relay and auto-creates stream IDs:
+## Docker Compose Management
+
+The relay stack lives in `/opt/srtla-receiver/` on each relay node.
+
+```bash
+# Status
+cd /opt/srtla-receiver && sudo docker compose ps
+
+# Logs
+sudo docker compose logs -f
+
+# Restart
+sudo docker compose restart
+
+# Pull latest image and restart
+sudo docker compose pull && sudo docker compose up -d
+```
+
+---
+
+## Stream ID Provisioning
+
+The control plane auto-provisions stream IDs when a managed session is started:
 - **Publisher ID**: `live_{stream_token}`
 - **Player ID**: `play_{stream_token}`
 
-Where:
-- `stream_token` is a permanent per-user identifier generated by the control plane
-- relay activation is intended to be gated by authenticated account entitlement, not by transport-layer secrets
+Where `stream_token` is a permanent per-user identifier generated by the control plane and stored in the `users` table.
 
-See also: `AUTH_ENTITLEMENT_MODEL.md`.
+The control plane calls the SLS API (port 3000) via the relay's management endpoint to register the stream ID pair before returning the session to the OBS plugin.
 
-The API key for the backend is auto-generated on first boot and stored at:
-`/opt/srtla-receiver/data/.apikey`
+---
 
-## Manual Install (Ad-Hoc Testing)
+## ASN Carrier Identification
 
-SSH into a running relay instance and run:
+The srtla-receiver Docker image uses IPinfo Lite for carrier identification.
 
-```bash
-# ... (Docker/Compose install steps unchanged)
+**mmdb location on relay node:** `/opt/srtla-receiver/data/ipinfo_lite.mmdb`
 
-# Setup srtla-receiver
-sudo mkdir -p /opt/srtla-receiver/data
-cd /opt/srtla-receiver
-
-sudo curl -sL https://raw.githubusercontent.com/OpenIRL/srtla-receiver/main/docker-compose.prod.yml \
-  -o docker-compose.yml
-
-sudo tee .env << 'EOF'
-SRTLA_PORT=5000
-SRT_SENDER_PORT=4001
-SRT_PLAYER_PORT=4000
-SLS_MGNT_PORT=3000
-SLS_STATS_PORT=8090
-APP_URL=http://localhost
-EOF
-
-sudo chown -R 3001:3001 /opt/srtla-receiver/data
-sudo docker compose up -d
+**Docker volume mount:**
+```yaml
+volumes:
+  - ./data/ipinfo_lite.mmdb:/usr/share/GeoIP/ipinfo_lite.mmdb:ro
 ```
-
-## IRL Pro Connection Guide (Bonded)
-
-1. **Bonding Mode**: Use **SRTLA** (not SRT with bonding toggle).
-2. **Settings**: Go to **Settings > Bonding > Own Bonding Server (SRTLA)**.
-3. **URL**: `srtla://{relay_ip}:5000`
-4. **SRT Settings**:
-   - **Stream ID**: `live_{stream_token}`
-   - **Latency**: `2500` ms (recommended)
-5. **Validation**: Confirm bonding works by checking both WiFi and Cellular icons in the SRTLA group.
-
-If the relay hostname is available, `srtla://{relay_host}:5000` is preferred over a raw IP.
-
-*Note: Enabling the built-in "Connection Bonding Service" routes through IRL Toolkit proxies and will fail with our private relay.*
-
-## OBS SRT Input Setup
-
-1. Add a **Media Source** in OBS.
-2. Uncheck **Local File**.
-3. **Input**: `srt://{relay_host_or_ip}:4000?streamid=play_{stream_token}`
-4. **Input Format**: `mpegts`
-5. The stream should appear with ~5s end-to-end latency (typical for bonded relay).
-
-## Troubleshooting
-
-### Check container status
-```bash
-cd /opt/srtla-receiver && sudo docker compose ps
-```
-
-### View container logs
-```bash
-sudo docker compose logs -f
-```
-
-### Check setup log
-```bash
-cat /var/log/srtla-setup.log
-```
-
-### Verify srtla-receiver is listening
-```bash
-ss -ulnp | grep 5000   # SRTLA ingest
-ss -ulnp | grep 4000   # SRT player
-ss -tlnp | grep 3000   # Management UI
-```
-
-### Management API: list streams
-```bash
-curl -s http://localhost:8090/api/streams | jq .
-```
-
-### Common issues
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| Containers not running | Docker not started | `sudo systemctl start docker && cd /opt/srtla-receiver && sudo docker compose up -d` |
-| IRL Pro can't connect | Security group missing UDP 5000 | Verify `aegis-relay-sg` has UDP 5000 rule |
-| OBS shows black screen | Wrong per-user stream ID or stream not created | Verify the session uses the current user's `play_{stream_token}` stream and that the stream exists in management UI |
-| Management UI unreachable | TCP 3000 restricted to control plane IP | SSH tunnel: `ssh -L 3000:localhost:3000 ec2-user@{relay_ip}` |
-
-## GeoIP ASN Database (Carrier Identification)
-
-The srtla-receiver Docker image supports optional carrier identification via MaxMind's free GeoLite2-ASN database.
-
-### Setup
-
-1. Create a free MaxMind account at `dev.maxmind.com/geoip/geolite2-signup`
-2. Generate a license key under **Account → Manage License Keys**
-3. Download the database:
-   ```bash
-   curl -L -o /tmp/geolite2-asn.tar.gz \
-     "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=YOUR_KEY&suffix=tar.gz"
-   tar xzf /tmp/geolite2-asn.tar.gz -C /tmp/ --wildcards "*.mmdb"
-   cp /tmp/GeoLite2-ASN_*/GeoLite2-ASN.mmdb srtla-receiver-fork/data/
-   ```
-4. The Dockerfile copies the database to `/usr/share/GeoIP/GeoLite2-ASN.mmdb`
-5. `srtla_rec` is launched with `--geoip_db=/usr/share/GeoIP/GeoLite2-ASN.mmdb`
-
-### Stats API Output
 
 With ASN enabled, `GET :5080/stats` connections include:
 ```json
@@ -195,28 +176,101 @@ With ASN enabled, `GET :5080/stats` connections include:
 
 Without the database, the `asn_org` field is omitted and the dock UI labels links as "Link 1", "Link 2", etc.
 
-### Updating the Database
+**Updating the database:** Download a new IPinfo Lite mmdb and replace the file at `/opt/srtla-receiver/data/ipinfo_lite.mmdb` — no container restart needed if the file is volume-mounted (the process re-reads on next lookup).
 
-MaxMind updates GeoLite2 databases weekly. To refresh:
-1. Re-download using the same license key
-2. Replace `data/GeoLite2-ASN.mmdb` in the srtla-receiver-fork repo
-3. Rebuild and push the Docker image
+---
 
-## Elastic IP (Stable Relay Addresses)
+## IRL Pro Connection Guide (Bonded)
 
-Each user gets one AWS Elastic IP per region, allocated on first relay provision. The EIP is stored in the `users` table and associated to each new relay instance during provisioning. DNS records are permanent — created once, never deleted on deprovision.
+1. **Bonding Mode**: Use **SRTLA** (not SRT with bonding toggle).
+2. **Settings**: Go to **Settings > Bonding > Own Bonding Server (SRTLA)**.
+3. **URL**: `srtla://kc1.relay.telemyapp.com:5000`
+4. **SRT Settings**:
+   - **Stream ID**: `live_{stream_token}`
+   - **Latency**: `2500` ms (recommended)
+5. **Validation**: Confirm bonding works by checking both WiFi and Cellular icons in the SRTLA group.
 
-- **First provision**: Allocate EIP → save to DB → associate to instance → create DNS
-- **Subsequent provisions**: Read EIP from DB → associate to instance → DNS unchanged
-- **Deprovision**: Instance terminated (EIP auto-disassociates), DNS stays, EIP stays allocated
-- **Fallback**: If EIP allocation fails, falls back to auto-assigned IP (current behavior)
-- **Cost**: Free while attached to running instance; ~$3.60/mo per user when idle
-- **IAM**: Requires `ec2:AllocateAddress`, `ec2:AssociateAddress`, `ec2:ReleaseAddress`, `ec2:DescribeAddresses` on the control plane IAM role
+*Note: Enabling the built-in "Connection Bonding Service" routes through IRL Toolkit proxies and will fail with our private relay.*
 
-### IRL Pro Benefit
+---
 
-Mobile clients (IRL Pro on iOS) cache DNS aggressively. With Elastic IP, the DNS record never changes, so reconnection after a relay cycle is instant — no stale cache issues.
+## OBS SRT Input Setup
 
-## Custom AMI (Implemented)
+1. Add a **Media Source** in OBS.
+2. Uncheck **Local File**.
+3. **Input**: `srt://kc1.relay.telemyapp.com:4000?streamid=play_{stream_token}`
+4. **Input Format**: `mpegts`
+5. The stream should appear with ~5s end-to-end latency (typical for bonded relay).
 
-Relay instances use a pre-baked AMI (`aegis-relay-v1`) with Docker, Docker Compose, and container images pre-pulled. The user-data script only writes config files and starts containers — no package installation or image pulls at boot time. This reduces relay boot from ~2-3 minutes to ~15-30 seconds.
+The Telemy dock provides a one-line copy field for this URL in the connection's expanded detail section.
+
+---
+
+## Troubleshooting
+
+### Check container status
+```bash
+cd /opt/srtla-receiver && sudo docker compose ps
+```
+
+### View container logs
+```bash
+sudo docker compose logs -f
+```
+
+### Verify ports are listening
+```bash
+ss -ulnp | grep 5000   # SRTLA ingest
+ss -ulnp | grep 4000   # SRT player
+ss -tlnp | grep 3000   # Management UI
+ss -tlnp | grep 8090   # Stats API
+ss -tlnp | grep 5080   # Per-link Stats API
+```
+
+### Management API: list streams
+```bash
+curl -s -H "Authorization: Bearer $(cat /opt/srtla-receiver/data/.apikey)" \
+  http://localhost:3000/api/stream-ids | jq .
+```
+
+### Common issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Containers not running | Docker not started or compose file error | `cd /opt/srtla-receiver && sudo docker compose up -d` |
+| IRL Pro can't connect | UFW blocking UDP 5000 | `sudo ufw status` — verify UDP 4000-5000 open |
+| OBS shows black screen | Wrong stream ID or stream not registered | Verify `play_{token}` exists via SLS API; check stream ID spelling |
+| Stats not updating in dock | Port 8090/5080 blocked by UFW | UFW must allow control plane IP to reach 8090 and 5080 |
+| Management UI unreachable | TCP 3000 restricted | SSH tunnel: `ssh -L 3000:localhost:3000 <user>@kc1.relay.telemyapp.com` |
+
+---
+
+## Adding a New Relay Node
+
+To add a new node to the pool:
+
+1. Provision the VPS (Ubuntu 24.04 recommended)
+2. Install Docker and Docker Compose
+3. Copy `/opt/srtla-receiver/` directory from existing node (docker-compose.yml + .env)
+4. Copy mmdb: `scp /opt/srtla-receiver/data/ipinfo_lite.mmdb <new-node>:/opt/srtla-receiver/data/`
+5. Configure UFW (mirror kc1 rules, update control plane IP if needed)
+6. Start stack: `cd /opt/srtla-receiver && sudo docker compose up -d`
+7. Create Cloudflare DNS record: `<name>.relay.telemyapp.com` → new IP (DNS-only, not proxied)
+8. Insert into `relay_pool` table:
+   ```sql
+   INSERT INTO relay_pool (server_id, provider, host, ip, region, status, max_sessions)
+   VALUES ('kc2', 'advin', 'kc2.relay.telemyapp.com', '<ip>', 'us-central', 'active', 10);
+   ```
+
+---
+
+## Legacy: AWS EC2 Relay (Retired 2026-03-20)
+
+The previous relay architecture used ephemeral AWS EC2 instances provisioned on demand via user-data scripts. Key details for historical reference:
+
+- **AMI**: `ami-0a15428b4299b16d6` (`aegis-relay-v2`) — Amazon Linux 2023, Docker + srtla-receiver pre-pulled
+- **Elastic IP**: `eipalloc-05476ee61b32e4891` → `44.237.197.131` — **Released**
+- **DNS**: `8ae1cf.relay.telemyapp.com` — **Deleted** from Cloudflare
+- **Last instance**: `us-west-2`, terminated 2026-03-20
+
+The AWS EC2 relay was retired in favor of the Advin VPS model, which provides 32TB/month bandwidth at $8/mo vs ~$9-13/user/month on EC2. The control plane (`AWSProvisioner`) handles relay provisioning but will be superseded by `PoolProvisioner` (Phase 3) which assigns sessions to always-on pool nodes.
