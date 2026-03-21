@@ -347,6 +347,18 @@ func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, in
 	if err != nil {
 		return nil, err
 	}
+	slots, err := s.store.ListUserStreamSlots(ctx, userID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	streamSlots := make([]map[string]any, 0, len(slots))
+	for _, slot := range slots {
+		streamSlots = append(streamSlots, map[string]any{
+			"slot_number":  slot.SlotNumber,
+			"label":        slot.Label,
+			"stream_token": slot.StreamToken,
+		})
+	}
 
 	resp := map[string]any{
 		"user": map[string]any{
@@ -368,6 +380,7 @@ func (s *Server) buildAuthSessionResponse(ctx context.Context, userID string, in
 			"remaining_seconds": usage.RemainingSeconds,
 			"overage_seconds":   usage.OverageSeconds,
 		},
+		"stream_slots": streamSlots,
 	}
 
 	if includeActiveRelay {

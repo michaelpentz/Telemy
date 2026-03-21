@@ -216,6 +216,10 @@ func (m *mockStore) ListUserStreamSlots(ctx context.Context, userID string) ([]m
 	return nil, store.ErrNotFound
 }
 
+func (m *mockStore) UpdateStreamSlotLabel(ctx context.Context, userID string, slotNumber int, label string) error {
+	return nil
+}
+
 func (m *mockStore) RecordRelayHealth(ctx context.Context, in store.RelayHealthInput) error {
 	if m.recordRelayHealthEventFn != nil {
 		return m.recordRelayHealthEventFn(ctx, in)

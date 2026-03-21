@@ -39,6 +39,22 @@ order by slot_number asc, stream_token asc`
 	return out, nil
 }
 
+func (s *Store) UpdateStreamSlotLabel(ctx context.Context, userID string, slotNumber int, label string) error {
+	const q = `
+update user_stream_slots
+set label = $3
+where user_id = $1 and slot_number = $2`
+
+	tag, err := s.db.Exec(ctx, q, userID, slotNumber, label)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) GetUserStreamSlotByToken(ctx context.Context, userID, streamToken string) (*model.UserStreamSlot, error) {
 	const q = `
 select slot_number, coalesce(label, ''), stream_token

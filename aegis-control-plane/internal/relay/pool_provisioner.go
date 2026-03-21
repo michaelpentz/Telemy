@@ -73,7 +73,7 @@ func (p *PoolProvisioner) Deprovision(ctx context.Context, req DeprovisionReques
 
 	// Best-effort: remove stream ID from relay. Don't block release on failure.
 	sls := p.newSLS(assignment.Host)
-	_ = sls.DeleteStreamID(ctx, "live_"+assignment.StreamToken)
+	_ = sls.DeleteStreamID(ctx, "play_"+assignment.StreamToken)
 
 	return p.store.ReleaseRelay(ctx, req.SessionID)
 }

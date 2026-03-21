@@ -130,6 +130,8 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
   const isByor = conn.type === "byor";
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(conn.name || "");
+  const [isRenamingSlot, setIsRenamingSlot] = useState(false);
+  const [slotLabelEdit, setSlotLabelEdit] = useState(conn.stream_slot_label || "");
   const [editHost, setEditHost] = useState(conn.relay_host || "");
   const [editPort, setEditPort] = useState(String(conn.relay_port || 5000));
   const [editStreamId, setEditStreamId] = useState(conn.stream_id || "");
@@ -281,6 +283,55 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
               <span style={{ color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>Region</span>
               <span style={{ color: "var(--theme-text, #e0e2e8)", fontWeight: 600, fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>{conn.managed_region || "\u2014"}</span>
             </div>
+            {conn.stream_slot_label !== undefined && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5, fontSize: 9 }}>
+                {isRenamingSlot ? (
+                  <div style={{ display: "flex", gap: 4, width: "100%", alignItems: "center" }}>
+                    <input
+                      value={slotLabelEdit}
+                      onChange={e => setSlotLabelEdit(e.target.value)}
+                      style={{
+                        flex: 1, height: 19, borderRadius: 3,
+                        border: "1px solid var(--theme-border, #2a2d35)",
+                        background: "var(--theme-panel, #20232b)",
+                        color: "var(--theme-text, #e0e2e8)",
+                        fontSize: 9, padding: "0 5px",
+                        fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                    <button onClick={() => {
+                      sendAction({ type: "rename_stream_slot", slot_number: conn.stream_slot_number, label: slotLabelEdit.trim(), requestId: genRequestId() });
+                      setIsRenamingSlot(false);
+                    }} style={{
+                      height: 19, padding: "0 6px", borderRadius: 3, border: "none",
+                      background: "#2d7aed", color: "#fff", fontSize: 8, fontWeight: 600, cursor: "pointer",
+                      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                    }}>Save</button>
+                    <button onClick={() => { setSlotLabelEdit(conn.stream_slot_label || ""); setIsRenamingSlot(false); }} style={{
+                      height: 19, padding: "0 6px", borderRadius: 3,
+                      border: "1px solid var(--theme-border, #2a2d35)",
+                      background: "var(--theme-panel, #20232b)",
+                      color: "var(--theme-text-muted, #8b8f98)", fontSize: 8, cursor: "pointer",
+                      fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+                    }}>âœ•</button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                    <span style={{ color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>Slot Label</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ color: "var(--theme-text, #e0e2e8)", fontWeight: 600, fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>
+                        {conn.stream_slot_label || "\u2014"}
+                      </span>
+                      <button onClick={() => { setSlotLabelEdit(conn.stream_slot_label || ""); setIsRenamingSlot(true); }} style={{
+                        border: "none", background: "none", padding: "0 2px", cursor: "pointer",
+                        color: "var(--theme-text-muted, #5a5f6d)", fontSize: 9, lineHeight: 1,
+                      }} title="Rename slot">&#9998;</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {conn.session_id && (
               <SecretField label="Session ID" value={conn.session_id} copyValue={conn.session_id} />
             )}
@@ -570,26 +621,17 @@ function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
 }
 
 // --- Add Connection inline form (expands in place, no overlay) ---
-function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLabel, authPending, authLogin, authEntitlement, handleAuthLogin, handleAuthOpenBrowser }) {
+function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLabel, authPending, authLogin, authEntitlement, streamSlots, handleAuthLogin, handleAuthOpenBrowser }) {
   const [name, setName] = useState("");
   const [type, setType] = useState("byor");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("5000");
   const [streamId, setStreamId] = useState("");
   const [region, setRegion] = useState("us-east");
-  const [streamSlots, setStreamSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState("");
-  const [slotsLoading, setSlotsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch stream slots when switching to managed and authenticated
-  const prevTypeRef = { current: null };
-  if (type === "managed" && authAuthenticated && streamSlots.length === 0 && !slotsLoading) {
-    setSlotsLoading(true);
-    sendAction({ type: "fetch_stream_slots", requestId: genRequestId() });
-    // Slots will arrive via a state update callback — for now use hardcoded fallback
-    // TODO: wire native callback to populate streamSlots
-  }
+  const slots = Array.isArray(streamSlots) ? streamSlots : [];
 
   const maxConns = authEntitlement?.max_concurrent_conns || 0;
   const activeConns = authEntitlement?.active_managed_conns || 0;
@@ -821,7 +863,7 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
               style={{ ...inputStyle, height: 25, cursor: "pointer" }}
             >
               <option value="">Select a relay...</option>
-              {streamSlots.map(s => (
+              {slots.map(s => (
                 <option key={s.slot_number} value={s.stream_token}>
                   {s.label || ("Relay " + (s.slot_number + 1))}
                 </option>
@@ -873,6 +915,7 @@ export function ConnectionListSection({
   authPending,
   authLogin,
   authEntitlement,
+  authStreamSlots,
   authErrorMessage,
   handleAuthLogin,
   handleAuthLogout,
@@ -980,6 +1023,7 @@ export function ConnectionListSection({
           authPending={authPending}
           authLogin={authLogin}
           authEntitlement={authEntitlement}
+          streamSlots={authStreamSlots || []}
           handleAuthLogin={handleAuthLogin}
           handleAuthOpenBrowser={handleAuthOpenBrowser}
         />

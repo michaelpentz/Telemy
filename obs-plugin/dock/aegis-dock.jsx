@@ -140,6 +140,7 @@ export default function AegisDock() {
   const authUser = auth.user || {};
   const authEntitlement = auth.entitlement || {};
   const authUsage = auth.usage || {};
+  const authStreamSlots = auth.stream_slots || [];
   const authAuthenticated = auth.authenticated === true;
   const authHasTokens = auth.hasTokens === true;
   const authPending = authLogin.pending === true;
@@ -1408,6 +1409,7 @@ export default function AegisDock() {
                 authPending={authPending}
                 authLogin={authLogin}
                 authEntitlement={authEntitlement}
+                authStreamSlots={authStreamSlots}
                 authErrorMessage={authErrorMessage}
                 handleAuthLogin={handleAuthLogin}
                 handleAuthLogout={handleAuthLogout}
