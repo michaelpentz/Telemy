@@ -61,6 +61,9 @@ func LoadFromEnv() (Config, error) {
 	if cfg.JWTSecret == "" {
 		return Config{}, fmt.Errorf("AEGIS_JWT_SECRET is required")
 	}
+	if len(cfg.JWTSecret) < 32 {
+		return Config{}, fmt.Errorf("AEGIS_JWT_SECRET must be at least 32 characters")
+	}
 	if cfg.RelaySharedKey == "" {
 		return Config{}, fmt.Errorf("AEGIS_RELAY_SHARED_KEY is required")
 	}

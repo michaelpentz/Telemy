@@ -187,7 +187,7 @@ private:
     std::string  api_host_;
     std::string  relay_shared_key_;
     int          heartbeat_interval_sec_ = 30;
-    bool         initialized_            = false;
+    std::atomic<bool> initialized_{false};
 
     // Carrier classification helpers (moved from old ConnectionManager).
     static ConnectionSnapshot BuildSnapshot(const PerLinkSnapshot& per_link,
