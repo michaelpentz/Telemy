@@ -502,6 +502,9 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << "\"relay_srt_port\":" << relay_session->srt_port << ",";
         if (!relay_session->relay_hostname.empty()) {
             os << "\"relay_hostname\":\"" << JsonEscape(relay_session->relay_hostname) << "\",";
+        } else if (!relay_session->public_ip.empty()) {
+            // Fall back to IP so bridge-level enrichment always has a usable host value.
+            os << "\"relay_hostname\":\"" << JsonEscape(relay_session->public_ip) << "\",";
         }
         if (!relay_session->stream_token.empty()) {
             os << "\"relay_stream_token\":\"" << JsonEscape(relay_session->stream_token) << "\",";
