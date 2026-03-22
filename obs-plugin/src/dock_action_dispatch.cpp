@@ -1244,6 +1244,14 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "failed", false, "no_authorize_url", "");
             return false;
         }
+        // SEC-007: Only allow https:// URLs to prevent file://, smb://, javascript:// exploitation.
+        if (authorize_url.rfind("https://", 0) != 0) {
+            blog(LOG_WARNING,
+                "[aegis-obs-plugin] dock action rejected: type=auth_open_browser request_id=%s error=invalid_url_scheme",
+                request_id.c_str());
+            EmitDockActionResult(action_type, request_id, "rejected", false, "invalid_url_scheme", "");
+            return false;
+        }
         const bool opened = TryOpenBrowserUrl(authorize_url);
         EmitDockActionResult(action_type, request_id, opened ? "completed" : "failed",
                              opened, opened ? "" : "browser_open_failed", "");
@@ -1536,6 +1544,8 @@ bool DispatchDockAction(const std::string& action_json,
     }
 
     // -- vault_set: encrypt and store a secret --
+    // SEC-005: Only allow dock JS to write specific vault keys.
+    // Blocks overwrite of plugin_auth_state, relay_jwt, relay_shared_key.
     if (action_type == "vault_set") {
         std::string key;
         std::string value;
@@ -1546,6 +1556,25 @@ bool DispatchDockAction(const std::string& action_json,
                 "[aegis-obs-plugin] dock action rejected: type=vault_set request_id=%s error=missing_key",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_key", "");
+            return false;
+        }
+        // Allowlist: only these keys (or connection secret keys prefixed "conn_") may be written.
+        static const char* kAllowedPrefixes[] = { "conn_", "dock_" };
+        static const char* kAllowedExact[] = { "relay_api_host", "relay_api_port" };
+        bool key_allowed = false;
+        for (const auto* prefix : kAllowedPrefixes) {
+            if (key.rfind(prefix, 0) == 0) { key_allowed = true; break; }
+        }
+        if (!key_allowed) {
+            for (const auto* exact : kAllowedExact) {
+                if (key == exact) { key_allowed = true; break; }
+            }
+        }
+        if (!key_allowed) {
+            blog(LOG_WARNING,
+                "[aegis-obs-plugin] dock action rejected: type=vault_set request_id=%s key=%s error=key_not_allowed",
+                request_id.c_str(), key.c_str());
+            EmitDockActionResult(action_type, request_id, "rejected", false, "key_not_allowed", "");
             return false;
         }
         const bool ok = g_vault.Set(key, value);
