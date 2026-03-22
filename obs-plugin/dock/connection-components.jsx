@@ -126,8 +126,9 @@ function buildSrtPlayerUrl(host, streamId) {
 }
 
 // --- Expanded detail: secrets + per-link + edit/remove ---
-function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
+function ConnectionExpandedDetail({ conn, sendAction, onRemove, streamSlots }) {
   const isByor = conn.type === "byor";
+  const slots = Array.isArray(streamSlots) ? streamSlots : [];
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(conn.name || "");
   const [isRenamingSlot, setIsRenamingSlot] = useState(false);
@@ -136,6 +137,7 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
   const [editPort, setEditPort] = useState(String(conn.relay_port || 5000));
   const [editStreamId, setEditStreamId] = useState(conn.stream_id || "");
   const [editRegion, setEditRegion] = useState(conn.managed_region || "us-east");
+  const [editSlot, setEditSlot] = useState(String(conn.stream_slot_number ?? ""));
 
   const inputStyle = {
     width: "100%", height: 21, borderRadius: 3,
@@ -164,6 +166,7 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
       payload.stream_id = editStreamId.trim();
     } else {
       payload.managed_region = editRegion;
+      if (editSlot !== "") payload.stream_slot = parseInt(editSlot, 10);
     }
     sendAction(payload);
     setIsEditing(false);
@@ -175,6 +178,7 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
     setEditPort(String(conn.relay_port || 5000));
     setEditStreamId(conn.stream_id || "");
     setEditRegion(conn.managed_region || "us-east");
+    setEditSlot(String(conn.stream_slot_number ?? ""));
     setIsEditing(false);
   };
 
@@ -228,15 +232,34 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
           </div>
         )}
         {!isByor && (
-          <div style={{ marginBottom: 6 }}>
-            <div style={labelStyle}>Region</div>
-            <select
-              value={editRegion}
-              onChange={e => setEditRegion(e.target.value)}
-              style={{ ...inputStyle, height: 23 }}
-            >
-              {MANAGED_REGIONS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
+          <div>
+            <div style={{ marginBottom: 6 }}>
+              <div style={labelStyle}>Region</div>
+              <select
+                value={editRegion}
+                onChange={e => setEditRegion(e.target.value)}
+                style={{ ...inputStyle, height: 23 }}
+              >
+                {MANAGED_REGIONS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+              </select>
+            </div>
+            {slots.length > 0 && (
+              <div style={{ marginBottom: 6 }}>
+                <div style={labelStyle}>Relay Slot</div>
+                <select
+                  value={editSlot}
+                  onChange={e => setEditSlot(e.target.value)}
+                  style={{ ...inputStyle, height: 23 }}
+                >
+                  <option value="">— keep current —</option>
+                  {slots.map(s => (
+                    <option key={s.slot_number} value={s.slot_number}>
+                      {s.label || ("Relay " + (s.slot_number + 1))}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         )}
         <div style={{ display: "flex", gap: 6 }}>
@@ -539,7 +562,7 @@ function RelayLinkBars({ conn, networkConnections }) {
 }
 
 // --- Single connection row ---
-function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
+function ConnectionRow({ conn, sendAction, isCompact, networkConnections, streamSlots }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showLinks, setShowLinks] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(0);
@@ -636,7 +659,7 @@ function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
       )}
 
       {showDetails && (
-        <ConnectionExpandedDetail conn={conn} sendAction={sendAction} onRemove={handleRemove} />
+        <ConnectionExpandedDetail conn={conn} sendAction={sendAction} onRemove={handleRemove} streamSlots={streamSlots} />
       )}
     </div>
   );
@@ -1052,7 +1075,7 @@ export function ConnectionListSection({
       )}
 
       {connections.map(conn => (
-        <ConnectionRow key={conn.id} conn={conn} sendAction={sendAction} isCompact={isCompact} networkConnections={networkConnections} />
+        <ConnectionRow key={conn.id} conn={conn} sendAction={sendAction} isCompact={isCompact} networkConnections={networkConnections} streamSlots={authStreamSlots || []} />
       ))}
 
       {!showAddModal && (
