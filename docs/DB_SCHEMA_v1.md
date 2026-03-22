@@ -162,7 +162,69 @@ Columns:
 Checks:
 - `status in ('provisioning','active','grace','stopped')`
 
-## 3.7 `idempotency_records`
+## 3.7 `relay_pool`
+
+Purpose:
+- Registry of always-on relay VPS nodes available for pool assignment.
+
+Columns:
+- `server_id` text primary key
+- `provider` text not null
+- `host` text not null
+- `ip` inet not null
+- `region` text not null
+- `status` text not null default `active`
+- `current_sessions` integer not null default 0
+- `max_sessions` integer not null default 10
+- `created_at` timestamptz default now()
+- `last_health_check` timestamptz
+- `health_status` text default `unknown`
+
+Checks:
+- `status in ('active','draining','offline')`
+- `health_status in ('healthy','unhealthy','unknown')`
+
+Notes:
+- `AssignRelay` uses `FOR UPDATE SKIP LOCKED` to pick the least-loaded healthy server.
+- `current_sessions` is incremented on assign, decremented on release.
+
+## 3.8 `relay_assignments`
+
+Purpose:
+- Per-session relay pool allocations. Released when the session ends.
+
+Columns:
+- `id` bigserial primary key
+- `user_id` text not null
+- `session_id` text not null unique
+- `connection_id` text null
+- `server_id` text not null references `relay_pool(server_id)`
+- `stream_token` text not null
+- `assigned_at` timestamptz default now()
+- `released_at` timestamptz null
+
+Notes:
+- `released_at IS NULL` means the allocation is active.
+- Session queries join `relay_pool` via `relay_assignments` to resolve the relay's `host` and `ip` without an AWS API call.
+
+## 3.9 `user_stream_slots`
+
+Purpose:
+- Named per-user stream slots for multi-stream setups. Each slot has its own `stream_token`.
+
+Columns:
+- `user_id` text not null
+- `slot_number` integer not null
+- `label` text null
+- `stream_token` text not null unique
+- Primary key: `(user_id, slot_number)`
+
+Notes:
+- `stream_token` is globally unique; SLS stream IDs are `live_<token>` / `play_<token>`.
+- `label` is user-assigned (e.g., "Primary", "Backup"). Settable via `PUT /api/v1/user/stream-slots/{slotNumber}/label`.
+- Exposed to the plugin via `GET /api/v1/auth/session` (`stream_slots` array) and `GET /api/v1/user/stream-slots`.
+
+## 3.10 `idempotency_records`
 
 Purpose:
 - Store dedupe semantics for `POST /relay/start`.

@@ -89,6 +89,9 @@ export function useSimulatedState() {
         managed_region: "us-east",
         session_id: "ses_sim_abc123",
         relay_ip: "0.0.0.0",
+        relay_host: "kc1.relay.telemyapp.com",
+        relay_port: 5000,
+        stream_id: "live_simtoken123",
         stats: { bitrate_kbps: Math.round(sim2 * 1.1), rtt_ms: 31, available: true },
         per_link: {
           available: true,

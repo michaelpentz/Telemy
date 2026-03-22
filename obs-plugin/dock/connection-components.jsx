@@ -332,24 +332,45 @@ function ConnectionExpandedDetail({ conn, sendAction, onRemove }) {
                 )}
               </div>
             )}
-            {conn.session_id && (
-              <SecretField label="Session ID" value={conn.session_id} copyValue={conn.session_id} />
-            )}
             {conn.relay_ip && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 9 }}>
                 <span style={{ color: "var(--theme-text-muted, #8b8f98)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>Relay IP</span>
                 <span style={{ color: "var(--theme-text, #e0e2e8)", fontWeight: 600, fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>{conn.relay_ip}</span>
               </div>
             )}
+            {conn.status === "connected" && (
+              <div>
+                {(() => {
+                  const host = conn.relay_host || conn.relay_hostname || conn.relay_ip || "";
+                  const token = conn.stream_token || conn.stream_slot_token || "";
+                  const streamId = conn.stream_id || (token ? "live_" + token : "");
+                  return (<>
+                    {host ? (
+                      <SecretField label="Host" value={host} copyValue={host} />
+                    ) : null}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                      <span style={labelStyle}>Ingest Port</span>
+                      <span style={{ fontSize: 10, color: "var(--theme-text, #e0e2e8)", fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)" }}>
+                        {conn.relay_port || 5000}
+                      </span>
+                    </div>
+                    {streamId && (
+                      <SecretField label="Stream ID" value={streamId} copyValue={streamId} />
+                    )}
+                    {token && (
+                      <SecretField
+                        label="Media Source URL"
+                        value={"srt://" + (host || "kc1.relay.telemyapp.com") + ":4000?streamid=play_" + token}
+                        copyValue={"srt://" + (host || "kc1.relay.telemyapp.com") + ":4000?streamid=play_" + token}
+                      />
+                    )}
+                  </>);
+                })()}
+              </div>
+            )}
           </div>
         )}
-        {conn.relay_host && (
-          <SecretField
-            label="Media Source URL"
-            value={buildSrtPlayerUrl(conn.relay_host, conn.stream_id)}
-            copyValue={buildSrtPlayerUrl(conn.relay_host, conn.stream_id)}
-          />
-        )}
+
         {conn.status === "error" && conn.error_msg && (
           <div style={{
             fontSize: 9, color: "#da3633", marginTop: 4, padding: "4px 6px",

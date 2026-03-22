@@ -125,7 +125,7 @@ func HashJSON(v any) (string, error) {
 func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), host(rp.ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
@@ -167,7 +167,7 @@ limit 1`
 func (s *Store) GetActiveSessionByConnection(ctx context.Context, userID, connectionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), host(rp.ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
@@ -209,7 +209,7 @@ limit 1`
 func (s *Store) ListActiveSessions(ctx context.Context, userID string) ([]model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), host(rp.ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
@@ -330,7 +330,7 @@ values
 func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID, connectionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), host(rp.ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
@@ -439,7 +439,7 @@ where user_id = $1 and id = $2 and status = 'provisioning'`
 func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, sessionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), host(rp.ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
        coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s

@@ -217,9 +217,11 @@ switch_scene action â”€â”€> OBS API (obs_frontend_set_current_scene)
 - `relay_start` / `relay_stop` â€” relay lifecycle
 - `save_scene_prefs` / `load_scene_prefs` â€” native disk persistence
 
-## Relay Stack (AWS)
+## Relay Stack
 
-EC2 relay instances run a dual-process stack via Docker Compose for bonded SRT:
+Relay servers are always-on VPS nodes registered in the `relay_pool` table. The current deployment uses a single Advin KVM VPS node. The `PoolProvisioner` assigns sessions from the pool dynamically — no EC2 boot delay, no per-user EIP.
+
+Each relay node runs a dual-process stack via Docker Compose for bonded SRT:
 
 | Component | Port | Protocol | Purpose |
 |-----------|------|----------|---------|
@@ -228,32 +230,25 @@ EC2 relay instances run a dual-process stack via Docker Compose for bonded SRT:
 | `SLS` (v1.5.0) | 4000 | UDP | **SRT Player**: OBS pulls the bonded stream from here. |
 | Management | 3000 | TCP | SLS Web UI (restricted). |
 | Backend API | 8090 | TCP | srtla-receiver control API (restricted). |
+| Per-link stats | 5080 | TCP | Custom srtla_rec stats endpoint. |
 
 ### Connection Schemes
-- **Encoder (IRL Pro)**: `srtla://{relay_host}:5000` with `streamid=live_{stream_token}`.
-- **Player (OBS)**: `srt://{relay_host}:4000?streamid=play_{stream_token}`.
+- **Encoder (IRL Pro)**: `srtla://<relay-host>:5000` with `streamid=live_<stream-token>`.
+- **Player (OBS)**: `srt://<relay-host>:4000?streamid=play_<stream-token>`.
 
 Notes:
-- `relay_host` may be a relay IP or the user's relay hostname when available.
-- `stream_token` is permanent per user and is the sender-facing security boundary for SLS publish/play.
+- `relay_host` is the DNS hostname from `relay_pool.host`, with the node's static IP as fallback.
+- `stream_token` is per-user (or per-slot for multi-stream setups) and is the sender-facing security boundary for SLS publish/play.
 - This is intentionally separate from plugin-to-backend authentication.
 
 The stack handles packet reordering and bonding overhead, resulting in ~5s E2E latency with high reliability over unstable cellular links.
 
-Provisioned via Go control plane (`aegis-control-plane/`):
-- `internal/relay/aws.go` â€” EC2 RunInstances with user-data bootstrap, Elastic IP management
-- `scripts/relay-user-data.sh` â€” Docker + srtla-receiver install (~2-3 min boot)
-- Security group `aegis-relay-sg` â€” public UDP ports + restricted TCP management
+Relay nodes use static IPs with permanent DNS records. Mobile clients (IRL Pro) see a stable hostname for the lifetime of the node.
 
-### Elastic IP (Stable Relay Addresses)
-
-Each user gets one AWS Elastic IP per region, allocated on first provision and reused for all subsequent provisions. This ensures mobile clients (IRL Pro) never lose connectivity due to stale DNS caches.
-
-- **Allocation**: First provision allocates an EIP via `ec2:AllocateAddress`, stored in `users.eip_allocation_id` and `users.eip_public_ip`.
-- **Association**: Each provision calls `ec2:AssociateAddress` to bind the EIP to the new instance.
-- **DNS**: The relay DNS record (`<slug>.relay.telemyapp.com`) is permanent â€” created once, never deleted on deprovision. Instance termination auto-disassociates the EIP (AWS handles this).
-- **Fallback**: If EIP allocation fails (quota, permissions), the pipeline falls back to auto-assigned IP + DNS update.
-- **Cost**: Free while attached to a running instance; ~$3.60/mo per user when idle.
+Relay sessions are provisioned via `PoolProvisioner` in the Go control plane:
+- `internal/relay/pool_provisioner.go` — assigns from `relay_pool`, registers stream ID via SLS API, returns session details in <1 second
+- `internal/relay/sls_client.go` — SLS management API client (POST/DELETE stream IDs on port 8090)
+- No cloud API calls, no boot delay; relay nodes are always-on and pre-running
 
 
 ## Authentication & Session Management
@@ -429,7 +424,8 @@ If a free-tier user has not configured their BYOR relay, the API returns a yor_
 
 ### relay_mode in Auth Session Response
 
-GET /api/v1/auth/session now includes a elay_mode field indicating the user's relay access mode:
+GET /api/v1/auth/session now includes a 
+elay_mode field indicating the user's relay access mode:
 
 - yor � free-tier user with BYOR relay configured
 - managed � paid-tier user with cloud-provisioned relay
@@ -440,22 +436,51 @@ The dock UI uses this field to show the appropriate relay controls (BYOR setting
 
 ### Plugin ConnectDirect / DisconnectDirect
 
-For BYOR relays, the C++ plugin uses ConnectDirect and DisconnectDirect paths instead of the managed provisioning lifecycle. The dock bridge wires elay_connect_direct and elay_disconnect_direct actions to native handlers that connect to the user-specified relay host without any control-plane provisioning step.
+For BYOR relays, the C++ plugin uses ConnectDirect and DisconnectDirect paths instead of the managed provisioning lifecycle. The dock bridge wires 
+elay_connect_direct and 
+elay_disconnect_direct actions to native handlers that connect to the user-specified relay host without any control-plane provisioning step.
 
 ### Stats Degradation for Non-SLS Relays
 
 BYOR relays may not run the same SLS + srtla-receiver stack as managed relays. The plugin handles missing or unreachable stats endpoints gracefully � relay telemetry cards show "Stats unavailable" rather than erroring, and the core relay connection remains functional without stats polling.
 
 
-## PoolProvisioner (Phase 3 � Shared Relay Pool)
+## Stream Slot System
+
+Multi-stream users can have multiple named stream slots, each with its own `stream_token`. This enables separate publish/play stream IDs on the relay without sharing a single token.
+
+### Database
+
+`user_stream_slots` table:
+- `user_id` / `slot_number` — composite primary key
+- `label` — user-assigned name (e.g., "Primary", "Backup")
+- `stream_token` — per-slot token; globally unique. SLS stream IDs are `live_<token>` / `play_<token>`.
+
+Slots are provisioned by the control plane at account creation or on upgrade. The `users.stream_token` field is the default single-slot token for backwards compatibility.
+
+### API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/v1/user/stream-slots` | List all stream slots for the authenticated user |
+| PUT | `/api/v1/user/stream-slots/{slotNumber}/label` | Rename a stream slot |
+
+The session endpoint (`GET /api/v1/auth/session`) includes a `stream_slots` array in the response, which the dock uses to populate connection slot pickers.
+
+### Plugin Integration
+
+The dock connection panel shows a slot picker when adding a managed connection. Selected slot number is sent with the `relay_start` action (`stream_slot` field). The C++ plugin stores `stream_slot_number` and `stream_slot_label` per `RelayConnectionConfig` and surfaces them in the snapshot for dock display.
+
+
+## PoolProvisioner (Phase 3 � Shared Relay Pool)
 
 v0.0.5 Phase 3 replaces per-user ephemeral EC2 instances with a shared relay pool of always-on VPS nodes. The `PoolProvisioner` implements the same `Provisioner` interface as `AWSProvisioner` and `BYORProvisioner`.
 
 ### How It Works
 
-1. **AssignRelay** � Atomically picks the least-loaded healthy server from `relay_pool` (`FOR UPDATE SKIP LOCKED`), preferring the requested region. Increments `current_sessions`.
-2. **CreateStreamID** � Calls the SLS management API (port 8090) on the assigned relay to register `live_{stream_token}` / `play_{stream_token}`.
-3. **Return** � Returns the server's IP and SRT port. The provision pipeline's `pool` fast-path skips EC2 steps and activates the session immediately (<1 second).
+1. **AssignRelay** � Atomically picks the least-loaded healthy server from `relay_pool` (`FOR UPDATE SKIP LOCKED`), preferring the requested region. Increments `current_sessions`.
+2. **CreateStreamID** � Calls the SLS management API (port 8090) on the assigned relay to register `live_{stream_token}` / `play_{stream_token}`.
+3. **Return** � Returns the server's IP and SRT port. The provision pipeline's `pool` fast-path skips EC2 steps and activates the session immediately (<1 second).
 
 Deprovision reverses this: deletes the stream ID from SLS, releases the assignment, decrements `current_sessions`.
 
@@ -479,15 +504,15 @@ The jobs runner includes a `pool_health_check` goroutine that runs every 60 seco
 
 ### Database Tables
 
-- `relay_pool` � Registered relay servers (server_id, host, ip, region, status, current_sessions, max_sessions, health_status). Migration: `0013_relay_pool.sql`.
-- `relay_assignments` � Per-session allocations (user_id, session_id, server_id, stream_token, assigned_at, released_at).
+- `relay_pool` � Registered relay servers (server_id, host, ip, region, status, current_sessions, max_sessions, health_status). Migration: `0013_relay_pool.sql`.
+- `relay_assignments` � Per-session allocations (user_id, session_id, server_id, stream_token, assigned_at, released_at).
 
 ## Control Plane Process Model
 
 The control plane has two entry points:
 
-- `cmd/api/main.go` � API server + background jobs (single-process). This is the default deployment: one binary handles HTTP requests and runs all background jobs (health checks, session rollups, outage reconciliation) as goroutines.
-- `cmd/jobs/main.go` � Standalone jobs worker. Runs only the background jobs without the HTTP server. Use this when you want to scale API request handling and background processing independently (e.g., API on one container, jobs on another).
+- `cmd/api/main.go` � API server + background jobs (single-process). This is the default deployment: one binary handles HTTP requests and runs all background jobs (health checks, session rollups, outage reconciliation) as goroutines.
+- `cmd/jobs/main.go` � Standalone jobs worker. Runs only the background jobs without the HTTP server. Use this when you want to scale API request handling and background processing independently (e.g., API on one container, jobs on another).
 
 For the current single-server Advin deployment, `cmd/api/main.go` is sufficient. The standalone jobs binary exists for future horizontal scaling.
 

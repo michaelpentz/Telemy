@@ -496,17 +496,41 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
         // Serialize relay connection configs (v0.0.5 multi-connection model)
         {
             const auto conn_configs = g_connection_manager.ListConnections();
+            // Fetch current relay session once — used to augment managed connected
+            // connections with hostname/stream_token (not stored in RelayConnectionConfig).
+            const auto session_opt = g_connection_manager.CurrentSession();
             QJsonArray relay_conns_arr;
             for (const auto& c : conn_configs) {
                 QJsonObject obj;
                 obj[QStringLiteral("id")]             = QString::fromStdString(c.id);
                 obj[QStringLiteral("name")]           = QString::fromStdString(c.name);
                 obj[QStringLiteral("type")]           = QString::fromStdString(c.type);
-                obj[QStringLiteral("relay_host")]     = QString::fromStdString(c.relay_host);
+                // For managed connections that are connected, relay_host lives in the
+                // RelaySession (not RelayConnectionConfig), so populate from session.
+                std::string effective_host = c.relay_host;
+                int effective_port         = c.relay_port;
+                std::string effective_stream_token;
+                if (c.type == "managed" && c.status == "connected" && session_opt) {
+                    // Prefer relay_hostname (DNS name); fall back to public_ip if hostname absent.
+                    if (!session_opt->relay_hostname.empty())
+                        effective_host = session_opt->relay_hostname;
+                    else if (!session_opt->public_ip.empty())
+                        effective_host = session_opt->public_ip;
+                    if (session_opt->srt_port > 0)
+                        effective_port = session_opt->srt_port;
+                    effective_stream_token = session_opt->stream_token;
+                }
+                // For managed connections stream_id is not stored in config — derive from token.
+                std::string effective_stream_id = c.stream_id;
+                if (c.type == "managed" && effective_stream_id.empty() && !effective_stream_token.empty()) {
+                    effective_stream_id = "live_" + effective_stream_token;
+                }
+                obj[QStringLiteral("relay_host")]     = QString::fromStdString(effective_host);
                 obj[QStringLiteral("relay_host_masked")] =
-                    QString::fromStdString(MaskRelayHost(c.relay_host));
-                obj[QStringLiteral("relay_port")]     = c.relay_port;
-                obj[QStringLiteral("stream_id")]      = QString::fromStdString(c.stream_id);
+                    QString::fromStdString(MaskRelayHost(effective_host));
+                obj[QStringLiteral("relay_port")]     = effective_port;
+                obj[QStringLiteral("stream_id")]      = QString::fromStdString(effective_stream_id);
+                obj[QStringLiteral("stream_token")]   = QString::fromStdString(effective_stream_token);
                 obj[QStringLiteral("managed_region")] = QString::fromStdString(c.managed_region);
                 obj[QStringLiteral("stream_slot_number")] = c.stream_slot_number;
                 obj[QStringLiteral("stream_slot_label")] = QString::fromStdString(c.stream_slot_label);

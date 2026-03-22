@@ -158,10 +158,19 @@ export default function AegisDock() {
   const relayConnections = (ds.relay_connections || []).map(conn => {
     if (conn.status !== "connected") return conn;
     const enriched = { ...conn };
-    // Managed connections get relay_host + stream_id from the active session
+    // Managed connections: relay_host/port/stream_token come from the active session.
+    // The C++ snapshot now populates these directly (v0.0.5+), but we also enrich
+    // here as a fallback for timing gaps or older DLL builds.
     if (conn.type === "managed") {
-      if (relay.relayHostname) enriched.relay_host = relay.relayHostname;
-      if (relay.streamToken) enriched.stream_id = relay.streamToken;
+      if (!enriched.relay_host) {
+        const host = relay.relayHostname || relay.publicIp || null;
+        if (host) enriched.relay_host = host;
+      }
+      if (!enriched.relay_port && relay.srtPort) enriched.relay_port = relay.srtPort;
+      // Set stream_token (not stream_id) so JSX can format "live_" + token correctly
+      if (!enriched.stream_id && !enriched.stream_token && relay.streamToken) {
+        enriched.stream_token = relay.streamToken;
+      }
     }
     if (relay.perLinkAvailable && Array.isArray(relay.links) && relay.links.length > 0) {
       const totalKbps = relay.ingestBitrateKbps || 0;
