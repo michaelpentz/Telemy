@@ -4,7 +4,7 @@ IRL streaming platform for OBS — native telemetry, relay management, and bonde
 
 ## What It Is
 
-Telemy is a single-DLL OBS plugin (`aegis-obs-plugin.dll`) that runs entirely inside the OBS process. It collects metrics directly from the OBS C API, manages relay connections (both managed AWS and Bring Your Own Relay), and drives a React dock UI via CEF JavaScript injection.
+Telemy is a single-DLL OBS plugin (`aegis-obs-plugin.dll`) that runs entirely inside the OBS process. It collects metrics directly from the OBS C API, manages relay connections (managed pool relays and Bring Your Own Relay), and drives a React dock UI via CEF JavaScript injection.
 
 No standalone process. No IPC. No Rust dependency.
 
@@ -58,13 +58,13 @@ NVML                                                |                     |
                                           ConnectionManager         Dock UI (React)
                                                |
                                                v
-                                          RelayClient --> HTTPS --> AWS Go Control Plane
+                                          RelayClient --> HTTPS --> Go Control Plane
 ```
 
 Key design decisions:
 - **ConnectionManager** owns all `RelayClient` instances and runs background stats polling so the OBS tick thread is never blocked by network I/O.
 - **ConfigVault** stores sensitive fields (JWT tokens, BYOR stream keys) in DPAPI-encrypted `vault.json`; non-sensitive settings in plain `config.json`.
-- **BYOR support** — free-tier users connect their own relay via `ConnectDirect`/`DisconnectDirect`, bypassing managed provisioning.
+- **BYOR support** — users can connect their own relay (no account required) via `ConnectDirect`/`DisconnectDirect`, bypassing managed provisioning.
 
 See `docs/ARCHITECTURE.md` for the full architecture reference.
 
@@ -76,7 +76,7 @@ See `docs/ARCHITECTURE.md` for the full architecture reference.
 | `docs/API_SPEC_v1.md` | Control plane REST API reference |
 | `docs/DB_SCHEMA_v1.md` | PostgreSQL schema |
 | `docs/AUTH_ENTITLEMENT_MODEL.md` | Auth layers and relay access model |
-| `docs/RELAY_DEPLOYMENT.md` | EC2 relay deployment guide |
+| `docs/RELAY_DEPLOYMENT.md` | Relay pool deployment guide |
 | `docs/STATE_MACHINE_v1.md` | IRL/Studio state machine spec |
 | `docs/QA_CHECKLIST_RELAY_TELEMETRY.md` | QA test checklist |
 | `CHANGELOG.md` | Version history |
