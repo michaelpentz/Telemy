@@ -1865,15 +1865,28 @@ bool DispatchDockAction(const std::string& action_json,
              request_id.c_str());
         std::string conn_id, name, relay_host, stream_id, managed_region;
         int relay_port = 5000;
+        int stream_slot_number = -1;
         (void)TryExtractJsonStringField(action_json, "id", &conn_id);
         (void)TryExtractJsonStringField(action_json, "name", &name);
         (void)TryExtractJsonStringField(action_json, "relay_host", &relay_host);
         (void)TryExtractJsonStringField(action_json, "stream_id", &stream_id);
         (void)TryExtractJsonStringField(action_json, "managed_region", &managed_region);
         (void)TryExtractJsonIntField(action_json, "relay_port", &relay_port);
+        (void)TryExtractJsonIntField(action_json, "stream_slot", &stream_slot_number);
         if (conn_id.empty()) {
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
             return false;
+        }
+        // Resolve new slot (if provided) from auth state.
+        std::optional<aegis::StreamSlot> new_slot;
+        if (stream_slot_number >= 0) {
+            std::lock_guard<std::mutex> lock(g_auth_state_mu);
+            new_slot = FindStreamSlotLocked(stream_slot_number);
+            if (!new_slot) {
+                EmitDockActionResult(action_type, request_id, "rejected", false,
+                                     "invalid_stream_slot", "");
+                return false;
+            }
         }
         // Find and update existing connection.
         auto conns = g_connection_manager.ListConnections();
@@ -1884,6 +1897,11 @@ bool DispatchDockAction(const std::string& action_json,
                 if (relay_port > 0)          c.relay_port = relay_port;
                 if (!stream_id.empty())      c.stream_id = stream_id;
                 if (!managed_region.empty()) c.managed_region = managed_region;
+                if (new_slot) {
+                    c.stream_slot_number = new_slot->slot_number;
+                    c.stream_slot_label  = new_slot->label;
+                    c.stream_token       = new_slot->stream_token;
+                }
                 g_connection_manager.UpdateConnection(conn_id, c);
                 break;
             }
