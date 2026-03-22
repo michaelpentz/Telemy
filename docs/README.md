@@ -11,7 +11,7 @@ v0.0.5 continues the all-native C++ OBS plugin architecture, originally introduc
 - **[AUTH_ENTITLEMENT_MODEL.md](AUTH_ENTITLEMENT_MODEL.md)**: Recommended user login, entitlement enforcement, plugin auth, and per-user stream security model for the paid relay feature.
 - **[STATE_MACHINE_v1.md](STATE_MACHINE_v1.md)**: Authoritative runtime state machine and scene decision rules for the native plugin.
 - **[DB_SCHEMA_v1.md](DB_SCHEMA_v1.md)**: PostgreSQL schema supporting the v0.0.5 control plane.
-- **[RELAY_DEPLOYMENT.md](RELAY_DEPLOYMENT.md)**: Guide for deploying and managing the AWS EC2 relay stack using `srtla-receiver`.
+- **[RELAY_DEPLOYMENT.md](RELAY_DEPLOYMENT.md)**: Guide for deploying and managing the relay pool stack on Advin VPS using `srtla-receiver`.
 
 ## Operational & QA Guides
 
@@ -23,4 +23,4 @@ v0.0.5 continues the all-native C++ OBS plugin architecture, originally introduc
 v0.0.3-era bridge / IPC documents and ad hoc review notes were removed from this directory and archived outside the `telemy-v0.0.5` repo tree so they do not ship with the current versioned docs.
 
 ---
-*Last Updated: 2026-03-08 (Sync after hardening pass)*
+*Last Updated: 2026-03-22 (AWS references retired, pool relay model)*

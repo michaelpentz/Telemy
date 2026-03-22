@@ -1,13 +1,13 @@
 # Telemy Auth and Entitlement Model (v0.0.5)
 
-This document defines the recommended access model for the paid AWS relay feature.
+This document defines the recommended access model for the paid managed relay feature.
 
 ## Summary
 
 Telemy uses three distinct security layers:
 
 1. **Account / entitlement layer**
-   - Controls who is allowed to activate the paid AWS relay feature.
+   - Controls who is allowed to activate the paid managed relay feature.
    - Enforced by the control plane.
 
 2. **Control-plane API layer**
@@ -65,7 +65,7 @@ OBS playback uses:
 
 ### Security
 
-- **OAuth/account login** gates paid AWS usage at the correct boundary: the backend.
+- **OAuth/account login** gates paid managed relay usage at the correct boundary: the backend.
 - **`cp_access_jwt`** protects control-plane API calls from the plugin.
 - **`stream_token`** protects publish/play rights inside SLS even if the relay host is known.
 
@@ -86,7 +86,7 @@ End users understand:
 - subscribe
 - click activate
 
-They do not want to manage AWS, relay internals, or custom transport credentials.
+They do not want to manage relay infrastructure, relay internals, or custom transport credentials.
 
 ---
 
@@ -108,7 +108,7 @@ Protocol-level auth on SRTLA `REG1` / `REG2` is transport hardening, not the mai
 It may still be desirable in the future, but it should not be treated as the primary mechanism for:
 - subscription gating
 - user access control
-- AWS spend protection
+- Relay cost protection
 
 Those belong at the account and control-plane layers.
 

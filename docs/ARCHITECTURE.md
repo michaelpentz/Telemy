@@ -128,7 +128,7 @@ NVML â”€â”€â”€â”€â”€â”€â”€â”˜            
                                                      â”‚                    â–¼
                                                      â”‚              Dock UI (React)
                                                      â–¼
-                                              RelayClient â”€â”€> HTTPS â”€â”€> AWS Go Control Plane
+                                              RelayClient â”€â”€> HTTPS â”€â”€> Go Control Plane
 ```
 
 ### Relay Telemetry Data Flow
@@ -407,14 +407,14 @@ Always call `bfree()` after `obs_module_config_path()` â€” OBS uses its own
 
 ## BYOR (Bring Your Own Relay) Architecture
 
-v0.0.5 introduces BYOR support, allowing free-tier users to connect their own relay infrastructure instead of using managed AWS provisioning.
+v0.0.5 introduces BYOR support, allowing users to connect their own relay infrastructure (no account required) alongside managed relay pool connections.
 
 ### Per-User Routing in handleRelayStart()
 
 handleRelayStart() routes relay requests based on the user's plan_tier:
 
 - **Free-tier users** (legacy path, will be removed)
-- **Managed tiers (pro, etc.)** → AWSProvisioner (cloud-provisioned relay with EIP)
+- **Managed tiers (pro, etc.)** → PoolProvisioner (Advin VPS shared relay pool)
 
 If a free-tier user has not configured their BYOR relay, the API returns a yor_config_required error prompting them to set up their relay details first.
 
@@ -473,7 +473,7 @@ Deprovision reverses this: deletes the stream ID from SLS, releases the assignme
 `handleRelayStart()` routes by `AEGIS_RELAY_PROVIDER`:
 
 - `pool` → `PoolProvisioner` (shared relay pool)
-- `aws` → `AWSProvisioner` (ephemeral EC2)
+- `aws` → `AWSProvisioner` (legacy, ephemeral EC2 — deprecated 2026-03-20)
 - `fake` → stub for development
 
 ### Pool Health Monitor

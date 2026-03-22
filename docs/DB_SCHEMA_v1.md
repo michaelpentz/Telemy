@@ -50,7 +50,7 @@ Columns:
 
 Notes:
 - `stream_token`: Permanent per-user stream identifier used to derive relay SLS stream IDs (`live_{stream_token}` / `play_{stream_token}`).
-- `eip_allocation_id` / `eip_public_ip`: Per-user Elastic IP for stable relay addresses. Allocated on first relay provision, reused for all subsequent provisions. Single-region (us-west-2) for now.
+- `eip_allocation_id` / `eip_public_ip`: *(Deprecated — legacy AWS EIP columns, unused by PoolProvisioner. Retained for archive reference.)*
 
 Checks:
 - `plan_tier in ('starter','standard','pro')`

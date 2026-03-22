@@ -1,9 +1,9 @@
 # QA Checklist: Relay Telemetry (v0.0.5 Native)
 
-This checklist verifies the flow of relay stats from the AWS Relay to the OBS Dock in the v0.0.5 native architecture.
+This checklist verifies the flow of relay stats from the managed relay to the OBS Dock in the v0.0.5 native architecture.
 
 ## 1. Prerequisites
-- [ ] Aegis Relay (AWS) instance active.
+- [ ] Aegis Relay (Advin VPS kc1) instance active.
 - [ ] Bonding-capable source (e.g., Larix Broadcaster on a phone with 5G + WiFi) connected to the relay.
 - [ ] OBS Studio running with `aegis-obs-plugin.dll` loaded.
 - [ ] Aegis Dock (Telemy v0.0.5) visible in OBS.

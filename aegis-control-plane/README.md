@@ -69,7 +69,7 @@ go run ./cmd/jobs
 - SQL migrations live in `migrations/` (latest include `0008_auth_sessions.sql`, `0009_plugin_login_attempts.sql`).
 - Relay provider modes:
   - `fake` (default, local dev)
-  - `aws` (EC2 provisioning)
+  - `aws` (legacy EC2 provisioning — deprecated)
 - Startup seeds `relay_manifests` from supported regions:
   - `fake` mode uses placeholder AMI IDs (`ami-fake-<region>`) if `AEGIS_AWS_AMI_MAP` is not set
   - `aws` mode requires real `AEGIS_AWS_AMI_MAP` entries
@@ -79,6 +79,10 @@ go run ./cmd/jobs
   - idempotency TTL cleanup (5m)
   - session usage rollup (1m)
   - outage reconciliation true-up (2m)
+
+### Deprecated: AWS EC2 Provisioning (retired 2026-03-20)
+
+The AWS provisioner is retained as archived code. Current deployments use pool mode (Advin VPS shared relay pool). Set AEGIS_RELAY_PROVIDER=pool for active deployments.
 - AWS mode env:
   - `AEGIS_RELAY_PROVIDER=aws`
   - `AEGIS_AWS_AMI_MAP=us-east-1=ami-xxxx,eu-west-1=ami-yyyy`
@@ -95,5 +99,5 @@ go test ./...
 
 Current coverage focus:
 - API stop handler idempotency and deprovision error behavior
-- Relay AWS terminate error classification
+- Legacy: Relay AWS terminate error classification
 - Store transaction behavior for `active/grace -> stopped` and already-stopped idempotency

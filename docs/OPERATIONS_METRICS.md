@@ -25,7 +25,7 @@ Background jobs:
 - `aegis_job_runs_total{job,status}`
 - `aegis_job_duration_ms_bucket|sum|count{job}`
 
-AWS reliability:
+Legacy AWS reliability (deprecated — retained for reference if AWS provisioner is re-enabled):
 - `aegis_aws_operations_total{op,region,status}`
 - `aegis_aws_operation_latency_ms_bucket|sum|count{op,region,status}`
 - `aegis_aws_retries_total{op,region,reason}`
@@ -59,14 +59,14 @@ If API and jobs run in separate processes, add a jobs HTTP metrics listener and 
 2. Provisioning latency (p95):
 - Alert if p95 of `aegis_relay_provision_latency_ms` exceeds `15000ms` for 15m.
 
-3. AWS retry exhaustion:
+3. Legacy — AWS retry exhaustion (only if AWS provisioner re-enabled):
 - Alert if `increase(aegis_aws_retry_exhausted_total[10m]) > 0`.
 
-4. Retry burst by region:
+4. Legacy — Retry burst by region (only if AWS provisioner re-enabled):
 - Alert if `sum by (region) (increase(aegis_aws_retries_total[5m]))` crosses your regional threshold.
 
 ## Operational Notes
 
 - `status="error"` reflects failed operation paths.
-- `status="ignored"` (terminate op) means AWS reported already-terminal state and no action was required.
+- `status="ignored"` (terminate op) means the provider reported an already-terminal state and no action was required.
 - Keep label cardinality low; do not add user/session IDs to metric labels.
