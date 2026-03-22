@@ -25,6 +25,7 @@ import (
 type Store interface {
 	StartOrGetSession(rctx context.Context, in store.StartInput) (*model.Session, bool, error)
 	ActivateProvisionedSession(rctx context.Context, in store.ActivateProvisionedSessionInput) (*model.Session, error)
+	ActivatePoolSession(ctx context.Context, userID, sessionID, pairToken, relayWSToken string) error
 	GetActiveSession(rctx context.Context, userID string) (*model.Session, error)
 	GetActiveSessionByConnection(rctx context.Context, userID, connectionID string) (*model.Session, error)
 	ListActiveSessions(rctx context.Context, userID string) ([]model.Session, error)
@@ -54,6 +55,7 @@ type Store interface {
 	GetUserRelaySlug(ctx context.Context, userID string) (string, error)
 	GetUserEIP(ctx context.Context, userID string) (string, string, error)
 	SetUserEIP(ctx context.Context, userID, allocationID, publicIP string) error
+	GetLastStoppedAt(ctx context.Context, userID string) (*time.Time, error)
 }
 
 type Server struct {

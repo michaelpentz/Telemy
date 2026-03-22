@@ -14,9 +14,9 @@ const MANAGED_REGIONS = [
 ];
 
 function connStatusColor(status) {
-  if (status === "connected")  return "#2ea043";
-  if (status === "connecting") return "#d29922";
-  if (status === "error")      return "#da3633";
+  if (status === "connected")   return "#2ea043";
+  if (status === "connecting" || status === "provisioning") return "#d29922";
+  if (status === "error")       return "#da3633";
   return "#5a5f6d";
 }
 
@@ -521,14 +521,18 @@ function RelayLinkBars({ conn, networkConnections }) {
 function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showLinks, setShowLinks] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
   const statusColor = connStatusColor(conn.status);
   const isConnected  = conn.status === "connected";
-  const isConnecting = conn.status === "connecting";
+  const isConnecting = conn.status === "connecting" || conn.status === "provisioning";
+  const inCooldown = !isConnected && !isConnecting && Date.now() < cooldownUntil;
 
   const handleAction = () => {
     if (isConnected || isConnecting) {
       sendAction({ type: "connection_disconnect", id: conn.id, requestId: genRequestId() });
+      setCooldownUntil(Date.now() + 3000);
     } else {
+      if (inCooldown) return;
       sendAction({ type: "connection_connect", id: conn.id, requestId: genRequestId() });
     }
   };
@@ -538,13 +542,14 @@ function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
   };
 
   const actionLabel = isConnected ? "Stop" : isConnecting ? "Cancel" : "Connect";
-  const actionColor = isConnected ? "var(--theme-text-muted, #5a5f6d)"
+  const actionColor = inCooldown ? "var(--theme-text-muted, #5a5f6d)"
+    : isConnected ? "var(--theme-text-muted, #5a5f6d)"
     : isConnecting ? "#d29922"
     : "#5ba3f5";
 
-  const showStatus = isConnected || isConnecting || conn.status === "error";
-  const statusText = isConnected ? "Active" : isConnecting ? "Connecting\u2026" : conn.error_msg || "Error";
-  const statusTextColor = isConnected ? "#2ea043" : isConnecting ? "#d29922" : "#da3633";
+  const showStatus = conn.status === "error";
+  const statusText = conn.error_msg || "Error";
+  const statusTextColor = "#da3633";
   const inlineStat = getRelayInlineStat(conn);
 
   return (
@@ -578,12 +583,12 @@ function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
         )}
         <MiniHealthBar conn={conn} onClick={() => setShowLinks(s => !s)} isExpanded={showLinks} />
         <ConnectionTypeBadge type={conn.type} />
-        <button onClick={handleAction} style={{
+        <button onClick={handleAction} disabled={inCooldown} style={{
           height: 20, padding: "0 8px", borderRadius: 3,
           border: "1px solid var(--theme-border, #2a2d35)",
           background: "var(--theme-panel, #20232b)",
           color: actionColor,
-          fontSize: 9, fontWeight: 600, cursor: "pointer", flexShrink: 0,
+          fontSize: 9, fontWeight: 600, cursor: inCooldown ? "default" : "pointer", flexShrink: 0,
           fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
         }}>{actionLabel}</button>
         <button
@@ -609,10 +614,6 @@ function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
         </div>
       )}
 
-      {isConnecting && conn.type === "managed" && (
-        <ManagedProvisionProgress step={conn.provision_step} />
-      )}
-
       {showDetails && (
         <ConnectionExpandedDetail conn={conn} sendAction={sendAction} onRemove={handleRemove} />
       )}
@@ -621,14 +622,15 @@ function ConnectionRow({ conn, sendAction, isCompact, networkConnections }) {
 }
 
 // --- Add Connection inline form (expands in place, no overlay) ---
-function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLabel, authPending, authLogin, authEntitlement, streamSlots, handleAuthLogin, handleAuthOpenBrowser }) {
+function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLabel, authPending, authLogin, authEntitlement, streamSlots, handleAuthLogin, handleAuthOpenBrowser, handleAuthCancel }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState("byor");
+  const [type, setType] = useState("managed");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("5000");
   const [streamId, setStreamId] = useState("");
   const [region, setRegion] = useState("us-east");
   const [selectedSlot, setSelectedSlot] = useState("");
+  const [autoFilledName, setAutoFilledName] = useState("");
   const [error, setError] = useState(null);
 
   const slots = Array.isArray(streamSlots) ? streamSlots : [];
@@ -660,7 +662,7 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
       sendAction({
         type: "connection_add", requestId: genRequestId(),
         name: trimName, conn_type: "managed", managed_region: region,
-        stream_slot: selectedSlot,
+        stream_slot: parseInt(selectedSlot, 10),
       });
     }
     onClose();
@@ -719,14 +721,6 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
       <div style={{ marginBottom: 8 }}>
         <div style={labelStyle}>Type</div>
         <div style={{ display: "flex", gap: 5 }}>
-          <button onClick={() => setType("byor")} style={{
-            flex: 1, height: 26, borderRadius: 3,
-            border: type === "byor" ? "1px solid #2d7aed80" : "1px solid var(--theme-border, #2a2d35)",
-            background: type === "byor" ? "#1a3a5a" : "var(--theme-panel, #20232b)",
-            color: type === "byor" ? "#5ba3f5" : "var(--theme-text-muted, #8b8f98)",
-            fontSize: 9, fontWeight: 700, cursor: "pointer",
-            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
-          }}>BYOR</button>
           <button onClick={() => setType("managed")} style={{
             flex: 1, height: 26, borderRadius: 3,
             border: type === "managed" ? "1px solid #2ea04380" : "1px solid var(--theme-border, #2a2d35)",
@@ -735,6 +729,14 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
             fontSize: 9, fontWeight: 700, cursor: "pointer",
             fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
           }}>Managed</button>
+          <button onClick={() => setType("byor")} style={{
+            flex: 1, height: 26, borderRadius: 3,
+            border: type === "byor" ? "1px solid #2d7aed80" : "1px solid var(--theme-border, #2a2d35)",
+            background: type === "byor" ? "#1a3a5a" : "var(--theme-panel, #20232b)",
+            color: type === "byor" ? "#5ba3f5" : "var(--theme-text-muted, #8b8f98)",
+            fontSize: 9, fontWeight: 700, cursor: "pointer",
+            fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+          }}>BYOR</button>
         </div>
       </div>
 
@@ -825,6 +827,20 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
               Open Browser
             </button>
           )}
+          {authPending && (
+            <button
+              onClick={handleAuthCancel}
+              style={{
+                width: "100%", marginTop: 5, padding: "4px 0",
+                border: "1px solid var(--theme-border, #2a2d35)",
+                borderRadius: 3, background: "var(--theme-panel, #20232b)",
+                cursor: "pointer", color: "var(--theme-text-muted, #8b8f98)", fontSize: 9,
+                fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+              }}
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
 
@@ -859,12 +875,23 @@ function AddConnectionForm({ onClose, sendAction, authAuthenticated, authPlanLab
             <div style={labelStyle}>Relay Slot</div>
             <select
               value={selectedSlot}
-              onChange={e => setSelectedSlot(e.target.value)}
+              onChange={e => {
+                const val = e.target.value;
+                setSelectedSlot(val);
+                if (val !== "") {
+                  const slot = slots.find(s => String(s.slot_number) === val);
+                  const slotLabel = slot ? (slot.label || ("Relay " + (slot.slot_number + 1))) : "";
+                  if (slotLabel && (name === "" || name === autoFilledName)) {
+                    setName(slotLabel);
+                    setAutoFilledName(slotLabel);
+                  }
+                }
+              }}
               style={{ ...inputStyle, height: 25, cursor: "pointer" }}
             >
               <option value="">Select a relay...</option>
               {slots.map(s => (
-                <option key={s.slot_number} value={s.stream_token}>
+                <option key={s.slot_number} value={s.slot_number}>
                   {s.label || ("Relay " + (s.slot_number + 1))}
                 </option>
               ))}
@@ -920,6 +947,7 @@ export function ConnectionListSection({
   handleAuthLogin,
   handleAuthLogout,
   handleAuthOpenBrowser,
+  handleAuthCancel,
   isCompact,
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -976,6 +1004,20 @@ export function ConnectionListSection({
             {authPending ? "Waiting\u2026" : "Sign In"}
           </button>
         )}
+        {authPending && (
+          <button
+            onClick={handleAuthCancel}
+            style={{
+              height: 20, padding: "0 6px", borderRadius: 3, marginLeft: 4,
+              border: "1px solid #2a2d35", background: "transparent",
+              color: "var(--theme-text-muted, #8b8f98)", fontSize: 9, flexShrink: 0,
+              cursor: "pointer",
+              fontFamily: "var(--theme-font-family, 'Segoe UI', system-ui, sans-serif)",
+            }}
+          >
+            Cancel
+          </button>
+        )}
       </div>
 
       {connections.length === 0 && (
@@ -1026,6 +1068,7 @@ export function ConnectionListSection({
           streamSlots={authStreamSlots || []}
           handleAuthLogin={handleAuthLogin}
           handleAuthOpenBrowser={handleAuthOpenBrowser}
+          handleAuthCancel={handleAuthCancel}
         />
       )}
     </div>

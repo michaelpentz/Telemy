@@ -58,6 +58,9 @@ struct RelayConnectionConfig {
     std::string stream_id;
     // Managed fields:
     std::string managed_region;
+    int         stream_slot_number = 0;
+    std::string stream_slot_label;
+    std::string stream_token;
     std::string session_id;
     // Runtime state (not persisted):
     std::string status;           // "idle", "connecting", "connected", "error"
@@ -106,9 +109,26 @@ public:
 
     // Starts managed relay asynchronously. Emits dock results via
     // EmitDockActionResult during provisioning and on completion/failure.
+    // connection_id: if non-empty, resets that connection's status to "idle" on failure.
     void StartManagedRelayAsync(const std::string& jwt,
                                 const std::string& request_id,
-                                int heartbeat_interval_sec);
+                                int heartbeat_interval_sec,
+                                const std::string& connection_id = "");
+
+    // Directly set a connection's runtime status (e.g. to reset to "idle" on failure).
+    void SetConnectionStatus(const std::string& id, const std::string& status);
+
+    void ConfigureManagedConnectionStart(const std::string& connection_id,
+                                         const std::string& region_preference,
+                                         int stream_slot_number,
+                                         const std::string& stream_token)
+    {
+        std::lock_guard<std::mutex> lock(relay_mu_);
+        if (relay_) {
+            relay_->ConfigureNextManagedStart(connection_id, region_preference,
+                                              stream_slot_number, stream_token);
+        }
+    }
 
     // Stops managed relay asynchronously. Gets current session internally.
     void StopManagedRelayAsync(const std::string& jwt,

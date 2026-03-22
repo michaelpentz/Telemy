@@ -61,11 +61,11 @@ func main() {
 		}
 		prov = awsProv
 	case "pool":
-		prov = relay.NewPoolProvisioner(st, cfg.RelaySharedKey)
+		prov = relay.NewPoolProvisioner(st, cfg.SLSAPIKey)
 	default:
 		prov = relay.NewFakeProvisioner()
 	}
-	jobs.NewRunner(st, relay.NewSLSClient("", cfg.RelaySharedKey)).Start(appCtx)
+	jobs.NewRunner(st, relay.NewSLSClient("", cfg.SLSAPIKey)).Start(appCtx)
 	dnsClient := dns.NewClient(cfg.RelayDomain)
 	appServer, handler := api.NewRouter(cfg, st, prov, dnsClient, api.WithAppContext(appCtx))
 

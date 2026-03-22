@@ -13,6 +13,7 @@ type Config struct {
 	DatabaseURL                string
 	JWTSecret                  string
 	RelaySharedKey             string
+	SLSAPIKey                  string
 	DefaultRegion              string
 	SupportedRegion            []string
 	RelayProvider              string
@@ -36,6 +37,7 @@ func LoadFromEnv() (Config, error) {
 		DatabaseURL:                os.Getenv("AEGIS_DATABASE_URL"),
 		JWTSecret:                  os.Getenv("AEGIS_JWT_SECRET"),
 		RelaySharedKey:             os.Getenv("AEGIS_RELAY_SHARED_KEY"),
+		SLSAPIKey:                  envOrDefault("AEGIS_SLS_API_KEY", os.Getenv("AEGIS_RELAY_SHARED_KEY")),
 		DefaultRegion:              envOrDefault("AEGIS_DEFAULT_REGION", "us-east-1"),
 		SupportedRegion:            splitCSV(envOrDefault("AEGIS_SUPPORTED_REGIONS", "us-east-1,eu-west-1")),
 		RelayProvider:              envOrDefault("AEGIS_RELAY_PROVIDER", "fake"),

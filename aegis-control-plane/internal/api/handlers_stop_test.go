@@ -65,6 +65,8 @@ func (m *mockStore) ActivateProvisionedSession(ctx context.Context, in store.Act
 	return nil, nil
 }
 
+func (m *mockStore) ActivatePoolSession(_ context.Context, _, _, _, _ string) error { return nil }
+
 func (m *mockStore) CreateAuthSession(ctx context.Context, in store.CreateAuthSessionInput) (*model.AuthSession, error) {
 	if m.createAuthSessionFn != nil {
 		return m.createAuthSessionFn(ctx, in)
@@ -261,6 +263,10 @@ func (m *mockStore) GetUserEIP(ctx context.Context, userID string) (string, stri
 
 func (m *mockStore) SetUserEIP(ctx context.Context, userID, allocationID, publicIP string) error {
 	return nil
+}
+
+func (m *mockStore) GetLastStoppedAt(ctx context.Context, userID string) (*time.Time, error) {
+	return nil, nil
 }
 
 type mockProvisioner struct {

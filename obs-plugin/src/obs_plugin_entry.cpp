@@ -16,6 +16,7 @@
 #include <obs-frontend-api.h>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -97,6 +98,18 @@ namespace {
 constexpr const char* kPluginAuthVaultKey = "plugin_auth_state";
 constexpr const char* kLegacyRelayJwtVaultKey = "relay_jwt";
 
+bool HasExpiredIsoTimestamp(const std::string& expires_at)
+{
+    if (expires_at.empty()) {
+        return true;
+    }
+    const QDateTime parsed = QDateTime::fromString(QString::fromStdString(expires_at), Qt::ISODate);
+    if (!parsed.isValid()) {
+        return true;
+    }
+    return parsed <= QDateTime::currentDateTimeUtc();
+}
+
 std::string CurrentControlPlaneJwt() {
     {
         std::lock_guard<std::mutex> lock(g_auth_state_mu);
@@ -147,6 +160,23 @@ void LoadPluginAuthStateFromVault() {
         return;
     }
     g_auth_state = *parsed;
+    if (!g_auth_state.login_attempt.Empty()) {
+        const bool have_session =
+            g_auth_state.authenticated ||
+            !g_auth_state.tokens.Empty() ||
+            !g_auth_state.session.user.id.empty();
+        if (have_session || HasExpiredIsoTimestamp(g_auth_state.login_attempt.expires_at)) {
+            blog(LOG_INFO, "[aegis-obs-plugin] clearing stale persisted login attempt");
+            g_auth_state.login_attempt.Clear();
+            if (g_auth_state.last_error_code.empty()) {
+                g_auth_state.last_error_code = "stale_login_attempt_cleared";
+            }
+            if (g_auth_state.last_error_message.empty()) {
+                g_auth_state.last_error_message = "stale_login_attempt_cleared";
+            }
+            SavePluginAuthStateToVaultLocked();
+        }
+    }
 }
 
 QJsonObject BuildAuthSnapshotJson() {
@@ -184,6 +214,16 @@ QJsonObject BuildAuthSnapshotJson() {
     } else {
         authObj.insert(QStringLiteral("active_relay"), QJsonValue(QJsonValue::Null));
     }
+
+    QJsonArray streamSlots;
+    for (const auto& slot : g_auth_state.session.stream_slots) {
+        QJsonObject streamSlotObj;
+        streamSlotObj.insert(QStringLiteral("slot_number"), slot.slot_number);
+        streamSlotObj.insert(QStringLiteral("label"), QString::fromStdString(slot.label));
+        streamSlotObj.insert(QStringLiteral("stream_token"), QString::fromStdString(slot.stream_token));
+        streamSlots.append(streamSlotObj);
+    }
+    authObj.insert(QStringLiteral("stream_slots"), streamSlots);
 
     QJsonObject loginObj;
     const bool loginPending = !g_auth_state.login_attempt.Empty();
@@ -468,6 +508,8 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
                 obj[QStringLiteral("relay_port")]     = c.relay_port;
                 obj[QStringLiteral("stream_id")]      = QString::fromStdString(c.stream_id);
                 obj[QStringLiteral("managed_region")] = QString::fromStdString(c.managed_region);
+                obj[QStringLiteral("stream_slot_number")] = c.stream_slot_number;
+                obj[QStringLiteral("stream_slot_label")] = QString::fromStdString(c.stream_slot_label);
                 obj[QStringLiteral("session_id")]     = QString::fromStdString(c.session_id);
                 obj[QStringLiteral("status")]         = QString::fromStdString(
                     c.status.empty() ? "idle" : c.status);

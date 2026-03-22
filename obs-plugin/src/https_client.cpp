@@ -260,10 +260,10 @@ HttpResponse HttpsClient::Get(const std::wstring& host,
 // POST
 // ---------------------------------------------------------------------------
 HttpResponse HttpsClient::Post(const std::wstring& host,
-                                 const std::wstring& path,
-                                 const std::string& json_body,
-                                 const std::wstring& bearer_token,
-                                 const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers)
+                                  const std::wstring& path,
+                                  const std::string& json_body,
+                                  const std::wstring& bearer_token,
+                                  const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers)
 {
     auto hp = parse_host_port(host);
 
@@ -361,6 +361,101 @@ HttpResponse HttpsClient::Post(const std::wstring& host,
     }
 
     // 7. Read status + body.
+    return read_response(reinterpret_cast<HINTERNET>(request.h));
+}
+
+HttpResponse HttpsClient::Put(const std::wstring& host,
+                              const std::wstring& path,
+                              const std::string& json_body,
+                              const std::wstring& bearer_token,
+                              const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers)
+{
+    auto hp = parse_host_port(host);
+
+#ifndef AEGIS_NO_OBS_LOG
+    {
+        int n = WideCharToMultiByte(CP_UTF8, 0, hp.host.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string narrow(n > 0 ? n : 1, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, hp.host.c_str(), -1, narrow.data(), n, nullptr, nullptr);
+        blog(LOG_INFO, "https: PUT connect host=%s port=%d tls=%d body_len=%d",
+             narrow.c_str(), (int)hp.port, (int)hp.use_tls, (int)json_body.size());
+    }
+#endif
+
+    WinHttpHandle connect;
+    connect.h = reinterpret_cast<void*>(
+        WinHttpConnect(
+            reinterpret_cast<HINTERNET>(session_),
+            hp.host.c_str(),
+            hp.port,
+            0));
+    if (!connect.valid()) {
+        throw_winhttp_error("WinHttpConnect", GetLastError());
+    }
+
+    WinHttpHandle request;
+    request.h = reinterpret_cast<void*>(
+        WinHttpOpenRequest(
+            reinterpret_cast<HINTERNET>(connect.h),
+            L"PUT",
+            path.c_str(),
+            nullptr,
+            WINHTTP_NO_REFERER,
+            WINHTTP_DEFAULT_ACCEPT_TYPES,
+            hp.use_tls ? WINHTTP_FLAG_SECURE : 0));
+    if (!request.valid()) {
+        throw_winhttp_error("WinHttpOpenRequest(PUT)", GetLastError());
+    }
+
+    if (!bearer_token.empty()) {
+        std::wstring auth_header = L"Authorization: Bearer " + bearer_token;
+        if (!WinHttpAddRequestHeaders(
+                reinterpret_cast<HINTERNET>(request.h),
+                auth_header.c_str(),
+                static_cast<DWORD>(-1L),
+                WINHTTP_ADDREQ_FLAG_ADD)) {
+            throw_winhttp_error("WinHttpAddRequestHeaders(Authorization/PUT)", GetLastError());
+        }
+    }
+
+    if (!WinHttpAddRequestHeaders(
+            reinterpret_cast<HINTERNET>(request.h),
+            L"Content-Type: application/json",
+            static_cast<DWORD>(-1L),
+            WINHTTP_ADDREQ_FLAG_ADD)) {
+        throw_winhttp_error("WinHttpAddRequestHeaders(Content-Type/PUT)", GetLastError());
+    }
+
+    for (const auto& kv : extra_headers) {
+        if (kv.first.empty()) {
+            continue;
+        }
+        std::wstring header_line = kv.first + L": " + kv.second;
+        if (!WinHttpAddRequestHeaders(
+                reinterpret_cast<HINTERNET>(request.h),
+                header_line.c_str(),
+                static_cast<DWORD>(-1L),
+                WINHTTP_ADDREQ_FLAG_ADD)) {
+            throw_winhttp_error("WinHttpAddRequestHeaders(Extra/PUT)", GetLastError());
+        }
+    }
+
+    DWORD body_len = static_cast<DWORD>(json_body.size());
+    if (!WinHttpSendRequest(
+            reinterpret_cast<HINTERNET>(request.h),
+            WINHTTP_NO_ADDITIONAL_HEADERS,
+            0,
+            const_cast<void*>(reinterpret_cast<const void*>(json_body.data())),
+            body_len,
+            body_len,
+            0)) {
+        throw_winhttp_error("WinHttpSendRequest(PUT)", GetLastError());
+    }
+
+    if (!WinHttpReceiveResponse(reinterpret_cast<HINTERNET>(request.h), nullptr)) {
+        throw_winhttp_error("WinHttpReceiveResponse(PUT)", GetLastError());
+    }
+
     return read_response(reinterpret_cast<HINTERNET>(request.h));
 }
 

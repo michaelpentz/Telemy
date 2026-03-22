@@ -2,7 +2,9 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/telemyapp/aegis-control-plane/internal/model"
 	"github.com/telemyapp/aegis-control-plane/internal/store"
@@ -50,9 +52,13 @@ func (p *PoolProvisioner) Provision(ctx context.Context, req ProvisionRequest) (
 
 	sls := p.newSLS(assignment.Host)
 	if err := sls.CreateStreamID(ctx, "live_"+req.StreamToken, "play_"+req.StreamToken, ""); err != nil {
-		// Best-effort release on SLS failure; server stays in pool.
-		_ = p.store.ReleaseRelay(ctx, req.SessionID)
-		return ProvisionResult{}, fmt.Errorf("pool: create stream id: %w", err)
+		// 409 Conflict means the stream ID already exists — treat as idempotent success.
+		var slsErr *SLSError
+		if !(errors.As(err, &slsErr) && slsErr.Code == http.StatusConflict) {
+			// Best-effort release on SLS failure; server stays in pool.
+			_ = p.store.ReleaseRelay(ctx, req.SessionID)
+			return ProvisionResult{}, fmt.Errorf("pool: create stream id: %w", err)
+		}
 	}
 
 	return ProvisionResult{

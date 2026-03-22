@@ -91,6 +91,12 @@ public:
                       const std::wstring& bearer_token = L"",
                       const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers = {});
 
+    HttpResponse Put(const std::wstring& host,
+                     const std::wstring& path,
+                     const std::string& json_body,
+                     const std::wstring& bearer_token = L"",
+                     const std::vector<std::pair<std::wstring, std::wstring>>& extra_headers = {});
+
 private:
     void* session_ = nullptr;  // HINTERNET — opaque in header, cast in .cpp
 };

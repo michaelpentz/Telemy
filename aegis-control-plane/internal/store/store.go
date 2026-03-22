@@ -125,11 +125,13 @@ func HashJSON(v any) (string, error) {
 func (s *Store) GetActiveSession(ctx context.Context, userID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
-       coalesce(u.relay_slug, '')
+       coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
+left join relay_assignments ra on ra.session_id = s.id and ra.released_at is null
+left join relay_pool rp on rp.server_id = ra.server_id
 left join users u on u.id = s.user_id
 where s.user_id = $1 and s.status in ('provisioning', 'active', 'grace')
 order by s.created_at desc
@@ -138,13 +140,14 @@ limit 1`
 	var out model.Session
 	var relayInstanceID string
 	var relaySlug string
+	var poolHost string
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := s.db.QueryRow(ctx, q, userID).Scan(
 		&out.ID, &out.UserID, &out.ConnectionID, &relayInstanceID, &out.RelayInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
-		&relaySlug,
+		&relaySlug, &poolHost,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -155,6 +158,8 @@ limit 1`
 	out.RelayRecordID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
 		out.RelayHostname = relaySlug + "." + s.relayDomain
+	} else if poolHost != "" {
+		out.RelayHostname = poolHost
 	}
 	return &out, nil
 }
@@ -162,11 +167,13 @@ limit 1`
 func (s *Store) GetActiveSessionByConnection(ctx context.Context, userID, connectionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
-       coalesce(u.relay_slug, '')
+       coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
+left join relay_assignments ra on ra.session_id = s.id and ra.released_at is null
+left join relay_pool rp on rp.server_id = ra.server_id
 left join users u on u.id = s.user_id
 where s.user_id = $1 and s.connection_id = $2 and s.status in ('provisioning', 'active', 'grace')
 order by s.created_at desc
@@ -175,13 +182,14 @@ limit 1`
 	var out model.Session
 	var relayInstanceID string
 	var relaySlug string
+	var poolHost string
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := s.db.QueryRow(ctx, q, userID, connectionID).Scan(
 		&out.ID, &out.UserID, &out.ConnectionID, &relayInstanceID, &out.RelayInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
-		&relaySlug,
+		&relaySlug, &poolHost,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -192,6 +200,8 @@ limit 1`
 	out.RelayRecordID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
 		out.RelayHostname = relaySlug + "." + s.relayDomain
+	} else if poolHost != "" {
+		out.RelayHostname = poolHost
 	}
 	return &out, nil
 }
@@ -199,11 +209,13 @@ limit 1`
 func (s *Store) ListActiveSessions(ctx context.Context, userID string) ([]model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
-       coalesce(u.relay_slug, '')
+       coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
+left join relay_assignments ra on ra.session_id = s.id and ra.released_at is null
+left join relay_pool rp on rp.server_id = ra.server_id
 left join users u on u.id = s.user_id
 where s.user_id = $1 and s.status in ('provisioning', 'active', 'grace')
 order by s.created_at desc`
@@ -219,13 +231,14 @@ order by s.created_at desc`
 		var sess model.Session
 		var relayInstanceID string
 		var relaySlug string
+		var poolHost string
 		var stoppedAt *time.Time
 		var wsURLIgnored string
 		if err := rows.Scan(
 			&sess.ID, &sess.UserID, &sess.ConnectionID, &relayInstanceID, &sess.RelayInstanceID, &sess.Status, &sess.ProvisionStep, &sess.Region, &sess.PairToken, &sess.RelayWSToken, &sess.StreamToken,
 			&sess.PublicIP, &sess.SRTPort, &wsURLIgnored,
 			&sess.StartedAt, &stoppedAt, &sess.DurationSeconds, &sess.GraceWindowSeconds, &sess.MaxSessionSeconds,
-			&relaySlug,
+			&relaySlug, &poolHost,
 		); err != nil {
 			return nil, err
 		}
@@ -233,6 +246,8 @@ order by s.created_at desc`
 		sess.RelayRecordID = strPtr(relayInstanceID)
 		if relaySlug != "" && sess.PublicIP != "" {
 			sess.RelayHostname = relaySlug + "." + s.relayDomain
+		} else if poolHost != "" {
+			sess.RelayHostname = poolHost
 		}
 		out = append(out, sess)
 	}
@@ -315,11 +330,13 @@ values
 func (s *Store) getActiveSessionTx(ctx context.Context, tx pgx.Tx, userID, connectionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
-       coalesce(u.relay_slug, '')
+       coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
+left join relay_assignments ra on ra.session_id = s.id and ra.released_at is null
+left join relay_pool rp on rp.server_id = ra.server_id
 left join users u on u.id = s.user_id
 where s.user_id = $1
   and (($2 = '' and s.connection_id is null) or s.connection_id = nullif($2, ''))
@@ -330,13 +347,14 @@ for update of s`
 	var out model.Session
 	var relayInstanceID string
 	var relaySlug string
+	var poolHost string
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID, connectionID).Scan(
 		&out.ID, &out.UserID, &out.ConnectionID, &relayInstanceID, &out.RelayInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
-		&relaySlug,
+		&relaySlug, &poolHost,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -347,6 +365,8 @@ for update of s`
 	out.RelayRecordID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
 		out.RelayHostname = relaySlug + "." + s.relayDomain
+	} else if poolHost != "" {
+		out.RelayHostname = poolHost
 	}
 	return &out, nil
 }
@@ -396,27 +416,50 @@ where user_id = $1 and id = $2 and status = 'provisioning'`
 	return sess, nil
 }
 
+// ActivatePoolSession sets pair_token and relay_ws_token on a provisioning session
+// for the pool provider. Unlike ActivateProvisionedSession it does not insert into
+// relay_instances — pool servers are tracked in relay_pool / relay_assignments.
+func (s *Store) ActivatePoolSession(ctx context.Context, userID, sessionID, pairToken, relayWSToken string) error {
+	const q = `
+update sessions
+set pair_token = $3,
+    relay_ws_token = $4,
+    updated_at = now()
+where user_id = $1 and id = $2 and status = 'provisioning'`
+	tag, err := s.db.Exec(ctx, q, userID, sessionID, pairToken, relayWSToken)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) getSessionByIDTx(ctx context.Context, tx pgx.Tx, userID, sessionID string) (*model.Session, error) {
 	const q = `
 select s.id, s.user_id, coalesce(s.connection_id, ''), coalesce(s.relay_instance_id, ''), coalesce(ri.instance_id, ''), s.status, coalesce(s.provision_step, ''), s.region, s.pair_token, s.relay_ws_token, u.stream_token,
-       coalesce(host(ri.public_ip), ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
+       coalesce(host(ri.public_ip), ra.ip, ''), coalesce(ri.srt_port, 5000), coalesce(ri.ws_url, ''),
        s.started_at, s.stopped_at, s.duration_seconds, s.grace_window_seconds, s.max_session_seconds,
-       coalesce(u.relay_slug, '')
+       coalesce(u.relay_slug, ''), coalesce(rp.host, '')
 from sessions s
 left join relay_instances ri on ri.id = s.relay_instance_id
+left join relay_assignments ra on ra.session_id = s.id and ra.released_at is null
+left join relay_pool rp on rp.server_id = ra.server_id
 left join users u on u.id = s.user_id
 where s.user_id = $1 and s.id = $2
 limit 1`
 	var out model.Session
 	var relayInstanceID string
 	var relaySlug string
+	var poolHost string
 	var stoppedAt *time.Time
 	var wsURLIgnored string
 	if err := tx.QueryRow(ctx, q, userID, sessionID).Scan(
 		&out.ID, &out.UserID, &out.ConnectionID, &relayInstanceID, &out.RelayInstanceID, &out.Status, &out.ProvisionStep, &out.Region, &out.PairToken, &out.RelayWSToken, &out.StreamToken,
 		&out.PublicIP, &out.SRTPort, &wsURLIgnored,
 		&out.StartedAt, &stoppedAt, &out.DurationSeconds, &out.GraceWindowSeconds, &out.MaxSessionSeconds,
-		&relaySlug,
+		&relaySlug, &poolHost,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -427,6 +470,8 @@ limit 1`
 	out.RelayRecordID = strPtr(relayInstanceID)
 	if relaySlug != "" && out.PublicIP != "" {
 		out.RelayHostname = relaySlug + "." + s.relayDomain
+	} else if poolHost != "" {
+		out.RelayHostname = poolHost
 	}
 	return &out, nil
 }
@@ -505,6 +550,23 @@ where id = $1`
 		return nil, err
 	}
 	return out, nil
+}
+
+// GetLastStoppedAt returns the stopped_at timestamp of the most recently stopped
+// session for userID, or nil if no stopped sessions exist.
+func (s *Store) GetLastStoppedAt(ctx context.Context, userID string) (*time.Time, error) {
+	var stoppedAt *time.Time
+	err := s.db.QueryRow(ctx,
+		`SELECT stopped_at FROM sessions WHERE user_id = $1 AND status = 'stopped' ORDER BY stopped_at DESC LIMIT 1`,
+		userID,
+	).Scan(&stoppedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return stoppedAt, nil
 }
 
 func (s *Store) GetUsageCurrent(ctx context.Context, userID string) (*model.UsageCurrent, error) {

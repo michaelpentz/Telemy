@@ -10,6 +10,7 @@
 #include <obs-frontend-api.h>
 #include <QDir>
 #include <QDesktopServices>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -70,9 +71,12 @@ static std::mutex g_pending_relay_actions_mu;
 static std::vector<PendingRelayAction> g_pending_relay_actions;
 static constexpr std::chrono::milliseconds kDockActionCompletionTimeoutMs(3000);
 static constexpr std::chrono::milliseconds kDockActionDuplicateWindowMs(1500);
+static constexpr std::chrono::seconds      kConnectRateLimitWindow(3);
 static std::uint64_t g_local_dock_action_seq = 0;
 static std::mutex g_recent_dock_actions_mu;
 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_recent_dock_actions;
+static std::mutex g_connect_rate_limit_mu;
+static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_connect_rate_limit;
 
 // ---------------------------------------------------------------------------
 // Auth worker lifetime tracking (use-after-free fix for detached auth threads)
@@ -118,6 +122,39 @@ bool PersistAuthStateLocked() {
         (void)g_vault.Set(kLegacyRelayJwtVaultKey, g_auth_state.tokens.cp_access_jwt);
     }
     return ok;
+}
+
+void ClearLoginAttemptStateLocked(const std::string& error_code,
+                                  const std::string& error_message) {
+    g_auth_state.login_attempt.Clear();
+    g_auth_state.last_error_code = error_code;
+    g_auth_state.last_error_message = error_message;
+    PersistAuthStateLocked();
+}
+
+std::optional<aegis::StreamSlot> FindStreamSlotLocked(int slot_number) {
+    if (slot_number < 0) {
+        return std::nullopt;
+    }
+    const auto it = std::find_if(
+        g_auth_state.session.stream_slots.begin(),
+        g_auth_state.session.stream_slots.end(),
+        [slot_number](const aegis::StreamSlot& slot) {
+            return slot.slot_number == slot_number;
+        });
+    if (it == g_auth_state.session.stream_slots.end()) {
+        return std::nullopt;
+    }
+    return *it;
+}
+
+void UpdateStreamSlotLabelInAuthStateLocked(int slot_number, const std::string& label) {
+    for (auto& slot : g_auth_state.session.stream_slots) {
+        if (slot.slot_number == slot_number) {
+            slot.label = label;
+            break;
+        }
+    }
 }
 
 std::string CurrentControlPlaneJwtForActions() {
@@ -184,6 +221,16 @@ std::string BuildAuthStateDetailJson() {
         usageObj["remaining_seconds"] = g_auth_state.session.usage.remaining_seconds;
         usageObj["overage_seconds"] = g_auth_state.session.usage.overage_seconds;
         authObj["usage"] = usageObj;
+
+        QJsonArray streamSlots;
+        for (const auto& slot : g_auth_state.session.stream_slots) {
+            QJsonObject slotObj;
+            slotObj["slot_number"] = slot.slot_number;
+            slotObj["label"] = QString::fromStdString(slot.label);
+            slotObj["stream_token"] = QString::fromStdString(slot.stream_token);
+            streamSlots.append(slotObj);
+        }
+        authObj["stream_slots"] = streamSlots;
 
         QJsonObject loginObj;
         loginObj["pending"] = !g_auth_state.login_attempt.Empty();
@@ -725,6 +772,10 @@ void ClearAllPendingDockActions() {
         std::lock_guard<std::mutex> lock(g_recent_dock_actions_mu);
         g_recent_dock_actions.clear();
     }
+    {
+        std::lock_guard<std::mutex> lk(g_connect_rate_limit_mu);
+        g_connect_rate_limit.clear();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1082,6 +1133,13 @@ bool DispatchDockAction(const std::string& action_json,
             try {
                 auto result = g_auth->PollPluginLogin(login_attempt_id, poll_token);
                 if (!result) {
+                    {
+                        std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                        if (g_auth_state.login_attempt.login_attempt_id == login_attempt_id) {
+                            ClearLoginAttemptStateLocked("login_poll_failed", "login_poll_failed");
+                        }
+                    }
+                    EmitCurrentStatusSnapshotToDock("auth_login_poll_failed", false);
                     EmitDockActionResult("auth_login_poll", req_id, "failed", false, "login_poll_failed", "");
                     return;
                 }
@@ -1113,6 +1171,13 @@ bool DispatchDockAction(const std::string& action_json,
                 const char* status = result->status == aegis::AuthPollStatus::Expired ? "expired" : "denied";
                 EmitDockActionResult("auth_login_poll", req_id, status, false, reason, "");
             } catch (const std::exception& e) {
+                {
+                    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                    if (g_auth_state.login_attempt.login_attempt_id == login_attempt_id) {
+                        ClearLoginAttemptStateLocked("login_poll_exception", e.what());
+                    }
+                }
+                EmitCurrentStatusSnapshotToDock("auth_login_poll_exception", false);
                 EmitDockActionResult("auth_login_poll", req_id, "failed", false, e.what(), "");
             }
         }));
@@ -1183,6 +1248,22 @@ bool DispatchDockAction(const std::string& action_json,
         EmitDockActionResult(action_type, request_id, opened ? "completed" : "failed",
                              opened, opened ? "" : "browser_open_failed", "");
         return opened;
+    }
+
+    if (action_type == "auth_login_cancel") {
+        {
+            std::lock_guard<std::mutex> lock(g_auth_state_mu);
+            if (!g_auth_state.login_attempt.Empty()) {
+                ClearLoginAttemptStateLocked("login_cancelled", "login_cancelled");
+            } else {
+                g_auth_state.last_error_code.clear();
+                g_auth_state.last_error_message.clear();
+                PersistAuthStateLocked();
+            }
+        }
+        EmitCurrentStatusSnapshotToDock("auth_login_cancel", false);
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        return true;
     }
 
     if (action_type == "auth_logout") {
@@ -1505,12 +1586,14 @@ bool DispatchDockAction(const std::string& action_json,
              "[aegis-obs-plugin] dock action connection_add: request_id=%s",
              request_id.c_str());
         std::string name, type, relay_host, stream_id, managed_region;
+        int stream_slot_number = 0;
         int relay_port = 5000;
         (void)TryExtractJsonStringField(action_json, "name", &name);
         (void)TryExtractJsonStringField(action_json, "conn_type", &type);
         (void)TryExtractJsonStringField(action_json, "relay_host", &relay_host);
         (void)TryExtractJsonStringField(action_json, "stream_id", &stream_id);
         (void)TryExtractJsonStringField(action_json, "managed_region", &managed_region);
+        (void)TryExtractJsonIntField(action_json, "stream_slot", &stream_slot_number);
         (void)TryExtractJsonIntField(action_json, "relay_port", &relay_port);
         if (name.empty()) {
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_name", "");
@@ -1524,6 +1607,18 @@ bool DispatchDockAction(const std::string& action_json,
         config.stream_id      = stream_id;
         config.managed_region = managed_region;
         config.status         = "idle";
+        if (config.type == "managed") {
+            std::lock_guard<std::mutex> lock(g_auth_state_mu);
+            const auto slot = FindStreamSlotLocked(stream_slot_number);
+            if (!slot) {
+                EmitDockActionResult(action_type, request_id, "rejected", false,
+                                     "invalid_stream_slot", "");
+                return false;
+            }
+            config.stream_slot_number = slot->slot_number;
+            config.stream_slot_label = slot->label;
+            config.stream_token = slot->stream_token;
+        }
         // Generate a simple UUID-like ID from timestamp + counter.
         {
             static std::mutex id_mu;
@@ -1573,6 +1668,22 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
             return false;
         }
+        // Rate-limit: reject connection_connect if a previous attempt for this
+        // connection was dispatched within kConnectRateLimitWindow (3s).
+        {
+            const auto now = std::chrono::steady_clock::now();
+            std::lock_guard<std::mutex> lk(g_connect_rate_limit_mu);
+            auto it2 = g_connect_rate_limit.find(conn_id);
+            if (it2 != g_connect_rate_limit.end() &&
+                (now - it2->second) < kConnectRateLimitWindow) {
+                blog(LOG_WARNING,
+                     "[aegis-obs-plugin] connection_connect rate-limited:"
+                     " conn_id=%s request_id=%s",
+                     conn_id.c_str(), request_id.c_str());
+                return true; // silently drop
+            }
+            g_connect_rate_limit[conn_id] = now;
+        }
         // Managed connections go through the async relay start path; BYOR is synchronous.
         const auto conns = g_connection_manager.ListConnections();
         const auto it = std::find_if(conns.begin(), conns.end(),
@@ -1590,9 +1701,34 @@ bool DispatchDockAction(const std::string& action_json,
                                      "no_control_plane_auth", "");
                 return false;
             }
+            aegis::RelayConnectionConfig managed = *it;
+            bool managed_slot_refreshed = false;
+            {
+                std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                if (managed.stream_slot_number > 0) {
+                    if (const auto slot = FindStreamSlotLocked(managed.stream_slot_number)) {
+                        managed.stream_slot_label = slot->label;
+                        managed.stream_token = slot->stream_token;
+                        managed_slot_refreshed = true;
+                    }
+                }
+            }
+            if (managed_slot_refreshed) {
+                g_connection_manager.UpdateConnection(managed.id, managed);
+            }
+            // Set status "connecting" so the dock reflects the pending state immediately.
+            // This also allows StatsPollingLoop to advance it to "connected" once active.
+            g_connection_manager.Connect(conn_id, jwt);
+            EmitCurrentStatusSnapshotToDock("connection_connect", false);
+            g_connection_manager.ConfigureManagedConnectionStart(
+                managed.id,
+                managed.managed_region,
+                managed.stream_slot_number,
+                managed.stream_token);
             // Async — StartManagedRelayAsync emits provisioning/completed/failed results.
+            // Pass conn_id so it can reset status to "idle" on failure.
             g_connection_manager.StartManagedRelayAsync(
-                jwt, request_id, g_config.relay_heartbeat_interval_sec);
+                jwt, request_id, g_config.relay_heartbeat_interval_sec, conn_id);
             return true;
         }
         if (it == conns.end()) {
@@ -1638,6 +1774,10 @@ bool DispatchDockAction(const std::string& action_json,
                 return false;
             }
             const std::string jwt = CurrentControlPlaneJwtForActions();
+            // Set status "idle" immediately so dock button reverts to "Connect".
+            // The relay stops asynchronously in the background.
+            g_connection_manager.Disconnect(conn_id, jwt);
+            EmitCurrentStatusSnapshotToDock("connection_disconnect", false);
             // Async — StopManagedRelayAsync emits queued/completed/failed results.
             g_connection_manager.StopManagedRelayAsync(jwt, request_id);
             return true;
@@ -1655,6 +1795,67 @@ bool DispatchDockAction(const std::string& action_json,
         g_connection_manager.Disconnect(conn_id, jwt);
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         EmitCurrentStatusSnapshotToDock("connection_disconnect", false);
+        return true;
+    }
+
+    if (action_type == "rename_stream_slot") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action rename_stream_slot: request_id=%s",
+             request_id.c_str());
+        if (!g_auth) {
+            EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
+            return false;
+        }
+
+        int slot_number = 0;
+        std::string label;
+        (void)TryExtractJsonIntField(action_json, "slot_number", &slot_number);
+        (void)TryExtractJsonStringField(action_json, "label", &label);
+        if (slot_number <= 0) {
+            EmitDockActionResult(action_type, request_id, "rejected", false,
+                                 "invalid_stream_slot", "");
+            return false;
+        }
+
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        if (jwt.empty()) {
+            EmitDockActionResult(action_type, request_id, "failed", false,
+                                 "no_control_plane_auth", "");
+            return false;
+        }
+
+        EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
+        TrackAuthWorker(std::async(std::launch::async, [req_id = request_id, jwt, slot_number, label]() {
+            try {
+                if (!g_auth->UpdateStreamSlotLabel(jwt, slot_number, label)) {
+                    EmitDockActionResult("rename_stream_slot", req_id, "failed", false,
+                                         "stream_slot_rename_failed", "");
+                    return;
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                    UpdateStreamSlotLabelInAuthStateLocked(slot_number, label);
+                    PersistAuthStateLocked();
+                }
+
+                const auto conns = g_connection_manager.ListConnections();
+                for (const auto& conn : conns) {
+                    if (conn.stream_slot_number != slot_number) {
+                        continue;
+                    }
+                    aegis::RelayConnectionConfig updated = conn;
+                    updated.stream_slot_label = label;
+                    g_connection_manager.UpdateConnection(updated.id, updated);
+                }
+
+                EmitCurrentStatusSnapshotToDock("rename_stream_slot", false);
+                EmitDockActionResult("rename_stream_slot", req_id, "completed", true, "",
+                                     BuildAuthStateDetailJson());
+            } catch (const std::exception& e) {
+                EmitDockActionResult("rename_stream_slot", req_id, "failed", false, e.what(), "");
+            }
+        }));
         return true;
     }
 

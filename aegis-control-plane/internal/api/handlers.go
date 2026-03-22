@@ -137,6 +137,14 @@ func (s *Server) handleRelayStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rate-limit: reject if the user stopped a session within the last 5 seconds.
+	if lastStoppedAt, rlErr := s.store.GetLastStoppedAt(r.Context(), userID); rlErr == nil && lastStoppedAt != nil {
+		if time.Since(*lastStoppedAt) < 5*time.Second {
+			writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "Please wait before reconnecting")
+			return
+		}
+	}
+
 	sess, created, err := s.store.StartOrGetSession(r.Context(), store.StartInput{
 		UserID:         userID,
 		ConnectionID:   req.ConnectionID,
@@ -241,24 +249,16 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 		return
 	}
 
-	if _, err := s.store.ActivateProvisionedSession(ctx, store.ActivateProvisionedSessionInput{
-		UserID:       userID,
-		SessionID:    sessionID,
-		Region:       region,
-		InstanceID:   prov.InstanceID,
-		AMIID:        prov.AMIID,
-		InstanceType: prov.InstanceType,
-		PublicIP:     prov.PublicIP,
-		SRTPort:      prov.SRTPort,
-		PairToken:    pairToken,
-		RelayWSToken: relayWSToken,
-	}); err != nil {
-		log.Printf("provision_pipeline: activate_failed session_id=%s err=%v", sessionID, err)
-		s.deprovisionAndStop(sessionID, userID, region, prov.InstanceID, provisioner)
-		return
-	}
-
+	// Pool provider: skip relay_instances entirely — pool servers are tracked in
+	// relay_pool/relay_assignments. ActivateProvisionedSession would INSERT the
+	// server_id ("kc1") into relay_instances.aws_instance_id and fail on reconnect
+	// with a unique-constraint violation.
 	if providerName == "pool" {
+		if err := s.store.ActivatePoolSession(ctx, userID, sessionID, pairToken, relayWSToken); err != nil {
+			log.Printf("provision_pipeline: activate_pool_failed session_id=%s err=%v", sessionID, err)
+			s.deprovisionAndStop(sessionID, userID, region, prov.InstanceID, provisioner)
+			return
+		}
 		if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepCreatingStream); err != nil {
 			log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepCreatingStream, err)
 		}
@@ -276,6 +276,23 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 			return
 		}
 		log.Printf("provision_pipeline: completed session_id=%s", sessionID)
+		return
+	}
+
+	if _, err := s.store.ActivateProvisionedSession(ctx, store.ActivateProvisionedSessionInput{
+		UserID:       userID,
+		SessionID:    sessionID,
+		Region:       region,
+		InstanceID:   prov.InstanceID,
+		AMIID:        prov.AMIID,
+		InstanceType: prov.InstanceType,
+		PublicIP:     prov.PublicIP,
+		SRTPort:      prov.SRTPort,
+		PairToken:    pairToken,
+		RelayWSToken: relayWSToken,
+	}); err != nil {
+		log.Printf("provision_pipeline: activate_failed session_id=%s err=%v", sessionID, err)
+		s.deprovisionAndStop(sessionID, userID, region, prov.InstanceID, provisioner)
 		return
 	}
 

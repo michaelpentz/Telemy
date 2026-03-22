@@ -623,6 +623,10 @@ export default function AegisDock() {
     sendAction({ type: "auth_open_browser", authorizeUrl: authLogin.authorize_url });
   }, [sendAction, authLogin.authorize_url]);
 
+  const handleAuthCancel = useCallback(() => {
+    sendAction({ type: "auth_login_cancel" });
+  }, [sendAction]);
+
   const handleSettingChange = (key, newValue) => {
     if (!tryEnterUiActionGate(`set_setting:${key}`, UI_ACTION_COOLDOWNS_MS.setSetting)) return;
     sendAction({ type: "set_setting", key, value: newValue });
@@ -1414,6 +1418,7 @@ export default function AegisDock() {
                 handleAuthLogin={handleAuthLogin}
                 handleAuthLogout={handleAuthLogout}
                 handleAuthOpenBrowser={handleAuthOpenBrowser}
+                handleAuthCancel={handleAuthCancel}
                 isCompact={isCompact}
               />
             </Section>
