@@ -305,6 +305,18 @@ void ConnectionManager::StatsPollingLoop()
             continue;
         }
 
+        // Transition any "connecting" connections to "connected" now that the
+        // relay session is confirmed active. Do this before the public_ip check
+        // so the dock shows "Connected" even while the IP is still populating.
+        {
+            std::lock_guard<std::mutex> lock(connections_mu_);
+            for (auto& conn : connections_) {
+                if (conn.status == "connecting") {
+                    conn.status = "connected";
+                }
+            }
+        }
+
         const auto session = relay->CurrentSession();
         if (!session || session->public_ip.empty()) {
             continue;
@@ -328,16 +340,6 @@ void ConnectionManager::StatsPollingLoop()
             cached_stats_    = stats;
             cached_per_link_ = per_link;
         }
-
-        // Update connection statuses based on relay state.
-        {
-            std::lock_guard<std::mutex> lock(connections_mu_);
-            for (auto& conn : connections_) {
-                if (conn.status == "connecting" && relay->HasActiveSession()) {
-                    conn.status = "connected";
-                }
-            }
-        }
     }
 }
 
@@ -347,9 +349,20 @@ void ConnectionManager::StatsPollingLoop()
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
 
+void ConnectionManager::SetConnectionStatus(const std::string& id, const std::string& status)
+{
+    std::lock_guard<std::mutex> lock(connections_mu_);
+    auto it = std::find_if(connections_.begin(), connections_.end(),
+                           [&id](const RelayConnectionConfig& c) { return c.id == id; });
+    if (it != connections_.end()) {
+        it->status = status;
+    }
+}
+
 void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                                const std::string& request_id,
-                                               int heartbeat_interval_sec)
+                                               int heartbeat_interval_sec,
+                                               const std::string& connection_id)
 {
     std::shared_ptr<RelayClient> relay;
     {
@@ -360,12 +373,17 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
         blog(LOG_WARNING,
              "[aegis-cm] StartManagedRelayAsync: relay not configured request_id=%s",
              request_id.c_str());
+        if (!connection_id.empty()) {
+            SetConnectionStatus(connection_id, "idle");
+            stats_cv_.notify_all();
+        }
         EmitDockActionResult("relay_start", request_id, "failed", false,
                              "relay_not_configured", "");
         return;
     }
 
     std::string req_id = request_id;
+    std::string conn_id = connection_id;
     // Cancel any in-flight relay-start worker and join it outside the lock so
     // it cannot outlive this object on plugin unload (use-after-free fix).
     {
@@ -389,7 +407,14 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
     {
         std::lock_guard<std::mutex> lk(worker_mu_);
         start_cancel_.store(false);
-        start_worker_ = std::thread([this, relay, jwt, req_id, heartbeat_interval_sec]() {
+        start_worker_ = std::thread([this, relay, jwt, req_id, conn_id, heartbeat_interval_sec]() {
+            // Helper: reset connection status to idle on failure and wake stats thread.
+            auto reset_on_failure = [&]() {
+                if (!conn_id.empty()) {
+                    SetConnectionStatus(conn_id, "idle");
+                    stats_cv_.notify_all();
+                }
+            };
             try {
                 auto session = relay->Start(jwt);
                 if (session) {
@@ -404,6 +429,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                 blog(LOG_INFO,
                                      "[aegis-cm] relay_start cancelled: request_id=%s",
                                      req_id.c_str());
+                                reset_on_failure();
                                 return;
                             }
                             auto polled = relay->GetActive(jwt);
@@ -423,7 +449,10 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                             }
 
                             if (polled->status == "active") {
-                                if (start_cancel_.load()) return;
+                                if (start_cancel_.load()) {
+                                    reset_on_failure();
+                                    return;
+                                }
                                 relay->StartHeartbeatLoop(jwt, polled->session_id,
                                                          heartbeat_interval_sec);
                                 blog(LOG_INFO,
@@ -444,6 +473,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                      "[aegis-cm] relay_start failed: request_id=%s"
                                      " error=relay_start_failed",
                                      req_id.c_str());
+                                reset_on_failure();
                                 EmitDockActionResult("relay_start", req_id, "failed", false,
                                                      "relay_start_failed", "");
                                 return;
@@ -462,12 +492,14 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                             blog(LOG_INFO,
                                  "[aegis-cm] relay_start cancelled: request_id=%s",
                                  req_id.c_str());
+                            reset_on_failure();
                             return;
                         }
                         blog(LOG_WARNING,
                              "[aegis-cm] relay_start failed: request_id=%s"
                              " error=provision_timeout",
                              req_id.c_str());
+                        reset_on_failure();
                         EmitDockActionResult("relay_start", req_id, "failed", false,
                                              "provision_timeout", "");
                         return;
@@ -490,6 +522,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                              "[aegis-cm] relay_start failed: request_id=%s"
                              " error=relay_start_failed",
                              req_id.c_str());
+                        reset_on_failure();
                         EmitDockActionResult("relay_start", req_id, "failed", false,
                                              "relay_start_failed", "");
                     }
@@ -498,6 +531,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                          "[aegis-cm] relay_start failed: request_id=%s"
                          " error=relay_start_failed",
                          req_id.c_str());
+                    reset_on_failure();
                     EmitDockActionResult("relay_start", req_id, "failed", false,
                                          "relay_start_failed", "");
                 }
@@ -505,6 +539,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                 blog(LOG_WARNING,
                      "[aegis-cm] relay_start exception: request_id=%s error=%s",
                      req_id.c_str(), e.what());
+                reset_on_failure();
                 EmitDockActionResult("relay_start", req_id, "failed", false, e.what(), "");
             }
         });
@@ -569,7 +604,7 @@ void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
 
 #else  // non-OBS build stubs
 
-void ConnectionManager::StartManagedRelayAsync(const std::string&, const std::string&, int) {}
+void ConnectionManager::StartManagedRelayAsync(const std::string&, const std::string&, int, const std::string&) {}
 void ConnectionManager::StopManagedRelayAsync(const std::string&, const std::string&) {}
 
 #endif  // AEGIS_OBS_PLUGIN_BUILD
@@ -798,6 +833,8 @@ void ConnectionManager::SaveConnections()
             entry["name"]           = QString::fromStdString(c.name);
             entry["type"]           = QString::fromStdString(c.type);
             entry["managed_region"] = QString::fromStdString(c.managed_region);
+            entry["stream_slot_number"] = c.stream_slot_number;
+            entry["stream_slot_label"] = QString::fromStdString(c.stream_slot_label);
             arr.append(entry);
         }
         obj["connections"] = arr;
@@ -873,6 +910,8 @@ void ConnectionManager::LoadConnections()
         cfg.name           = entry["name"].toString().toStdString();
         cfg.type           = entry["type"].toString().toStdString();
         cfg.managed_region = entry["managed_region"].toString().toStdString();
+        cfg.stream_slot_number = entry["stream_slot_number"].toInt(0);
+        cfg.stream_slot_label = entry["stream_slot_label"].toString().toStdString();
         cfg.status         = "idle";  // runtime state always starts fresh
 
         if (cfg.id.empty()) continue;

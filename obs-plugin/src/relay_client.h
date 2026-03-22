@@ -90,6 +90,12 @@ struct ActiveRelaySummary {
     std::string status;
 };
 
+struct StreamSlot {
+    int slot_number = 0;
+    std::string label;
+    std::string stream_token;
+};
+
 struct BYORConfig {
     std::string relay_host;
     int         relay_port = 5000;
@@ -101,6 +107,7 @@ struct AuthSessionSnapshot {
     RelayEntitlement entitlement;
     UsageSnapshot usage;
     std::optional<ActiveRelaySummary> active_relay;
+    std::vector<StreamSlot> stream_slots;
 
     std::string ToVaultJson() const;
     static std::optional<AuthSessionSnapshot> FromVaultJson(const std::string& json);
@@ -160,6 +167,9 @@ public:
                                                   const std::string& poll_token);
     std::optional<AuthPollResult> Refresh(const std::string& refresh_token);
     bool Logout(const std::string& cp_access_jwt);
+    bool UpdateStreamSlotLabel(const std::string& cp_access_jwt,
+                               int slot_number,
+                               const std::string& label);
 
 private:
     HttpsClient& http_;
@@ -193,6 +203,10 @@ public:
     void ConnectDirect(const BYORConfig& config, const std::string& stream_token);
     void DisconnectDirect();
     bool IsBYORMode() const;
+    void ConfigureNextManagedStart(const std::string& connection_id,
+                                   const std::string& region_preference,
+                                   int stream_slot_number,
+                                   const std::string& stream_token);
 
     // Heartbeat loop management
     void StartHeartbeatLoop(const std::string& jwt, const std::string& session_id,
@@ -242,6 +256,11 @@ private:
     PerLinkSnapshot    per_link_;
     mutable std::mutex per_link_mutex_;
     std::atomic<bool> byor_mode_{false};
+    mutable std::mutex pending_managed_start_mutex_;
+    std::string pending_managed_connection_id_;
+    std::string pending_managed_region_preference_;
+    int pending_managed_stream_slot_number_ = 0;
+    std::string pending_managed_stream_token_;
 
     // UUID v4 generation
     static std::string GenerateUuidV4();

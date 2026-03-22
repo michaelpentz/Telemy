@@ -402,6 +402,7 @@
           user: auth.user || null,
           entitlement: auth.entitlement || null,
           usage: auth.usage || null,
+          stream_slots: auth.stream_slots || [],
           activeRelay: auth.active_relay || null,
           login: auth.login || { pending: false, poll_interval_seconds: 3 },
           lastErrorCode: auth.last_error_code || null,

@@ -19,6 +19,33 @@ namespace aegis {
 
 namespace {
 
+bool LooksLikeUuidV4(const std::string& value)
+{
+    if (value.size() != 36) {
+        return false;
+    }
+    static const int dash_positions[] = {8, 13, 18, 23};
+    for (int pos : dash_positions) {
+        if (value[static_cast<std::size_t>(pos)] != '-') {
+            return false;
+        }
+    }
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            continue;
+        }
+        const char ch = value[i];
+        const bool is_hex =
+            (ch >= '0' && ch <= '9') ||
+            (ch >= 'a' && ch <= 'f') ||
+            (ch >= 'A' && ch <= 'F');
+        if (!is_hex) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string JsonStringify(const QJsonObject& obj)
 {
     return QJsonDocument(obj).toJson(QJsonDocument::Compact).toStdString();
@@ -91,6 +118,24 @@ QJsonObject SerializeUsageSnapshot(const UsageSnapshot& usage)
     return obj;
 }
 
+StreamSlot ParseStreamSlot(const QJsonObject& obj)
+{
+    StreamSlot slot;
+    slot.slot_number = obj.value("slot_number").toInt(0);
+    slot.label = obj.value("label").toString().toStdString();
+    slot.stream_token = obj.value("stream_token").toString().toStdString();
+    return slot;
+}
+
+QJsonObject SerializeStreamSlot(const StreamSlot& slot)
+{
+    QJsonObject obj;
+    obj["slot_number"] = slot.slot_number;
+    obj["label"] = QString::fromStdString(slot.label);
+    obj["stream_token"] = QString::fromStdString(slot.stream_token);
+    return obj;
+}
+
 std::optional<AuthSessionSnapshot> ParseAuthSessionSnapshotObject(const QJsonObject& root)
 {
     if (root.isEmpty()) {
@@ -109,6 +154,18 @@ std::optional<AuthSessionSnapshot> ParseAuthSessionSnapshotObject(const QJsonObj
         activeRelay.session_id = activeRelayObj.value("session_id").toString().toStdString();
         activeRelay.status = activeRelayObj.value("status").toString().toStdString();
         snapshot.active_relay = activeRelay;
+    }
+
+    const QJsonValue streamSlotsValue = root.value("stream_slots");
+    if (streamSlotsValue.isArray()) {
+        const QJsonArray streamSlots = streamSlotsValue.toArray();
+        snapshot.stream_slots.reserve(streamSlots.size());
+        for (const QJsonValue& value : streamSlots) {
+            if (!value.isObject()) {
+                continue;
+            }
+            snapshot.stream_slots.push_back(ParseStreamSlot(value.toObject()));
+        }
     }
 
     if (snapshot.user.id.empty()) {
@@ -169,6 +226,12 @@ std::string AuthSessionSnapshot::ToVaultJson() const
     } else {
         obj["active_relay"] = QJsonValue(QJsonValue::Null);
     }
+
+    QJsonArray streamSlots;
+    for (const StreamSlot& slot : stream_slots) {
+        streamSlots.append(SerializeStreamSlot(slot));
+    }
+    obj["stream_slots"] = streamSlots;
     return JsonStringify(obj);
 }
 
@@ -460,6 +523,39 @@ bool ControlPlaneAuthClient::Logout(const std::string& cp_access_jwt)
     return false;
 }
 
+bool ControlPlaneAuthClient::UpdateStreamSlotLabel(const std::string& cp_access_jwt,
+                                                   int slot_number,
+                                                   const std::string& label)
+{
+    if (slot_number < 0) {
+        return false;
+    }
+
+    QJsonObject bodyObj;
+    bodyObj["label"] = QString::fromStdString(label);
+
+    const std::wstring path = L"/api/v1/user/stream-slots/" +
+                              std::to_wstring(slot_number) +
+                              L"/label";
+    std::wstring wide_jwt(cp_access_jwt.begin(), cp_access_jwt.end());
+
+    HttpResponse resp;
+    try {
+        resp = http_.Put(api_host_w_, path, JsonStringify(bodyObj), wide_jwt, CommonClientHeaders());
+    } catch (const std::exception& e) {
+        blog(LOG_WARNING, "auth: UpdateStreamSlotLabel network error: %s", e.what());
+        return false;
+    }
+
+    if (!resp.ok()) {
+        blog(LOG_WARNING, "auth: UpdateStreamSlotLabel failed, HTTP %lu: %s",
+             resp.status_code, resp.body.c_str());
+        return false;
+    }
+
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Construction / Destruction
 // ---------------------------------------------------------------------------
@@ -594,7 +690,27 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt)
 std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
 {
     std::string uuid = GenerateUuidV4();
-    std::string body = "{\"region_preference\":\"\",\"client_context\":{\"obs_connected\":true,\"mode\":\"auto\",\"requested_by\":\"obs-plugin\"}}";
+    QJsonObject clientContext;
+    clientContext["obs_connected"] = true;
+    clientContext["mode"] = QStringLiteral("auto");
+    clientContext["requested_by"] = QStringLiteral("obs-plugin");
+
+    QJsonObject bodyObj;
+    bodyObj["client_context"] = clientContext;
+    {
+        std::lock_guard<std::mutex> lock(pending_managed_start_mutex_);
+        bodyObj["region_preference"] =
+            QString::fromStdString(pending_managed_region_preference_);
+        if (LooksLikeUuidV4(pending_managed_connection_id_)) {
+            bodyObj["connection_id"] =
+                QString::fromStdString(pending_managed_connection_id_);
+        }
+        pending_managed_connection_id_.clear();
+        pending_managed_region_preference_.clear();
+        pending_managed_stream_slot_number_ = 0;
+        pending_managed_stream_token_.clear();
+    }
+    const std::string body = JsonStringify(bodyObj);
     std::wstring wide_jwt(jwt.begin(), jwt.end());
     std::wstring wide_uuid(uuid.begin(), uuid.end());
 
@@ -624,6 +740,18 @@ std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
         byor_mode_ = false;
     }
     return session;
+}
+
+void RelayClient::ConfigureNextManagedStart(const std::string& connection_id,
+                                            const std::string& region_preference,
+                                            int stream_slot_number,
+                                            const std::string& stream_token)
+{
+    std::lock_guard<std::mutex> lock(pending_managed_start_mutex_);
+    pending_managed_connection_id_ = connection_id;
+    pending_managed_region_preference_ = region_preference;
+    pending_managed_stream_slot_number_ = stream_slot_number;
+    pending_managed_stream_token_ = stream_token;
 }
 
 bool RelayClient::Stop(const std::string& jwt, const std::string& session_id)
