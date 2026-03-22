@@ -266,11 +266,9 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 		if err := s.store.UpdateProvisionStep(ctx, sessionID, model.StepReady); err != nil {
 			log.Printf("provision_pipeline: update_step_failed session_id=%s step=%s err=%v", sessionID, model.StepReady, err)
 		}
-		if slug, slugErr := s.store.GetUserRelaySlug(ctx, userID); slugErr == nil && slug != "" && s.dns != nil {
-			if dnsErr := s.dns.CreateOrUpdateRecord(slug, prov.PublicIP); dnsErr != nil {
-				log.Printf("dns: create record failed session_id=%s slug=%s err=%v", sessionID, slug, dnsErr)
-			}
-		}
+		// Pool relays use stable hostnames from relay_pool.host (e.g. kc1.relay.telemyapp.com).
+		// No per-user slug DNS record needed — skip CreateOrUpdateRecord to avoid
+		// recreating stale slug A records that were manually deleted.
 		if err := s.store.FinalActivateSession(ctx, sessionID); err != nil {
 			log.Printf("provision_pipeline: final_activate_failed session_id=%s err=%v", sessionID, err)
 			s.deprovisionAndStop(sessionID, userID, region, prov.InstanceID, provisioner)
