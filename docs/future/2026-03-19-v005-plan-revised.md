@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-19
 **Author:** Michael Pentz
-**Status:** In Progress — Phase 1 complete, Phase 2 C++ core complete — supersedes `2026-03-18-v005-plan.md`
+**Status:** In Progress — Phase 1-4 complete, Phase 5 not started — supersedes `2026-03-18-v005-plan.md`
 **Baseline:** v0.0.4 (commit `e9ce030`)
 **Phase 1:** Complete (field renames, EIP extraction, templatized bootstrap, provider config)
 
@@ -571,9 +571,9 @@ Pool provisioner is near-instant (<2 seconds — no cloud API, no boot wait). Th
 | Batch | Tasks | Status |
 |-------|-------|--------|
 | Batch 1 | T1: Migration SQL, T2: SLS client, T3: Docs update, T4: Store methods | ✅ **Committed** `8a50824` |
-| Batch 2 | T5: handlers.go fast-path | ⏳ Pending |
-| Batch 3 | T6: PoolProvisioner, T7: Health monitor | ⏳ Pending (needs Batch 1) |
-| Batch 4 | T8: Config wiring, T9: Tests | ⏳ Pending (needs Batch 3) |
+| Batch 2 | T5: handlers.go fast-path | ✅ Done |
+| Batch 3 | T6: PoolProvisioner, T7: Health monitor | ✅ Done |
+| Batch 4 | T8: Config wiring, T9: Tests | ✅ Done |
 
 ### 3.6 Phase 3 Deliverable
 

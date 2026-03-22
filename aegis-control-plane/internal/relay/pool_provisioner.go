@@ -42,7 +42,7 @@ func NewPoolProvisioner(st poolStore, slsAPIKey string) *PoolProvisioner {
 }
 
 func (p *PoolProvisioner) Provision(ctx context.Context, req ProvisionRequest) (ProvisionResult, error) {
-	assignment, err := p.store.AssignRelay(ctx, req.UserID, req.SessionID, "", req.Region, req.StreamToken)
+	assignment, err := p.store.AssignRelay(ctx, req.UserID, req.SessionID, req.ConnectionID, req.Region, req.StreamToken)
 	if err != nil {
 		if err == store.ErrNoRelayCapacity {
 			return ProvisionResult{}, fmt.Errorf("pool: no relay capacity available")

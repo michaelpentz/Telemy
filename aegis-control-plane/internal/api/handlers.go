@@ -203,10 +203,11 @@ func (s *Server) runProvisionPipeline(appCtx context.Context, sess *model.Sessio
 
 	provisionStart := time.Now()
 	prov, err := provisioner.Provision(ctx, relay.ProvisionRequest{
-		SessionID:   sessionID,
-		UserID:      userID,
-		Region:      region,
-		StreamToken: sess.StreamToken,
+		SessionID:    sessionID,
+		UserID:       userID,
+		ConnectionID: sess.ConnectionID,
+		Region:       region,
+		StreamToken:  sess.StreamToken,
 	})
 	durMS := float64(time.Since(provisionStart).Milliseconds())
 	labels := map[string]string{

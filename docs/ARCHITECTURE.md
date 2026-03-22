@@ -346,7 +346,7 @@ The v0.0.5 dock redesign introduced several structural changes:
 - **Drag-to-reorder sections** — dock sections (OBS Stats, Relay, Encoders, etc.) can be reordered by the user. Order is persisted via `save_scene_prefs`.
 - **Per-link Mbps bars nested under relays** — `BitrateBar` components for individual cellular/WiFi links are rendered inside the Relay section, grouped under their parent relay connection. Each bar shows the link's share percentage with a carrier label (T-Mobile, AT&T, etc.).
 - **Mini health bar** — a compact health indicator in the dock header shows aggregate stream health (0-1 score) as a color-coded bar without expanding the full stats panel.
-- **Connection persistence display** — the dock reflects `relay_mode` from the auth session (`yor`/`managed`/`none`) to show BYOR settings panel vs. managed relay controls.
+
 
 ## Dock Source Management
 
@@ -409,30 +409,14 @@ Always call `bfree()` after `obs_module_config_path()` â€” OBS uses its own
 
 v0.0.5 introduces BYOR support, allowing free-tier users to connect their own relay infrastructure instead of using managed AWS provisioning.
 
-### BYORProvisioner
-
-BYORProvisioner implements the Provisioner interface alongside the existing AWSProvisioner. It reads user-stored relay configuration (host, port, stream key) from the database rather than launching cloud infrastructure. No cloud API calls are made � the provisioner simply returns the user's pre-configured relay details as a session.
-
 ### Per-User Routing in handleRelayStart()
 
 handleRelayStart() routes relay requests based on the user's plan_tier:
 
-- **Free-tier users** ? BYORProvisioner (must have relay config saved via POST /api/v1/user/relay-config)
-- **Managed tiers (pro, etc.)** ? AWSProvisioner (cloud-provisioned relay with EIP)
+- **Free-tier users** (legacy path, will be removed)
+- **Managed tiers (pro, etc.)** → AWSProvisioner (cloud-provisioned relay with EIP)
 
 If a free-tier user has not configured their BYOR relay, the API returns a yor_config_required error prompting them to set up their relay details first.
-
-### relay_mode in Auth Session Response
-
-GET /api/v1/auth/session now includes a 
-elay_mode field indicating the user's relay access mode:
-
-- yor � free-tier user with BYOR relay configured
-- managed � paid-tier user with cloud-provisioned relay
-- 
-one � free-tier user without relay config (relay start disabled)
-
-The dock UI uses this field to show the appropriate relay controls (BYOR settings panel vs. managed relay start).
 
 ### Plugin ConnectDirect / DisconnectDirect
 
@@ -488,10 +472,9 @@ Deprovision reverses this: deletes the stream ID from SLS, releases the assignme
 
 `handleRelayStart()` routes by `AEGIS_RELAY_PROVIDER`:
 
-- `pool` ? `PoolProvisioner` (shared relay pool)
-- `aws` ? `AWSProvisioner` (ephemeral EC2)
-- `byor` ? user's own relay (free tier)
-- `fake` ? stub for development
+- `pool` → `PoolProvisioner` (shared relay pool)
+- `aws` → `AWSProvisioner` (ephemeral EC2)
+- `fake` → stub for development
 
 ### Pool Health Monitor
 
