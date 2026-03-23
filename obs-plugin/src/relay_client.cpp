@@ -19,33 +19,6 @@ namespace aegis {
 
 namespace {
 
-bool LooksLikeUuidV4(const std::string& value)
-{
-    if (value.size() != 36) {
-        return false;
-    }
-    static const int dash_positions[] = {8, 13, 18, 23};
-    for (int pos : dash_positions) {
-        if (value[static_cast<std::size_t>(pos)] != '-') {
-            return false;
-        }
-    }
-    for (std::size_t i = 0; i < value.size(); ++i) {
-        if (i == 8 || i == 13 || i == 18 || i == 23) {
-            continue;
-        }
-        const char ch = value[i];
-        const bool is_hex =
-            (ch >= '0' && ch <= '9') ||
-            (ch >= 'a' && ch <= 'f') ||
-            (ch >= 'A' && ch <= 'F');
-        if (!is_hex) {
-            return false;
-        }
-    }
-    return true;
-}
-
 std::string JsonStringify(const QJsonObject& obj)
 {
     return QJsonDocument(obj).toJson(QJsonDocument::Compact).toStdString();
@@ -659,7 +632,9 @@ void RelayClient::ClearStatsSnapshots()
 // Control plane calls
 // ---------------------------------------------------------------------------
 
-std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt)
+std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
+                                                   const std::string& expected_session_id,
+                                                   const std::string& expected_stream_token)
 {
     std::wstring path = L"/api/v1/relay/active";
     std::wstring wide_jwt(jwt.begin(), jwt.end());
@@ -684,6 +659,32 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt)
 
     auto session = ParseSessionResponse(resp.body);
     if (session) {
+        bool expect_match = false;
+        bool matched = false;
+        if (!expected_session_id.empty()) {
+            expect_match = true;
+            if (session->session_id == expected_session_id) {
+                matched = true;
+            }
+        }
+        if (!expected_stream_token.empty()) {
+            expect_match = true;
+            if (session->stream_token == expected_stream_token) {
+                matched = true;
+            }
+        }
+        if (expect_match && !matched) {
+            blog(LOG_DEBUG,
+                 "relay: GetActive ignoring non-matching session sid=%s token=%s"
+                 " expected_sid=%s expected_token=%s",
+                 session->session_id.c_str(),
+                 session->stream_token.c_str(),
+                 expected_session_id.c_str(),
+                 expected_stream_token.c_str());
+            return std::nullopt;
+        }
+    }
+    if (session) {
         std::lock_guard<std::mutex> lock(session_mutex_);
         current_session_ = session;
         byor_mode_ = false;
@@ -705,7 +706,7 @@ std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
         std::lock_guard<std::mutex> lock(pending_managed_start_mutex_);
         bodyObj["region_preference"] =
             QString::fromStdString(pending_managed_region_preference_);
-        if (LooksLikeUuidV4(pending_managed_connection_id_)) {
+        if (!pending_managed_connection_id_.empty()) {
             bodyObj["connection_id"] =
                 QString::fromStdString(pending_managed_connection_id_);
         }

@@ -195,7 +195,9 @@ public:
 
     // Control plane calls — MUST be called from worker thread, NOT OBS UI thread
     // Returns session info on success, nullopt on failure
-    std::optional<RelaySession> GetActive(const std::string& jwt);
+    std::optional<RelaySession> GetActive(const std::string& jwt,
+                                          const std::string& expected_session_id = "",
+                                          const std::string& expected_stream_token = "");
     std::optional<RelaySession> Start(const std::string& jwt);
     bool Stop(const std::string& jwt, const std::string& session_id);
     bool SendHeartbeat(const std::string& jwt, const std::string& session_id);

@@ -171,6 +171,7 @@ public:
     bool                        HasActiveSession() const;
     bool                        IsBYORMode() const;
     std::optional<RelaySession> CurrentSession() const;
+    std::optional<RelaySession> CurrentSessionForConnection(const std::string& id) const;
     RelayStats                  CurrentStats() const;
     PerLinkSnapshot             CurrentPerLinkStats() const;
 

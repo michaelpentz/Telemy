@@ -323,7 +323,6 @@ void ConnectionManager::StatsPollingLoop()
         // Determine which clients have active sessions.
         bool any_active = false;
         std::shared_ptr<RelayClient> first_active_client;
-        std::string first_active_conn_id;
 
         // Check BYOR first.
         if (byor && byor->HasActiveSession()) {
@@ -331,27 +330,59 @@ void ConnectionManager::StatsPollingLoop()
             first_active_client = byor;
         }
 
-        // Check managed clients and update per-connection status.
+        // Check managed clients and update per-connection status/runtime fields.
         for (auto& [conn_id, client] : managed_clients) {
-            if (client->HasActiveSession()) {
+            const auto session = client->CurrentSession();
+            if (session && session->status != "stopped") {
                 any_active = true;
                 if (!first_active_client) {
                     first_active_client = client;
-                    first_active_conn_id = conn_id;
                 }
-                // Update this connection's status to "connected".
+
+                // Keep per-connection session-facing fields in sync from this client's
+                // own session object.
+                std::string effective_host;
+                if (!session->relay_hostname.empty()) {
+                    effective_host = session->relay_hostname;
+                } else if (!session->public_ip.empty()) {
+                    effective_host = session->public_ip;
+                }
+
+                const bool active = (session->status == "active");
                 std::lock_guard<std::mutex> lock(connections_mu_);
                 for (auto& conn : connections_) {
-                    if (conn.id == conn_id && conn.status == "connecting") {
+                    if (conn.id != conn_id) {
+                        continue;
+                    }
+                    if (!session->session_id.empty()) {
+                        conn.session_id = session->session_id;
+                    }
+                    if (!effective_host.empty()) {
+                        conn.relay_host = effective_host;
+                    }
+                    if (session->srt_port > 0) {
+                        conn.relay_port = session->srt_port;
+                    }
+                    if (!session->stream_token.empty()) {
+                        conn.stream_token = session->stream_token;
+                    }
+
+                    // A provisioning managed session should remain "connecting" until active.
+                    if (active) {
                         conn.status = "connected";
+                    } else if (conn.status == "connected") {
+                        conn.status = "connecting";
                     }
                 }
             } else {
                 // If a managed client lost its session, downgrade from "connected".
                 std::lock_guard<std::mutex> lock(connections_mu_);
                 for (auto& conn : connections_) {
-                    if (conn.id == conn_id && conn.status == "connected") {
-                        conn.status = "connecting";
+                    if (conn.id == conn_id) {
+                        conn.session_id.clear();
+                        if (conn.status == "connected") {
+                            conn.status = "connecting";
+                        }
                     }
                 }
             }
@@ -544,6 +575,8 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
             try {
                 auto session = relay->Start(jwt);
                 if (session) {
+                    const std::string expected_session_id = session->session_id;
+                    const std::string expected_stream_token = session->stream_token;
                     if (session->status == "provisioning") {
                         EmitDockActionResult("relay_start", req_id, "provisioning", true, "",
                                              BuildRelaySessionDetailJson(*session));
@@ -558,7 +591,8 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                 reset_on_failure();
                                 return;
                             }
-                            auto polled = relay->GetActive(jwt);
+                            auto polled = relay->GetActive(jwt, expected_session_id,
+                                                           expected_stream_token);
                             if (!polled) {
                                 const auto now = std::chrono::steady_clock::now();
                                 if (now >= deadline) {
@@ -887,6 +921,19 @@ std::optional<RelaySession> ConnectionManager::CurrentSession() const
         }
     }
     return std::nullopt;
+}
+
+std::optional<RelaySession> ConnectionManager::CurrentSessionForConnection(const std::string& id) const
+{
+    if (id.empty()) {
+        return std::nullopt;
+    }
+    std::lock_guard<std::mutex> lock(connections_mu_);
+    auto it = active_clients_.find(id);
+    if (it == active_clients_.end() || !it->second) {
+        return std::nullopt;
+    }
+    return it->second->CurrentSession();
 }
 
 RelayStats ConnectionManager::CurrentStats() const
