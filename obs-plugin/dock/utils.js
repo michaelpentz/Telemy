@@ -97,11 +97,6 @@ export function findBestSceneIdForRule(rule, sceneItems) {
   return "";
 }
 
-export function mapRelayStatusForUi(status) {
-  const raw = (status || "").toLowerCase();
-  if (raw === "provisioning") return "connecting";
-  return raw || "inactive";
-}
 
 export function loadSceneIntentLinks() {
   if (typeof window === "undefined") {

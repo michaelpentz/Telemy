@@ -1861,23 +1861,6 @@ bool DispatchDockAction(const std::string& action_json,
         return true;
     }
 
-    if (action_type == "connection_connect") {
-        blog(LOG_INFO,
-             "[aegis-obs-plugin] connection_connect deprecated (always-ready model): request_id=%s",
-             request_id.c_str());
-        EmitDockActionResult(action_type, request_id, "deprecated", false,
-                             "connection_connect removed in always-ready model", "");
-        return true;
-    }
-
-    if (action_type == "connection_disconnect") {
-        blog(LOG_INFO,
-             "[aegis-obs-plugin] connection_disconnect deprecated (always-ready model): request_id=%s",
-             request_id.c_str());
-        EmitDockActionResult(action_type, request_id, "deprecated", false,
-                             "connection_disconnect removed in always-ready model", "");
-        return true;
-    }
 
     if (action_type == "rename_stream_slot") {
         blog(LOG_INFO,

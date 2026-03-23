@@ -553,7 +553,7 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
                 obj[QStringLiteral("error_msg")]      = QString::fromStdString(c.error_msg);
 
                 // Per-connection per-link stats (filtered by stream_id on the C++ side).
-                if (c.type == "managed" && (c.status == "connected" || c.status == "live")) {
+                if (c.type == "managed" && (c.status == "ready" || c.status == "live")) {
                     const auto conn_pl = g_connection_manager.CurrentPerLinkStatsForConnection(c.id);
                     const auto conn_st = g_connection_manager.CurrentStatsForConnection(c.id);
                     if (conn_pl.available && !conn_pl.links.empty()) {

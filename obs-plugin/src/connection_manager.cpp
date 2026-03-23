@@ -455,7 +455,7 @@ void ConnectionManager::StatsPollingLoop()
                 if (conn.type != "byor") {
                     continue;
                 }
-                if (conn.status == "provisioning" || conn.status == "connecting") {
+                if (conn.status == "provisioning") {
                     conn.status = "ready";
                 }
                 if (byor_live && conn.status == "ready") {
