@@ -421,7 +421,13 @@ void ConnectionManager::StatsPollingLoop()
             const auto s = client->CurrentSession();
             if (s && !s->public_ip.empty()) {
                 client->PollRelayStats(s->public_ip);
-                client->PollPerLinkStats(s->public_ip);
+                // Filter per-link stats by this connection's stream_id so each
+                // connection only sees its own carrier data.
+                std::string filter_stream_id;
+                if (!s->stream_token.empty()) {
+                    filter_stream_id = "live_" + s->stream_token;
+                }
+                client->PollPerLinkStats(s->public_ip, filter_stream_id);
             }
         }
 
@@ -955,6 +961,26 @@ PerLinkSnapshot ConnectionManager::CurrentPerLinkStats() const
 {
     std::lock_guard<std::mutex> lock(snapshot_mu_);
     return cached_per_link_;
+}
+
+PerLinkSnapshot ConnectionManager::CurrentPerLinkStatsForConnection(const std::string& connection_id) const
+{
+    std::lock_guard<std::mutex> lock(connections_mu_);
+    auto it = active_clients_.find(connection_id);
+    if (it != active_clients_.end() && it->second) {
+        return it->second->CurrentPerLinkStats();
+    }
+    return PerLinkSnapshot{};
+}
+
+RelayStats ConnectionManager::CurrentStatsForConnection(const std::string& connection_id) const
+{
+    std::lock_guard<std::mutex> lock(connections_mu_);
+    auto it = active_clients_.find(connection_id);
+    if (it != active_clients_.end() && it->second) {
+        return it->second->CurrentStats();
+    }
+    return RelayStats{};
 }
 
 // ---------------------------------------------------------------------------

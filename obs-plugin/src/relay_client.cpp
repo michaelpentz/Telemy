@@ -1159,7 +1159,7 @@ RelayStats RelayClient::CurrentStats() const
 // Per-link (srtla_rec) stats polling
 // ---------------------------------------------------------------------------
 
-void RelayClient::PollPerLinkStats(const std::string& relay_ip)
+void RelayClient::PollPerLinkStats(const std::string& relay_ip, const std::string& filter_stream_id)
 {
     const bool is_byor = byor_mode_.load();
     if (relay_ip.empty()) {
@@ -1210,11 +1210,31 @@ void RelayClient::PollPerLinkStats(const std::string& relay_ip)
     PerLinkSnapshot snap;
     snap.available = true;
 
-    // We expect one group (single stream). Take the first.
-    if (!groupsArr.isEmpty()) {
-        QJsonObject group = groupsArr[0].toObject();
-        snap.conn_count = group.value("conn_count").toInt(0);
-        QJsonArray connsArr = group.value("connections").toArray();
+    // Find the matching group. When filter_stream_id is set, only include the
+    // group whose "stream_id" field matches. When empty (BYOR / backward compat),
+    // take the first group as before.
+    QJsonObject matched_group;
+    bool found = false;
+    for (int g = 0; g < groupsArr.size(); ++g) {
+        QJsonObject group = groupsArr[g].toObject();
+        if (filter_stream_id.empty()) {
+            // No filter — take the first group (backward compat).
+            matched_group = group;
+            found = true;
+            break;
+        }
+        std::string group_stream_id = group.value("stream_id").toString().toStdString();
+        if (group_stream_id == filter_stream_id) {
+            matched_group = group;
+            found = true;
+            break;
+        }
+    }
+
+    if (found) {
+        snap.stream_id = matched_group.value("stream_id").toString().toStdString();
+        snap.conn_count = matched_group.value("conn_count").toInt(0);
+        QJsonArray connsArr = matched_group.value("connections").toArray();
 
         for (int i = 0; i < connsArr.size(); ++i) {
             QJsonObject c = connsArr[i].toObject();

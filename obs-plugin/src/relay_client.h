@@ -50,6 +50,7 @@ struct PerLinkStats {
 struct PerLinkSnapshot {
     bool available = false;
     int conn_count = 0;
+    std::string stream_id;  // The stream_id this per-link data belongs to (e.g. "live_ddfeb357")
     std::vector<PerLinkStats> links;
 };
 
@@ -232,7 +233,9 @@ public:
     RelayStats CurrentStats() const;
 
     // Per-link stats polling (srtla_rec fork)
-    void PollPerLinkStats(const std::string& relay_ip);
+    // When filter_stream_id is non-empty, only include the group whose stream_id matches.
+    // When empty (backward compat / BYOR), include all groups as before.
+    void PollPerLinkStats(const std::string& relay_ip, const std::string& filter_stream_id = "");
     PerLinkSnapshot CurrentPerLinkStats() const;
 
 private:

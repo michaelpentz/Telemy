@@ -548,6 +548,40 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
                 obj[QStringLiteral("status")]         = QString::fromStdString(
                     c.status.empty() ? "idle" : c.status);
                 obj[QStringLiteral("error_msg")]      = QString::fromStdString(c.error_msg);
+
+                // Per-connection per-link stats (filtered by stream_id on the C++ side).
+                if (c.type == "managed" && c.status == "connected") {
+                    const auto conn_pl = g_connection_manager.CurrentPerLinkStatsForConnection(c.id);
+                    const auto conn_st = g_connection_manager.CurrentStatsForConnection(c.id);
+                    if (conn_pl.available && !conn_pl.links.empty()) {
+                        obj[QStringLiteral("per_link_available")] = true;
+                        obj[QStringLiteral("per_link_conn_count")] = conn_pl.conn_count;
+                        obj[QStringLiteral("per_link_stream_id")] = QString::fromStdString(conn_pl.stream_id);
+                        QJsonArray links_arr;
+                        for (const auto& link : conn_pl.links) {
+                            QJsonObject lobj;
+                            lobj[QStringLiteral("addr")]       = QString::fromStdString(link.addr);
+                            lobj[QStringLiteral("asn_org")]    = QString::fromStdString(link.asn_org);
+                            lobj[QStringLiteral("bytes")]      = static_cast<double>(link.bytes);
+                            lobj[QStringLiteral("pkts")]       = static_cast<double>(link.pkts);
+                            lobj[QStringLiteral("share_pct")]  = link.share_pct;
+                            lobj[QStringLiteral("last_ms_ago")]= static_cast<int>(link.last_ms_ago);
+                            lobj[QStringLiteral("uptime_s")]   = static_cast<int>(link.uptime_s);
+                            links_arr.append(lobj);
+                        }
+                        obj[QStringLiteral("per_link_links")] = links_arr;
+                    } else {
+                        obj[QStringLiteral("per_link_available")] = false;
+                    }
+                    if (conn_st.available) {
+                        obj[QStringLiteral("stats_available")]    = true;
+                        obj[QStringLiteral("stats_bitrate_kbps")] = static_cast<int>(conn_st.bitrate_kbps);
+                        obj[QStringLiteral("stats_rtt_ms")]       = conn_st.rtt_ms;
+                    } else {
+                        obj[QStringLiteral("stats_available")] = false;
+                    }
+                }
+
                 relay_conns_arr.append(obj);
             }
             payload.insert(QStringLiteral("relay_connections"), relay_conns_arr);

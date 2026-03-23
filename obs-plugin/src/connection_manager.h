@@ -174,6 +174,8 @@ public:
     std::optional<RelaySession> CurrentSessionForConnection(const std::string& id) const;
     RelayStats                  CurrentStats() const;
     PerLinkSnapshot             CurrentPerLinkStats() const;
+    PerLinkSnapshot             CurrentPerLinkStatsForConnection(const std::string& connection_id) const;
+    RelayStats                  CurrentStatsForConnection(const std::string& connection_id) const;
 
 private:
     // BYOR relay client (shared_ptr prevents use-after-free on Disconnect).
