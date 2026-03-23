@@ -709,6 +709,10 @@ std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
             bodyObj["connection_id"] =
                 QString::fromStdString(pending_managed_connection_id_);
         }
+        if (!pending_managed_stream_token_.empty()) {
+            bodyObj["stream_token"] =
+                QString::fromStdString(pending_managed_stream_token_);
+        }
         pending_managed_connection_id_.clear();
         pending_managed_region_preference_.clear();
         pending_managed_stream_slot_number_ = 0;
