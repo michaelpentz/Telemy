@@ -648,7 +648,16 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
                                                    const std::string& expected_session_id,
                                                    const std::string& expected_stream_token)
 {
-    std::wstring path = L"/api/v1/relay/active";
+    StoreJWT(jwt);
+
+    std::string path_str = "/api/v1/relay/active";
+    {
+        std::lock_guard<std::mutex> lock(connection_id_mutex_);
+        if (!connection_id_.empty()) {
+            path_str += "?connection_id=" + connection_id_;
+        }
+    }
+    std::wstring path(path_str.begin(), path_str.end());
     std::wstring wide_jwt(jwt.begin(), jwt.end());
 
     HttpResponse resp;
@@ -811,6 +820,10 @@ void RelayClient::ConfigureNextManagedStart(const std::string& connection_id,
                                             int stream_slot_number,
                                             const std::string& stream_token)
 {
+    {
+        std::lock_guard<std::mutex> lock(connection_id_mutex_);
+        connection_id_ = connection_id;
+    }
     std::lock_guard<std::mutex> lock(pending_managed_start_mutex_);
     pending_managed_connection_id_ = connection_id;
     pending_managed_region_preference_ = region_preference;

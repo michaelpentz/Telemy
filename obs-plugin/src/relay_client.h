@@ -271,6 +271,9 @@ private:
     std::string        stored_jwt_;
     mutable std::mutex jwt_mutex_;
 
+    std::string        connection_id_;  // persistent, set by ConfigureNextManagedStart
+    mutable std::mutex connection_id_mutex_;
+
     std::atomic<bool> byor_mode_{false};
     mutable std::mutex pending_managed_start_mutex_;
     std::string pending_managed_connection_id_;
