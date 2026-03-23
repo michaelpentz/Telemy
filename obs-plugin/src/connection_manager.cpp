@@ -369,7 +369,7 @@ void ConnectionManager::StatsPollingLoop()
                     if (!session->media_source_url.empty()) {
                         conn.media_source_url = session->media_source_url;
                     }
-                    if (active && (conn.status == "provisioning" || conn.status == "connecting")) {
+                    if (active && conn.status != "ready" && conn.status != "live" && conn.status != "error") {
                         conn.status = "ready";
                     }
                 }
