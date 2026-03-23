@@ -76,6 +76,8 @@ RelayEntitlement ParseRelayEntitlement(const QJsonObject& obj)
     entitlement.reason_code = obj.value("reason_code").toString().toStdString();
     entitlement.plan_tier = obj.value("plan_tier").toString().toStdString();
     entitlement.plan_status = obj.value("plan_status").toString().toStdString();
+    entitlement.max_concurrent_conns = obj.value("max_concurrent_conns").toInt(0);
+    entitlement.active_managed_conns = obj.value("active_managed_conns").toInt(0);
     return entitlement;
 }
 
@@ -105,6 +107,8 @@ QJsonObject SerializeRelayEntitlement(const RelayEntitlement& entitlement)
     obj["reason_code"] = QString::fromStdString(entitlement.reason_code);
     obj["plan_tier"] = QString::fromStdString(entitlement.plan_tier);
     obj["plan_status"] = QString::fromStdString(entitlement.plan_status);
+    obj["max_concurrent_conns"] = entitlement.max_concurrent_conns;
+    obj["active_managed_conns"] = entitlement.active_managed_conns;
     return obj;
 }
 

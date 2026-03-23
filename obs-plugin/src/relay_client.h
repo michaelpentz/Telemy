@@ -74,6 +74,8 @@ struct RelayEntitlement {
     std::string reason_code;
     std::string plan_tier;
     std::string plan_status;
+    int max_concurrent_conns = 0;
+    int active_managed_conns = 0;
 
     bool RelayEnabled() const { return relay_access_status == "enabled"; }
 };
