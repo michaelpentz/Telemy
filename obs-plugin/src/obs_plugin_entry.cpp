@@ -553,7 +553,7 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
                 obj[QStringLiteral("error_msg")]      = QString::fromStdString(c.error_msg);
 
                 // Per-connection per-link stats (filtered by stream_id on the C++ side).
-                if (c.type == "managed" && c.status == "connected") {
+                if (c.type == "managed" && (c.status == "connected" || c.status == "live")) {
                     const auto conn_pl = g_connection_manager.CurrentPerLinkStatsForConnection(c.id);
                     const auto conn_st = g_connection_manager.CurrentStatsForConnection(c.id);
                     if (conn_pl.available && !conn_pl.links.empty()) {
@@ -1081,6 +1081,27 @@ bool obs_module_load(void) {
              "[aegis-obs-plugin] relay client skipped: relay_api_host not configured");
         g_connection_manager.Initialize(&g_vault, &g_http, "", "",
                                         g_config.relay_heartbeat_interval_sec);
+    }
+    // Refresh stream tokens on saved connections from auth state before auto-provisioning.
+    // Saved configs don't persist stream_token; it must come from per-slot auth state.
+    {
+        std::lock_guard<std::mutex> lock(g_auth_state_mu);
+        auto conns = g_connection_manager.ListConnections();
+        for (auto& c : conns) {
+            if (c.type != "managed" || c.stream_slot_number < 0) continue;
+            for (const auto& slot : g_auth_state.session.stream_slots) {
+                if (slot.slot_number == c.stream_slot_number &&
+                    !slot.stream_token.empty() &&
+                    c.stream_token != slot.stream_token) {
+                    c.stream_token = slot.stream_token;
+                    g_connection_manager.UpdateConnection(c.id, c);
+                    blog(LOG_INFO,
+                         "[aegis-obs-plugin] refreshed stream_token for conn=%s slot=%d",
+                         c.id.c_str(), c.stream_slot_number);
+                    break;
+                }
+            }
+        }
     }
     g_connection_manager.AutoProvisionSavedConnections(
         CurrentControlPlaneJwt(), g_config.relay_heartbeat_interval_sec);
