@@ -213,6 +213,8 @@ std::string BuildAuthStateDetailJson() {
         entitlementObj["reason_code"] = QString::fromStdString(g_auth_state.session.entitlement.reason_code);
         entitlementObj["plan_tier"] = QString::fromStdString(g_auth_state.session.entitlement.plan_tier);
         entitlementObj["plan_status"] = QString::fromStdString(g_auth_state.session.entitlement.plan_status);
+        entitlementObj["max_concurrent_conns"] = g_auth_state.session.entitlement.max_concurrent_conns;
+        entitlementObj["active_managed_conns"] = g_auth_state.session.entitlement.active_managed_conns;
         authObj["entitlement"] = entitlementObj;
 
         QJsonObject usageObj;
