@@ -121,6 +121,7 @@ public:
     std::string AddConnection(const RelayConnectionConfig& config); // returns new UUID
     void UpdateConnection(const std::string& id, const RelayConnectionConfig& config);
     void RemoveConnection(const std::string& id);
+    void RemoveManagedConnections(); // Clear all managed connections (sign-out)
     std::vector<RelayConnectionConfig> ListConnections() const;
 
     // ── Multi-connection lifecycle ────────────────────────────────────────

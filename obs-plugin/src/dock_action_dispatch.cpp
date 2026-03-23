@@ -1354,6 +1354,10 @@ bool DispatchDockAction(const std::string& action_json,
                 }
             }
 
+            // Remove managed connections (they belong to the signed-in user).
+            // BYOR connections are user-independent and persist across sign-in.
+            g_connection_manager.RemoveManagedConnections();
+
             if (g_auth && !jwt.empty()) {
                 (void)g_auth->Logout(jwt);
             }

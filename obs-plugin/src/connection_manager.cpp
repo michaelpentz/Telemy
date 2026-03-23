@@ -1205,6 +1205,26 @@ void ConnectionManager::RemoveConnection(const std::string& id)
     SaveConnections();
 }
 
+void ConnectionManager::RemoveManagedConnections()
+{
+    std::vector<std::string> managed_ids;
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        for (const auto& c : connections_) {
+            if (c.type == "managed") {
+                managed_ids.push_back(c.id);
+            }
+        }
+    }
+    for (const auto& id : managed_ids) {
+        RemoveConnection(id);
+    }
+#if defined(AEGIS_OBS_PLUGIN_BUILD)
+    blog(LOG_INFO, "[aegis-cm] removed %zu managed connections (sign-out)",
+         managed_ids.size());
+#endif
+}
+
 std::vector<RelayConnectionConfig> ConnectionManager::ListConnections() const
 {
     std::lock_guard<std::mutex> lock(connections_mu_);
