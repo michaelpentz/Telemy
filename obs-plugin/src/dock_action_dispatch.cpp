@@ -1155,6 +1155,29 @@ bool DispatchDockAction(const std::string& action_json,
                     EmitCurrentStatusSnapshotToDock("auth_login_poll_completed", false);
                     EmitDockActionResult("auth_login_poll", req_id, "completed", true, "",
                                          BuildAuthStateDetailJson());
+
+                    // Auto-provision managed relays after sign-in.
+                    {
+                        const std::string jwt = CurrentControlPlaneJwtForActions();
+                        {
+                            std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                            auto conns = g_connection_manager.ListConnections();
+                            for (auto& c : conns) {
+                                if (c.type != "managed" || c.stream_slot_number < 0) continue;
+                                for (const auto& slot : g_auth_state.session.stream_slots) {
+                                    if (slot.slot_number == c.stream_slot_number &&
+                                        !slot.stream_token.empty() &&
+                                        c.stream_token != slot.stream_token) {
+                                        c.stream_token = slot.stream_token;
+                                        g_connection_manager.UpdateConnection(c.id, c);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        g_connection_manager.AutoProvisionSavedConnections(
+                            jwt, g_config.relay_heartbeat_interval_sec);
+                    }
                     return;
                 }
 
@@ -1227,6 +1250,40 @@ bool DispatchDockAction(const std::string& action_json,
                 }
                 EmitCurrentStatusSnapshotToDock("auth_refresh", false);
                 EmitDockActionResult("auth_refresh", req_id, "completed", true, "", BuildAuthStateDetailJson());
+
+                // Re-provision managed relays that are in error state (e.g. after sign-out/JWT expiry).
+                {
+                    bool has_inactive = false;
+                    auto conns = g_connection_manager.ListConnections();
+                    for (const auto& c : conns) {
+                        if (c.type == "managed" &&
+                            (c.status == "error" || c.status == "idle") &&
+                            !g_connection_manager.HasActiveSessionForConnection(c.id)) {
+                            has_inactive = true;
+                            break;
+                        }
+                    }
+                    if (has_inactive) {
+                        const std::string jwt = CurrentControlPlaneJwtForActions();
+                        {
+                            std::lock_guard<std::mutex> lock(g_auth_state_mu);
+                            for (auto& c : conns) {
+                                if (c.type != "managed" || c.stream_slot_number < 0) continue;
+                                for (const auto& slot : g_auth_state.session.stream_slots) {
+                                    if (slot.slot_number == c.stream_slot_number &&
+                                        !slot.stream_token.empty() &&
+                                        c.stream_token != slot.stream_token) {
+                                        c.stream_token = slot.stream_token;
+                                        g_connection_manager.UpdateConnection(c.id, c);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        g_connection_manager.AutoProvisionSavedConnections(
+                            jwt, g_config.relay_heartbeat_interval_sec);
+                    }
+                }
             } catch (const std::exception& e) {
                 EmitDockActionResult("auth_refresh", req_id, "failed", false, e.what(), "");
             }
