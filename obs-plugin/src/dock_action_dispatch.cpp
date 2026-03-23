@@ -1726,6 +1726,69 @@ bool DispatchDockAction(const std::string& action_json,
         EmitCurrentStatusSnapshotToDock("connection_remove", false);
         return true;
     }
+    if (action_type == "connection_change_region") {
+        blog(LOG_INFO,
+             "[aegis-obs-plugin] dock action connection_change_region: request_id=%s",
+             request_id.c_str());
+        std::string conn_id, new_region;
+        (void)TryExtractJsonStringField(action_json, "id", &conn_id);
+        (void)TryExtractJsonStringField(action_json, "region", &new_region);
+
+        if (conn_id.empty() || new_region.empty()) {
+            EmitDockActionResult(action_type, request_id, "failed", false,
+                                 "missing id or region", "");
+            return true;
+        }
+
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        if (jwt.empty()) {
+            EmitDockActionResult(action_type, request_id, "failed", false,
+                                 "no_control_plane_auth", "");
+            return true;
+        }
+
+        EmitDockActionResult(action_type, request_id, "accepted", true, "", "");
+
+        // Fire async region migration via relay/migrate endpoint.
+        TrackAuthWorker(std::async(std::launch::async,
+            [conn_id, new_region, jwt, req_id = request_id]() {
+            try {
+                const std::string body =
+                    "{\"connection_id\":\"" + JsonEscape(conn_id) +
+                    "\",\"new_region\":\"" + JsonEscape(new_region) + "\"}";
+                const std::wstring wide_host(g_config.relay_api_host.begin(),
+                                             g_config.relay_api_host.end());
+                const std::wstring wide_jwt(jwt.begin(), jwt.end());
+
+                auto resp = g_http.Post(wide_host, L"/api/v1/relay/migrate",
+                                        body, wide_jwt);
+
+                if (resp.ok()) {
+                    blog(LOG_INFO,
+                         "[aegis-obs-plugin] region migration accepted: conn=%s region=%s",
+                         conn_id.c_str(), new_region.c_str());
+                    EmitDockActionResult("connection_change_region", req_id,
+                                         "completed", true, "", "");
+                } else {
+                    blog(LOG_WARNING,
+                         "[aegis-obs-plugin] region migration failed: conn=%s status=%lu body=%s",
+                         conn_id.c_str(), resp.status_code,
+                         resp.body.substr(0, 200).c_str());
+                    EmitDockActionResult("connection_change_region", req_id,
+                                         "failed", false,
+                                         "migrate_failed_" + std::to_string(resp.status_code), "");
+                }
+            } catch (const std::exception& e) {
+                blog(LOG_WARNING,
+                     "[aegis-obs-plugin] region migration error: conn=%s err=%s",
+                     conn_id.c_str(), e.what());
+                EmitDockActionResult("connection_change_region", req_id,
+                                     "failed", false, e.what(), "");
+            }
+        }));
+        return true;
+    }
+
     if (action_type == "connection_connect") {
         blog(LOG_INFO,
              "[aegis-obs-plugin] connection_connect deprecated (always-ready model): request_id=%s",
