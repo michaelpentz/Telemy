@@ -1079,6 +1079,8 @@ bool obs_module_load(void) {
         g_connection_manager.Initialize(&g_vault, &g_http, "", "",
                                         g_config.relay_heartbeat_interval_sec);
     }
+    g_connection_manager.AutoProvisionSavedConnections(
+        CurrentControlPlaneJwt(), g_config.relay_heartbeat_interval_sec);
 
     g_metrics.Start(g_config.metrics_poll_interval_ms);
 

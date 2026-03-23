@@ -63,7 +63,7 @@ struct RelayConnectionConfig {
     std::string stream_token;
     std::string session_id;
     // Runtime state (not persisted):
-    std::string status;           // "idle", "connecting", "connected", "error"
+    std::string status;           // "idle", "provisioning", "ready", "live", "error"
     std::string error_msg;
 };
 
@@ -122,9 +122,6 @@ public:
     std::vector<RelayConnectionConfig> ListConnections() const;
 
     // ── Multi-connection lifecycle ────────────────────────────────────────
-    void Connect(const std::string& id, const std::string& jwt = "");
-    void Disconnect(const std::string& id, const std::string& jwt = "");
-
     // ── Legacy single-relay operations (backward compat with v0.0.4 dock) ──
 
     // Starts managed relay asynchronously. Emits dock results via
@@ -136,7 +133,9 @@ public:
                                 const std::string& connection_id = "");
 
     // Directly set a connection's runtime status (e.g. to reset to "idle" on failure).
-    void SetConnectionStatus(const std::string& id, const std::string& status);
+    void SetConnectionStatus(const std::string& id,
+                             const std::string& status,
+                             const std::string& error_msg);
 
     // Store pending managed start config — called before StartManagedRelayAsync.
     // Stores in pending_starts_ map instead of directly on a single RelayClient.
@@ -155,6 +154,12 @@ public:
     void StopManagedRelayAsync(const std::string& jwt,
                                const std::string& request_id,
                                const std::string& connection_id = "");
+    bool HasActiveSessionForConnection(const std::string& connection_id) const;
+    void StopManagedRelaySync(const std::string& jwt,
+                              const std::string& request_id,
+                              const std::string& connection_id);
+    void AutoProvisionSavedConnections(const std::string& jwt,
+                                       int heartbeat_interval_sec);
 
     // BYOR direct connect/disconnect (synchronous).
     void ConnectDirect(const std::string& host, int port, const std::string& stream_id);
@@ -196,6 +201,9 @@ private:
     // Pending managed start configs — stored before StartManagedRelayAsync.
     std::mutex pending_start_mu_;
     std::unordered_map<std::string, PendingManagedStart> pending_starts_;
+    std::mutex auto_provision_mu_;
+    std::thread auto_provision_worker_;
+    std::atomic<bool> auto_provision_stop_{false};
 
     // Cached stats — written by stats thread, read by OBS tick thread.
     mutable std::mutex snapshot_mu_;

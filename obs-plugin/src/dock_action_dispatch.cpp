@@ -71,7 +71,6 @@ static std::mutex g_pending_relay_actions_mu;
 static std::vector<PendingRelayAction> g_pending_relay_actions;
 static constexpr std::chrono::milliseconds kDockActionCompletionTimeoutMs(3000);
 static constexpr std::chrono::milliseconds kDockActionDuplicateWindowMs(1500);
-static constexpr std::chrono::seconds      kConnectRateLimitWindow(3);
 static std::uint64_t g_local_dock_action_seq = 0;
 static std::mutex g_recent_dock_actions_mu;
 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_recent_dock_actions;
@@ -1662,6 +1661,25 @@ bool DispatchDockAction(const std::string& action_json,
             config.id = "conn_" + std::to_string(now_ms) + "_" + std::to_string(++id_seq);
         }
         const std::string new_id = g_connection_manager.AddConnection(config);
+        if (config.type == "managed") {
+            const std::string jwt = CurrentControlPlaneJwtForActions();
+            if (jwt.empty()) {
+                blog(LOG_WARNING,
+                     "[aegis-obs-plugin] connection_add: managed relay added but no JWT"
+                     " id=%s status=error",
+                     new_id.c_str());
+                g_connection_manager.SetConnectionStatus(new_id, "error", "Not authenticated");
+            } else {
+                g_connection_manager.SetConnectionStatus(new_id, "provisioning", "");
+                g_connection_manager.ConfigureManagedConnectionStart(
+                    new_id,
+                    config.managed_region,
+                    config.stream_slot_number,
+                    config.stream_token);
+                g_connection_manager.StartManagedRelayAsync(
+                    jwt, request_id, g_config.relay_heartbeat_interval_sec, new_id);
+            }
+        }
         blog(LOG_INFO,
              "[aegis-obs-plugin] connection_add completed: id=%s name=%s type=%s",
              new_id.c_str(), name.c_str(), config.type.c_str());
@@ -1681,6 +1699,26 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
             return false;
         }
+        const auto conns = g_connection_manager.ListConnections();
+        const auto it = std::find_if(conns.begin(), conns.end(),
+                                     [&conn_id](const aegis::RelayConnectionConfig& c) {
+                                         return c.id == conn_id;
+                                     });
+        if (it != conns.end() && it->type == "managed" &&
+            g_connection_manager.HasActiveSessionForConnection(conn_id)) {
+            const std::string jwt = CurrentControlPlaneJwtForActions();
+            if (!jwt.empty()) {
+                blog(LOG_INFO,
+                     "[aegis-obs-plugin] connection_remove: deprovisioning managed relay id=%s",
+                     conn_id.c_str());
+                g_connection_manager.StopManagedRelaySync(jwt, request_id, conn_id);
+            } else {
+                blog(LOG_WARNING,
+                     "[aegis-obs-plugin] connection_remove: managed relay had active session"
+                     " but JWT missing id=%s",
+                     conn_id.c_str());
+            }
+        }
         g_connection_manager.RemoveConnection(conn_id);
         blog(LOG_INFO,
              "[aegis-obs-plugin] connection_remove completed: id=%s", conn_id.c_str());
@@ -1688,144 +1726,21 @@ bool DispatchDockAction(const std::string& action_json,
         EmitCurrentStatusSnapshotToDock("connection_remove", false);
         return true;
     }
-
     if (action_type == "connection_connect") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action connection_connect: request_id=%s",
+             "[aegis-obs-plugin] connection_connect deprecated (always-ready model): request_id=%s",
              request_id.c_str());
-        std::string conn_id;
-        (void)TryExtractJsonStringField(action_json, "id", &conn_id);
-        if (conn_id.empty()) {
-            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
-            return false;
-        }
-        // Rate-limit: reject connection_connect if a previous attempt for this
-        // connection was dispatched within kConnectRateLimitWindow (3s).
-        {
-            const auto now = std::chrono::steady_clock::now();
-            std::lock_guard<std::mutex> lk(g_connect_rate_limit_mu);
-            auto it2 = g_connect_rate_limit.find(conn_id);
-            if (it2 != g_connect_rate_limit.end() &&
-                (now - it2->second) < kConnectRateLimitWindow) {
-                blog(LOG_WARNING,
-                     "[aegis-obs-plugin] connection_connect rate-limited:"
-                     " conn_id=%s request_id=%s",
-                     conn_id.c_str(), request_id.c_str());
-                return true; // silently drop
-            }
-            g_connect_rate_limit[conn_id] = now;
-        }
-        // Managed connections go through the async relay start path; BYOR is synchronous.
-        const auto conns = g_connection_manager.ListConnections();
-        const auto it = std::find_if(conns.begin(), conns.end(),
-                                     [&conn_id](const aegis::RelayConnectionConfig& c) {
-                                         return c.id == conn_id;
-                                     });
-        if (it != conns.end() && it->type == "managed") {
-            const std::string jwt = CurrentControlPlaneJwtForActions();
-            if (jwt.empty()) {
-                blog(LOG_WARNING,
-                     "[aegis-obs-plugin] dock action failed: type=connection_connect"
-                     " request_id=%s error=no_control_plane_auth",
-                     request_id.c_str());
-                EmitDockActionResult(action_type, request_id, "failed", false,
-                                     "no_control_plane_auth", "");
-                return false;
-            }
-            aegis::RelayConnectionConfig managed = *it;
-            bool managed_slot_refreshed = false;
-            {
-                std::lock_guard<std::mutex> lock(g_auth_state_mu);
-                if (managed.stream_slot_number > 0) {
-                    if (const auto slot = FindStreamSlotLocked(managed.stream_slot_number)) {
-                        managed.stream_slot_label = slot->label;
-                        managed.stream_token = slot->stream_token;
-                        managed_slot_refreshed = true;
-                    }
-                }
-            }
-            if (managed_slot_refreshed) {
-                g_connection_manager.UpdateConnection(managed.id, managed);
-            }
-            // Set status "connecting" so the dock reflects the pending state immediately.
-            // This also allows StatsPollingLoop to advance it to "connected" once active.
-            g_connection_manager.Connect(conn_id, jwt);
-            EmitCurrentStatusSnapshotToDock("connection_connect", false);
-            g_connection_manager.ConfigureManagedConnectionStart(
-                managed.id,
-                managed.managed_region,
-                managed.stream_slot_number,
-                managed.stream_token);
-            // Async — StartManagedRelayAsync emits provisioning/completed/failed results.
-            // Pass conn_id so it can reset status to "idle" on failure.
-            g_connection_manager.StartManagedRelayAsync(
-                jwt, request_id, g_config.relay_heartbeat_interval_sec, conn_id);
-            return true;
-        }
-        if (it == conns.end()) {
-            blog(LOG_WARNING,
-                 "[aegis-obs-plugin] dock action failed: type=connection_connect"
-                 " request_id=%s error=not_found",
-                 request_id.c_str());
-            EmitDockActionResult(action_type, request_id, "failed", false, "not_found", "");
-            return false;
-        }
-        // BYOR: synchronous direct connect.
-        const std::string jwt = CurrentControlPlaneJwtForActions();
-        g_connection_manager.Connect(conn_id, jwt);
-        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
-        EmitCurrentStatusSnapshotToDock("connection_connect", false);
+        EmitDockActionResult(action_type, request_id, "deprecated", false,
+                             "connection_connect removed in always-ready model", "");
         return true;
     }
 
     if (action_type == "connection_disconnect") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action connection_disconnect: request_id=%s",
+             "[aegis-obs-plugin] connection_disconnect deprecated (always-ready model): request_id=%s",
              request_id.c_str());
-        std::string conn_id;
-        (void)TryExtractJsonStringField(action_json, "id", &conn_id);
-        if (conn_id.empty()) {
-            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_id", "");
-            return false;
-        }
-        // Managed connections go through the async relay stop path; BYOR is synchronous.
-        const auto conns = g_connection_manager.ListConnections();
-        const auto it = std::find_if(conns.begin(), conns.end(),
-                                     [&conn_id](const aegis::RelayConnectionConfig& c) {
-                                         return c.id == conn_id;
-                                     });
-        if (it != conns.end() && it->type == "managed") {
-            if (!g_connection_manager.HasActiveSession()) {
-                blog(LOG_WARNING,
-                     "[aegis-obs-plugin] dock action failed: type=connection_disconnect"
-                     " request_id=%s error=no_active_session",
-                     request_id.c_str());
-                EmitDockActionResult(action_type, request_id, "failed", false,
-                                     "no_active_session", "");
-                return false;
-            }
-            const std::string jwt = CurrentControlPlaneJwtForActions();
-            // Set status "idle" immediately so dock button reverts to "Connect".
-            // The relay stops asynchronously in the background.
-            g_connection_manager.Disconnect(conn_id, jwt);
-            EmitCurrentStatusSnapshotToDock("connection_disconnect", false);
-            // Async — StopManagedRelayAsync emits queued/completed/failed results.
-            g_connection_manager.StopManagedRelayAsync(jwt, request_id, conn_id);
-            return true;
-        }
-        if (it == conns.end()) {
-            blog(LOG_WARNING,
-                 "[aegis-obs-plugin] dock action failed: type=connection_disconnect"
-                 " request_id=%s error=not_found",
-                 request_id.c_str());
-            EmitDockActionResult(action_type, request_id, "failed", false, "not_found", "");
-            return false;
-        }
-        // BYOR: synchronous direct disconnect.
-        const std::string jwt = CurrentControlPlaneJwtForActions();
-        g_connection_manager.Disconnect(conn_id, jwt);
-        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
-        EmitCurrentStatusSnapshotToDock("connection_disconnect", false);
+        EmitDockActionResult(action_type, request_id, "deprecated", false,
+                             "connection_disconnect removed in always-ready model", "");
         return true;
     }
 
@@ -1952,3 +1867,4 @@ bool DispatchDockAction(const std::string& action_json,
 }
 
 #endif // AEGIS_OBS_PLUGIN_BUILD
+

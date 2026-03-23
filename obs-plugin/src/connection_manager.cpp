@@ -20,6 +20,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <random>
 #include <set>
 #include <string>
 #include <utility>
@@ -183,6 +184,7 @@ void ConnectionManager::Initialize(Vault* vault, HttpsClient* http,
     relay_shared_key_       = relay_shared_key;
     heartbeat_interval_sec_ = heartbeat_interval_sec;
     initialized_            = true;
+    auto_provision_stop_.store(false);
 
     if (!api_host.empty() && http) {
         std::lock_guard<std::mutex> lock(relay_mu_);
@@ -215,6 +217,14 @@ void ConnectionManager::Shutdown()
     stats_cv_.notify_all();
     if (stats_thread_.joinable()) {
         stats_thread_.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(auto_provision_mu_);
+        auto_provision_stop_.store(true);
+        if (auto_provision_worker_.joinable()) {
+            auto_provision_worker_.join();
+        }
     }
 
     // Cancel and join all per-connection worker threads.
@@ -320,23 +330,14 @@ void ConnectionManager::StatsPollingLoop()
             }
         }
 
-        // Determine which clients have active sessions.
-        bool any_active = false;
+        bool any_active = (byor && byor->HasActiveSession());
 
-        // Check BYOR first.
-        if (byor && byor->HasActiveSession()) {
-            any_active = true;
-        }
-
-        // Check managed clients and update per-connection status/runtime fields.
+        // Sync managed connection rows with session details and provisioning->ready.
         for (auto& [conn_id, client] : managed_clients) {
             const auto session = client->CurrentSession();
             if (session && session->status != "stopped") {
                 any_active = true;
-                // (first_active_client removed — stats polling iterates all clients)
 
-                // Keep per-connection session-facing fields in sync from this client's
-                // own session object.
                 std::string effective_host;
                 if (!session->relay_hostname.empty()) {
                     effective_host = session->relay_hostname;
@@ -362,59 +363,25 @@ void ConnectionManager::StatsPollingLoop()
                     if (!session->stream_token.empty()) {
                         conn.stream_token = session->stream_token;
                     }
-
-                    // A provisioning managed session should remain "connecting" until active.
-                    // Don't override "idle" — user explicitly disconnected.
-                    if (conn.status == "idle") {
-                        // Skip — user disconnected, StopManagedRelayAsync is in progress.
-                    } else if (active) {
-                        conn.status = "connected";
-                    } else if (conn.status == "connected") {
-                        conn.status = "connecting";
+                    if (active && (conn.status == "provisioning" || conn.status == "connecting")) {
+                        conn.status = "ready";
                     }
                 }
             } else {
-                // If a managed client lost its session, downgrade from "connected".
                 std::lock_guard<std::mutex> lock(connections_mu_);
                 for (auto& conn : connections_) {
                     if (conn.id == conn_id) {
                         conn.session_id.clear();
-                        // Only downgrade if still in "connected" state — don't override
-                        // "idle" (set by explicit disconnect) or "connecting" (already pending).
-                        if (conn.status == "connected") {
-                            conn.status = "connecting";
+                        if (conn.status == "ready" || conn.status == "live") {
+                            conn.status = "provisioning";
                         }
                     }
                 }
-                // Remove from active_clients_ — this connection is no longer managed.
                 active_clients_.erase(conn_id);
             }
         }
 
-        if (!any_active) {
-            // Clear cached data when no relay is active.
-            {
-                std::lock_guard<std::mutex> lock(snapshot_mu_);
-                snapshot_      = ConnectionSnapshot{};
-                cached_stats_  = RelayStats{};
-                cached_per_link_ = PerLinkSnapshot{};
-            }
-            // Downgrade any "connected" connections back to "connecting"
-            // (relay lost session but connection hasn't been explicitly disconnected).
-            // Only for connections not tracked by active_clients_ (e.g. BYOR).
-            {
-                std::lock_guard<std::mutex> lock(connections_mu_);
-                for (auto& conn : connections_) {
-                    if (conn.status == "connected" && conn.type == "byor") {
-                        conn.status = "connecting";
-                    }
-                }
-            }
-            continue;
-        }
-
-        // Poll stats from ALL active clients (not just first).
-        // BYOR client:
+        // Poll stats from all active clients.
         if (byor && byor->HasActiveSession()) {
             const auto bs = byor->CurrentSession();
             if (bs && !bs->public_ip.empty()) {
@@ -422,20 +389,94 @@ void ConnectionManager::StatsPollingLoop()
                 byor->PollPerLinkStats(bs->public_ip);
             }
         }
-        // Managed clients:
         for (auto& [conn_id, client] : managed_clients) {
-            if (!client->HasActiveSession()) continue;
+            if (!client->HasActiveSession()) {
+                continue;
+            }
             const auto s = client->CurrentSession();
             if (s && !s->public_ip.empty()) {
                 client->PollRelayStats(s->public_ip);
-                // Per-link stats for managed clients come from the control plane
-                // API response (per_link field in GetActive), not direct srtla_rec
-                // polling. GetActive parses and caches per_link internally.
-                std::string jwt = client->GetStoredJWT();
+                // Managed per-link data is refreshed via GetActive().
+                const std::string jwt = client->GetStoredJWT();
                 if (!jwt.empty()) {
                     client->GetActive(jwt);
                 }
             }
+        }
+
+        // ready <-> live transitions for managed rows based on per-link freshness.
+        for (auto& [conn_id, client] : managed_clients) {
+            if (!client->HasActiveSession()) {
+                continue;
+            }
+            const PerLinkSnapshot per_link = client->CurrentPerLinkStats();
+            bool is_live = false;
+            if (per_link.available) {
+                for (const auto& link : per_link.links) {
+                    if (link.last_ms_ago < 5000) {
+                        is_live = true;
+                        break;
+                    }
+                }
+            }
+            std::lock_guard<std::mutex> lock(connections_mu_);
+            for (auto& conn : connections_) {
+                if (conn.id != conn_id) {
+                    continue;
+                }
+                if (is_live && conn.status == "ready") {
+                    conn.status = "live";
+                } else if (!is_live && conn.status == "live") {
+                    conn.status = "ready";
+                }
+            }
+        }
+
+        // Apply the same transitions to BYOR connection rows.
+        if (byor && byor->HasActiveSession()) {
+            const PerLinkSnapshot byor_per_link = byor->CurrentPerLinkStats();
+            bool byor_live = false;
+            if (byor_per_link.available) {
+                for (const auto& link : byor_per_link.links) {
+                    if (link.last_ms_ago < 5000) {
+                        byor_live = true;
+                        break;
+                    }
+                }
+            }
+            std::lock_guard<std::mutex> lock(connections_mu_);
+            for (auto& conn : connections_) {
+                if (conn.type != "byor") {
+                    continue;
+                }
+                if (conn.status == "provisioning" || conn.status == "connecting") {
+                    conn.status = "ready";
+                }
+                if (byor_live && conn.status == "ready") {
+                    conn.status = "live";
+                } else if (!byor_live && conn.status == "live") {
+                    conn.status = "ready";
+                }
+            }
+        } else {
+            std::lock_guard<std::mutex> lock(connections_mu_);
+            for (auto& conn : connections_) {
+                if (conn.type == "byor" && (conn.status == "ready" || conn.status == "live")) {
+                    conn.status = "provisioning";
+                    conn.session_id.clear();
+                }
+            }
+        }
+
+        if (!any_active) {
+            // Clear cached data when no relay is active.
+            {
+                std::lock_guard<std::mutex> lock(snapshot_mu_);
+                snapshot_ = ConnectionSnapshot{};
+                cached_stats_ = RelayStats{};
+                cached_per_link_ = PerLinkSnapshot{};
+            }
+            continue;
         }
 
         // Find the client with the best per-link data for the global cached snapshot.
@@ -446,12 +487,14 @@ void ConnectionManager::StatsPollingLoop()
             best_per_link = byor->CurrentPerLinkStats();
             best_stats = byor->CurrentStats();
         }
-        // Check all managed clients — prefer one with actual per-link data.
+        // Check all managed clients - prefer one with actual per-link data.
         for (auto& [conn_id, client] : managed_clients) {
-            if (!client->HasActiveSession()) continue;
+            if (!client->HasActiveSession()) {
+                continue;
+            }
             auto pl = client->CurrentPerLinkStats();
             auto st = client->CurrentStats();
-            // If we don't have per-link data yet, take whatever we find.
+            // If we do not have per-link data yet, take whatever we find.
             if (!best_per_link.available && pl.available) {
                 best_per_link = pl;
                 best_stats = st;
@@ -471,26 +514,28 @@ void ConnectionManager::StatsPollingLoop()
 
         {
             std::lock_guard<std::mutex> lock(snapshot_mu_);
-            snapshot_        = std::move(snap);
-            cached_stats_    = best_stats;
+            snapshot_ = std::move(snap);
+            cached_stats_ = best_stats;
             cached_per_link_ = best_per_link;
         }
     }
 }
-
 // ---------------------------------------------------------------------------
 // Legacy async relay lifecycle
 // ---------------------------------------------------------------------------
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
 
-void ConnectionManager::SetConnectionStatus(const std::string& id, const std::string& status)
+void ConnectionManager::SetConnectionStatus(const std::string& id,
+                                            const std::string& status,
+                                            const std::string& error_msg)
 {
     std::lock_guard<std::mutex> lock(connections_mu_);
     auto it = std::find_if(connections_.begin(), connections_.end(),
                            [&id](const RelayConnectionConfig& c) { return c.id == id; });
     if (it != connections_.end()) {
         it->status = status;
+        it->error_msg = error_msg;
     }
 }
 
@@ -519,7 +564,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
              "[aegis-cm] StartManagedRelayAsync: relay not configured request_id=%s",
              request_id.c_str());
         if (!connection_id.empty()) {
-            SetConnectionStatus(connection_id, "idle");
+            SetConnectionStatus(connection_id, "idle", "relay_not_configured");
             stats_cv_.notify_all();
         }
         EmitDockActionResult("relay_start", request_id, "failed", false,
@@ -585,7 +630,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
             // Helper: reset connection status to idle on failure and wake stats thread.
             auto reset_on_failure = [&]() {
                 if (!conn_id.empty()) {
-                    SetConnectionStatus(conn_id, "idle");
+                    SetConnectionStatus(conn_id, "idle", "relay_start_failed");
                     // Remove from active_clients_ on failure so stats loop doesn't poll it.
                     {
                         std::lock_guard<std::mutex> lock(connections_mu_);
@@ -812,10 +857,113 @@ void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
     }
 }
 
+bool ConnectionManager::HasActiveSessionForConnection(const std::string& connection_id) const
+{
+    if (connection_id.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(connections_mu_);
+    const auto it = active_clients_.find(connection_id);
+    return (it != active_clients_.end() && it->second && it->second->HasActiveSession());
+}
+
+void ConnectionManager::StopManagedRelaySync(const std::string& jwt,
+                                             const std::string& request_id,
+                                             const std::string& connection_id)
+{
+    StopManagedRelayAsync(jwt, request_id, connection_id);
+
+    const std::string worker_key = connection_id.empty() ? "__legacy__" : connection_id;
+    std::thread stop_worker;
+    {
+        std::lock_guard<std::mutex> lk(worker_mu_);
+        auto wit = workers_.find(worker_key);
+        if (wit != workers_.end() && wit->second->stop_worker.joinable()) {
+            stop_worker = std::move(wit->second->stop_worker);
+        }
+    }
+    if (stop_worker.joinable()) {
+        stop_worker.join();
+    }
+}
+
+void ConnectionManager::AutoProvisionSavedConnections(const std::string& jwt,
+                                                      int heartbeat_interval_sec)
+{
+    if (jwt.empty()) {
+        blog(LOG_INFO, "[aegis-cm] auto-provision skipped: no JWT");
+        return;
+    }
+
+    std::vector<RelayConnectionConfig> managed;
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        for (const auto& conn : connections_) {
+            if (conn.type == "managed") {
+                managed.push_back(conn);
+            }
+        }
+    }
+
+    if (managed.empty()) {
+        blog(LOG_INFO, "[aegis-cm] auto-provision: no managed connections");
+        return;
+    }
+
+    blog(LOG_INFO, "[aegis-cm] auto-provision: scheduling %zu managed connection(s)",
+         managed.size());
+
+    {
+        std::lock_guard<std::mutex> lock(auto_provision_mu_);
+        auto_provision_stop_.store(true);
+        if (auto_provision_worker_.joinable()) {
+            auto_provision_worker_.join();
+        }
+        auto_provision_stop_.store(false);
+
+        auto_provision_worker_ = std::thread([this, jwt, heartbeat_interval_sec,
+                                              managed = std::move(managed)]() {
+            std::mt19937 rng(std::random_device{}());
+            std::uniform_int_distribution<int> jitter_ms(0, 2000);
+            const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+
+            for (size_t i = 0; i < managed.size(); ++i) {
+                if (auto_provision_stop_.load() || !initialized_) {
+                    return;
+                }
+                if (i > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(jitter_ms(rng)));
+                }
+                if (auto_provision_stop_.load() || !initialized_) {
+                    return;
+                }
+
+                const auto& conn = managed[i];
+                SetConnectionStatus(conn.id, "provisioning", "");
+                ConfigureManagedConnectionStart(conn.id,
+                                                conn.managed_region,
+                                                conn.stream_slot_number,
+                                                conn.stream_token);
+                const std::string request_id =
+                    "auto_provision_" + std::to_string(now_ms) + "_" + std::to_string(i + 1);
+                blog(LOG_INFO,
+                     "[aegis-cm] auto-provision start: conn=%s region=%s slot=%d",
+                     conn.id.c_str(), conn.managed_region.c_str(), conn.stream_slot_number);
+                StartManagedRelayAsync(jwt, request_id, heartbeat_interval_sec, conn.id);
+            }
+        });
+    }
+}
+
 #else  // non-OBS build stubs
 
 void ConnectionManager::StartManagedRelayAsync(const std::string&, const std::string&, int, const std::string&) {}
 void ConnectionManager::StopManagedRelayAsync(const std::string&, const std::string&, const std::string&) {}
+bool ConnectionManager::HasActiveSessionForConnection(const std::string&) const { return false; }
+void ConnectionManager::StopManagedRelaySync(const std::string&, const std::string&, const std::string&) {}
+void ConnectionManager::AutoProvisionSavedConnections(const std::string&, int) {}
 
 #endif  // AEGIS_OBS_PLUGIN_BUILD
 
@@ -1051,66 +1199,6 @@ std::vector<RelayConnectionConfig> ConnectionManager::ListConnections() const
 {
     std::lock_guard<std::mutex> lock(connections_mu_);
     return connections_;
-}
-
-void ConnectionManager::Connect(const std::string& id, const std::string& jwt)
-{
-    RelayConnectionConfig config;
-    {
-        std::lock_guard<std::mutex> lock(connections_mu_);
-        auto it = std::find_if(connections_.begin(), connections_.end(),
-                               [&id](const RelayConnectionConfig& c) { return c.id == id; });
-        if (it == connections_.end()) return;
-        it->status = "connecting";
-        it->error_msg.clear();
-        config = *it;
-    }
-
-    if (config.type == "byor") {
-        ConnectDirect(config.relay_host, config.relay_port,
-                      config.stream_id.empty() ? "" : config.stream_id);
-    }
-    // Managed: routed to StartManagedRelayAsync at the action dispatch layer
-    // (connection_connect action). Nothing to do here for managed connections.
-    (void)jwt;
-}
-
-void ConnectionManager::Disconnect(const std::string& id, const std::string& jwt)
-{
-    RelayConnectionConfig config;
-    {
-        std::lock_guard<std::mutex> lock(connections_mu_);
-        auto it = std::find_if(connections_.begin(), connections_.end(),
-                               [&id](const RelayConnectionConfig& c) { return c.id == id; });
-        if (it == connections_.end()) return;
-        it->status = "disconnecting";
-        config = *it;
-    }
-
-    if (config.type == "byor") {
-        DisconnectDirect();
-    }
-
-    // Update status to idle after disconnect.
-    // For managed connections, do NOT remove from active_clients_ here —
-    // StopManagedRelayAsync needs the client to call Stop(). It will remove
-    // the client after stop completes.
-    {
-        std::lock_guard<std::mutex> lock(connections_mu_);
-        auto it = std::find_if(connections_.begin(), connections_.end(),
-                               [&id](const RelayConnectionConfig& c) { return c.id == id; });
-        if (it != connections_.end()) {
-            it->status = "idle";
-            it->session_id.clear();
-        }
-        // Only remove BYOR clients immediately — managed clients are removed by StopManagedRelayAsync.
-        if (config.type == "byor") {
-            active_clients_.erase(id);
-        }
-    }
-    // Managed: routed to StopManagedRelayAsync at the action dispatch layer
-    // (connection_disconnect action). Nothing to do here for managed connections.
-    (void)jwt;
 }
 
 // ---------------------------------------------------------------------------
