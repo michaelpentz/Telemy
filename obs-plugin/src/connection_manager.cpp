@@ -363,6 +363,12 @@ void ConnectionManager::StatsPollingLoop()
                     if (!session->stream_token.empty()) {
                         conn.stream_token = session->stream_token;
                     }
+                    if (!session->sender_url.empty()) {
+                        conn.sender_url = session->sender_url;
+                    }
+                    if (!session->media_source_url.empty()) {
+                        conn.media_source_url = session->media_source_url;
+                    }
                     if (active && (conn.status == "provisioning" || conn.status == "connecting")) {
                         conn.status = "ready";
                     }

@@ -23,6 +23,8 @@ struct RelaySession {
     int         grace_window_seconds = 0;
     int         max_session_seconds = 0;
     std::string provision_step;
+    std::string sender_url;
+    std::string media_source_url;
 };
 
 struct RelayStats {
@@ -290,3 +292,4 @@ private:
 };
 
 }  // namespace aegis
+

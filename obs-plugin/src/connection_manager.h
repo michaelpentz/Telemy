@@ -62,6 +62,8 @@ struct RelayConnectionConfig {
     std::string stream_slot_label;
     std::string stream_token;
     std::string session_id;
+    std::string sender_url;
+    std::string media_source_url;
     // Runtime state (not persisted):
     std::string status;           // "idle", "provisioning", "ready", "live", "error"
     std::string error_msg;

@@ -682,6 +682,19 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
     StoreJWT(jwt);
 
     auto session = ParseSessionResponse(resp.body);
+    QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(resp.body));
+    QJsonObject root = doc.object();
+    QJsonObject sessionObj = root.contains("session") && root["session"].isObject()
+                                 ? root["session"].toObject()
+                                 : root;
+    if (session) {
+        if (sessionObj.contains("sender_url")) {
+            session->sender_url = sessionObj["sender_url"].toString().toStdString();
+        }
+        if (sessionObj.contains("media_source_url")) {
+            session->media_source_url = sessionObj["media_source_url"].toString().toStdString();
+        }
+    }
     if (session) {
         bool expect_match = false;
         bool matched = false;
@@ -717,15 +730,10 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
     // Parse per_link data from the API response if present.
     // The per_link object lives inside the "session" wrapper in the JSON.
     {
-        QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(resp.body));
-        QJsonObject root = doc.object();
         // per_link is at root level in the API response (sibling of "session"), not inside it.
         QJsonObject perLinkSource = root.contains("per_link") ? root : QJsonObject{};
         if (!perLinkSource.contains("per_link")) {
             // Also check inside the session object as a fallback.
-            QJsonObject sessionObj = root.contains("session") && root["session"].isObject()
-                                         ? root["session"].toObject()
-                                         : root;
             if (sessionObj.contains("per_link")) {
                 perLinkSource = sessionObj;
             }
@@ -815,6 +823,19 @@ std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
     }
 
     auto session = ParseSessionResponse(resp.body);
+    if (session) {
+        QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(resp.body));
+        QJsonObject root = doc.object();
+        if (root.contains("session") && root["session"].isObject()) {
+            root = root["session"].toObject();
+        }
+        if (root.contains("sender_url")) {
+            session->sender_url = root["sender_url"].toString().toStdString();
+        }
+        if (root.contains("media_source_url")) {
+            session->media_source_url = root["media_source_url"].toString().toStdString();
+        }
+    }
     if (session) {
         std::lock_guard<std::mutex> lock(session_mutex_);
         current_session_ = session;

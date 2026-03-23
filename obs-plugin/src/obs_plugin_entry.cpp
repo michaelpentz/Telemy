@@ -541,6 +541,9 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
                 obj[QStringLiteral("relay_port")]     = effective_port;
                 obj[QStringLiteral("stream_id")]      = QString::fromStdString(effective_stream_id);
                 obj[QStringLiteral("stream_token")]   = QString::fromStdString(effective_stream_token);
+                obj[QStringLiteral("sender_url")]     = QString::fromStdString(c.sender_url);
+                obj[QStringLiteral("media_source_url")] =
+                    QString::fromStdString(c.media_source_url);
                 obj[QStringLiteral("managed_region")] = QString::fromStdString(c.managed_region);
                 obj[QStringLiteral("stream_slot_number")] = c.stream_slot_number;
                 obj[QStringLiteral("stream_slot_label")] = QString::fromStdString(c.stream_slot_label);
