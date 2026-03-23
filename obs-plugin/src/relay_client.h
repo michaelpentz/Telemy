@@ -50,7 +50,7 @@ struct PerLinkStats {
 struct PerLinkSnapshot {
     bool available = false;
     int conn_count = 0;
-    std::string stream_id;  // The stream_id this per-link data belongs to (e.g. "live_ddfeb357")
+    std::string stream_id;  // The stream_id this per-link data belongs to (e.g. "live_<token>")
     std::vector<PerLinkStats> links;
 };
 
