@@ -322,12 +322,10 @@ void ConnectionManager::StatsPollingLoop()
 
         // Determine which clients have active sessions.
         bool any_active = false;
-        std::shared_ptr<RelayClient> first_active_client;
 
         // Check BYOR first.
         if (byor && byor->HasActiveSession()) {
             any_active = true;
-            first_active_client = byor;
         }
 
         // Check managed clients and update per-connection status/runtime fields.
@@ -335,9 +333,7 @@ void ConnectionManager::StatsPollingLoop()
             const auto session = client->CurrentSession();
             if (session && session->status != "stopped") {
                 any_active = true;
-                if (!first_active_client) {
-                    first_active_client = client;
-                }
+                // (first_active_client removed — stats polling iterates all clients)
 
                 // Keep per-connection session-facing fields in sync from this client's
                 // own session object.
@@ -410,28 +406,18 @@ void ConnectionManager::StatsPollingLoop()
             continue;
         }
 
-        // Poll stats from the first active client (legacy compat for single-snapshot).
-        if (!first_active_client) {
-            continue;
+        // Poll stats from ALL active clients (not just first).
+        // BYOR client:
+        if (byor && byor->HasActiveSession()) {
+            const auto bs = byor->CurrentSession();
+            if (bs && !bs->public_ip.empty()) {
+                byor->PollRelayStats(bs->public_ip);
+                byor->PollPerLinkStats(bs->public_ip);
+            }
         }
-
-        const auto session = first_active_client->CurrentSession();
-        if (!session || session->public_ip.empty()) {
-            continue;
-        }
-
-        // Network I/O happens HERE, not on the OBS tick thread.
-        first_active_client->PollRelayStats(session->public_ip);
-        first_active_client->PollPerLinkStats(session->public_ip);
-
-        // Also poll stats for any additional active managed clients.
+        // Managed clients:
         for (auto& [conn_id, client] : managed_clients) {
-            if (client.get() == first_active_client.get()) {
-                continue;  // Already polled above.
-            }
-            if (!client->HasActiveSession()) {
-                continue;
-            }
+            if (!client->HasActiveSession()) continue;
             const auto s = client->CurrentSession();
             if (s && !s->public_ip.empty()) {
                 client->PollRelayStats(s->public_ip);
@@ -439,23 +425,29 @@ void ConnectionManager::StatsPollingLoop()
             }
         }
 
-        // Use the client with the best data for the global cached snapshot.
-        // A newly-added client may not have stats yet, so prefer one that does.
+        // Find the client with the best per-link data for the global cached snapshot.
         RelayStats best_stats{};
         PerLinkSnapshot best_per_link{};
-        // Try first_active_client first.
-        best_stats = first_active_client->CurrentStats();
-        best_per_link = first_active_client->CurrentPerLinkStats();
-        // If first_active_client has no data, check other clients.
-        if (!best_per_link.available || best_per_link.links.empty()) {
-            for (auto& [conn_id, client] : managed_clients) {
-                if (client.get() == first_active_client.get()) continue;
-                auto pl = client->CurrentPerLinkStats();
-                if (pl.available && !pl.links.empty()) {
-                    best_per_link = pl;
-                    best_stats = client->CurrentStats();
-                    break;
-                }
+
+        if (byor && byor->HasActiveSession()) {
+            best_per_link = byor->CurrentPerLinkStats();
+            best_stats = byor->CurrentStats();
+        }
+        // Check all managed clients — prefer one with actual per-link data.
+        for (auto& [conn_id, client] : managed_clients) {
+            if (!client->HasActiveSession()) continue;
+            auto pl = client->CurrentPerLinkStats();
+            auto st = client->CurrentStats();
+            // If we don't have per-link data yet, take whatever we find.
+            if (!best_per_link.available && pl.available) {
+                best_per_link = pl;
+                best_stats = st;
+            }
+            // Prefer the client with non-empty links.
+            if (pl.available && !pl.links.empty() &&
+                (!best_per_link.available || best_per_link.links.empty())) {
+                best_per_link = pl;
+                best_stats = st;
             }
         }
 
