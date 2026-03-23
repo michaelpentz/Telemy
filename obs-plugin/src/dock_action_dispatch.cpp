@@ -1282,6 +1282,21 @@ bool DispatchDockAction(const std::string& action_json,
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         TrackAuthWorker(std::async(std::launch::async, [req_id = request_id]() {
             const std::string jwt = CurrentControlPlaneJwtForActions();
+
+            // Stop all managed relay sessions before clearing auth.
+            {
+                auto conns = g_connection_manager.ListConnections();
+                for (const auto& c : conns) {
+                    if (c.type == "managed" &&
+                        g_connection_manager.HasActiveSessionForConnection(c.id)) {
+                        if (!jwt.empty()) {
+                            g_connection_manager.StopManagedRelaySync(jwt, req_id, c.id);
+                        }
+                        g_connection_manager.SetConnectionStatus(c.id, "error", "Signed out");
+                    }
+                }
+            }
+
             if (g_auth && !jwt.empty()) {
                 (void)g_auth->Logout(jwt);
             }
