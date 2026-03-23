@@ -636,11 +636,15 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
             // Helper: reset connection status to idle on failure and wake stats thread.
             auto reset_on_failure = [&]() {
                 if (!conn_id.empty()) {
-                    SetConnectionStatus(conn_id, "idle", "relay_start_failed");
-                    // Remove from active_clients_ on failure so stats loop doesn't poll it.
+                    SetConnectionStatus(conn_id, "error", "relay_start_failed");
+                    // Remove from active_clients_ ONLY if it's still our relay instance.
+                    // A new worker may have already replaced it with a fresh client.
                     {
                         std::lock_guard<std::mutex> lock(connections_mu_);
-                        active_clients_.erase(conn_id);
+                        auto it = active_clients_.find(conn_id);
+                        if (it != active_clients_.end() && it->second == relay) {
+                            active_clients_.erase(it);
+                        }
                     }
                     stats_cv_.notify_all();
                 }
@@ -682,10 +686,10 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                             }
 
                             if (polled->status == "active") {
-                                if (cancel_flag->load()) {
-                                    reset_on_failure();
-                                    return;
-                                }
+                                // Don't check cancel_flag here — the session is confirmed
+                                // active. Start the heartbeat unconditionally. If a new
+                                // worker was requested, it will stop this heartbeat via
+                                // StopHeartbeatLoop when it takes over.
                                 relay->StartHeartbeatLoop(jwt, polled->session_id,
                                                          heartbeat_interval_sec);
                                 blog(LOG_INFO,
