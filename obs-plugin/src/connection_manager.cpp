@@ -364,7 +364,10 @@ void ConnectionManager::StatsPollingLoop()
                     }
 
                     // A provisioning managed session should remain "connecting" until active.
-                    if (active) {
+                    // Don't override "idle" — user explicitly disconnected.
+                    if (conn.status == "idle") {
+                        // Skip — user disconnected, StopManagedRelayAsync is in progress.
+                    } else if (active) {
                         conn.status = "connected";
                     } else if (conn.status == "connected") {
                         conn.status = "connecting";
@@ -1088,8 +1091,10 @@ void ConnectionManager::Disconnect(const std::string& id, const std::string& jwt
         DisconnectDirect();
     }
 
-    // Update status to idle after disconnect and remove from active_clients_
-    // so StatsPollingLoop doesn't re-set status to "connected".
+    // Update status to idle after disconnect.
+    // For managed connections, do NOT remove from active_clients_ here —
+    // StopManagedRelayAsync needs the client to call Stop(). It will remove
+    // the client after stop completes.
     {
         std::lock_guard<std::mutex> lock(connections_mu_);
         auto it = std::find_if(connections_.begin(), connections_.end(),
@@ -1098,7 +1103,10 @@ void ConnectionManager::Disconnect(const std::string& id, const std::string& jwt
             it->status = "idle";
             it->session_id.clear();
         }
-        active_clients_.erase(id);
+        // Only remove BYOR clients immediately — managed clients are removed by StopManagedRelayAsync.
+        if (config.type == "byor") {
+            active_clients_.erase(id);
+        }
     }
     // Managed: routed to StopManagedRelayAsync at the action dispatch layer
     // (connection_disconnect action). Nothing to do here for managed connections.
