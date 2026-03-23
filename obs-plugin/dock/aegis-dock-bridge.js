@@ -500,12 +500,12 @@
         addEvent(result.ok ? "success" : (result.status === "rejected" ? "warning" : "error"), msg);
 
         // Track relay errors in bridge state (dock reads via getState())
-        if ((result.actionType === "relay_start" || result.actionType === "relay_connect_direct") && !result.ok) {
+        if (result.actionType === "relay_start" && !result.ok) {
           plugin.relayError = result.error || result.status || "relay_start_failed";
           plugin.relayErrorTs = nowMs();
           plugin.relayProvisionStep = null;
         }
-        if ((result.actionType === "relay_start" || result.actionType === "relay_connect_direct") && result.ok) {
+        if (result.actionType === "relay_start" && result.ok) {
           plugin.relayError = null;
           plugin.relayErrorTs = 0;
           // Don't clear relayProvisionStep here — let it persist until relayActive hides the block
@@ -528,7 +528,7 @@
         }
 
         // Cache relay session data from relay_start result for immediate UI update
-        if ((result.actionType === "relay_start" || result.actionType === "relay_connect_direct") && result.ok && result.detail) {
+        if (result.actionType === "relay_start" && result.ok && result.detail) {
           var d = result.detail;
           if (typeof d === "string") { try { d = JSON.parse(d); } catch(_) { d = null; } }
           if (d) {
@@ -545,7 +545,7 @@
           }
         }
         // Clear relay cache on stop
-        if (result.actionType === "relay_stop" || result.actionType === "relay_disconnect_direct") {
+        if (result.actionType === "relay_stop") {
           plugin.relayCache = null;
         }
 
