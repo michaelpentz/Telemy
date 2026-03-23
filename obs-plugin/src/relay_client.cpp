@@ -719,11 +719,19 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
     {
         QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(resp.body));
         QJsonObject root = doc.object();
-        QJsonObject sessionObj = root.contains("session") && root["session"].isObject()
-                                     ? root["session"].toObject()
-                                     : root;
-        if (sessionObj.contains("per_link") && sessionObj["per_link"].isObject()) {
-            QJsonObject plObj = sessionObj["per_link"].toObject();
+        // per_link is at root level in the API response (sibling of "session"), not inside it.
+        QJsonObject perLinkSource = root.contains("per_link") ? root : QJsonObject{};
+        if (!perLinkSource.contains("per_link")) {
+            // Also check inside the session object as a fallback.
+            QJsonObject sessionObj = root.contains("session") && root["session"].isObject()
+                                         ? root["session"].toObject()
+                                         : root;
+            if (sessionObj.contains("per_link")) {
+                perLinkSource = sessionObj;
+            }
+        }
+        if (perLinkSource.contains("per_link") && perLinkSource["per_link"].isObject()) {
+            QJsonObject plObj = perLinkSource["per_link"].toObject();
             PerLinkSnapshot snap;
             snap.available = true;
             snap.stream_id = plObj.value("stream_id").toString().toStdString();
