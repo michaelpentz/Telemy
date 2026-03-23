@@ -376,11 +376,15 @@ void ConnectionManager::StatsPollingLoop()
                 for (auto& conn : connections_) {
                     if (conn.id == conn_id) {
                         conn.session_id.clear();
+                        // Only downgrade if still in "connected" state — don't override
+                        // "idle" (set by explicit disconnect) or "connecting" (already pending).
                         if (conn.status == "connected") {
                             conn.status = "connecting";
                         }
                     }
                 }
+                // Remove from active_clients_ — this connection is no longer managed.
+                active_clients_.erase(conn_id);
             }
         }
 
@@ -1084,14 +1088,17 @@ void ConnectionManager::Disconnect(const std::string& id, const std::string& jwt
         DisconnectDirect();
     }
 
-    // Update status to idle after disconnect
+    // Update status to idle after disconnect and remove from active_clients_
+    // so StatsPollingLoop doesn't re-set status to "connected".
     {
         std::lock_guard<std::mutex> lock(connections_mu_);
         auto it = std::find_if(connections_.begin(), connections_.end(),
                                [&id](const RelayConnectionConfig& c) { return c.id == id; });
         if (it != connections_.end()) {
             it->status = "idle";
+            it->session_id.clear();
         }
+        active_clients_.erase(id);
     }
     // Managed: routed to StopManagedRelayAsync at the action dispatch layer
     // (connection_disconnect action). Nothing to do here for managed connections.
