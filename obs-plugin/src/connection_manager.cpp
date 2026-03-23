@@ -186,7 +186,7 @@ void ConnectionManager::Initialize(Vault* vault, HttpsClient* http,
 
     if (!api_host.empty() && http) {
         std::lock_guard<std::mutex> lock(relay_mu_);
-        relay_ = std::make_shared<RelayClient>(*http, api_host, relay_shared_key);
+        byor_relay_ = std::make_shared<RelayClient>(*http, api_host, relay_shared_key);
     }
 
     // Start background stats polling thread.
@@ -217,22 +217,37 @@ void ConnectionManager::Shutdown()
         stats_thread_.join();
     }
 
-    // Cancel and join relay worker threads.
-    start_cancel_.store(true);
+    // Cancel and join all per-connection worker threads.
     {
         std::lock_guard<std::mutex> lk(worker_mu_);
-        if (start_worker_.joinable()) {
-            start_worker_.join();
-        }
-        if (stop_worker_.joinable()) {
-            stop_worker_.join();
+        for (auto& [id, w] : workers_) {
+            w->start_cancel.store(true);
         }
     }
+    // Join outside worker_mu_ to avoid deadlock with worker threads.
+    {
+        std::lock_guard<std::mutex> lk(worker_mu_);
+        for (auto& [id, w] : workers_) {
+            if (w->start_worker.joinable()) {
+                w->start_worker.join();
+            }
+            if (w->stop_worker.joinable()) {
+                w->stop_worker.join();
+            }
+        }
+        workers_.clear();
+    }
 
-    // Destroy relay client.
+    // Destroy BYOR relay client.
     {
         std::lock_guard<std::mutex> lock(relay_mu_);
-        relay_.reset();
+        byor_relay_.reset();
+    }
+
+    // Destroy all active managed clients.
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        active_clients_.clear();
     }
 
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
@@ -246,15 +261,26 @@ void ConnectionManager::Reconfigure(const std::string& api_host,
     api_host_         = api_host;
     relay_shared_key_ = relay_shared_key;
 
-    std::lock_guard<std::mutex> lock(relay_mu_);
-    if (relay_) {
-        relay_->Reconfigure(api_host, relay_shared_key);
-    } else if (!api_host.empty() && http_) {
-        relay_ = std::make_shared<RelayClient>(*http_, api_host, relay_shared_key);
+    // Reconfigure BYOR relay.
+    {
+        std::lock_guard<std::mutex> lock(relay_mu_);
+        if (byor_relay_) {
+            byor_relay_->Reconfigure(api_host, relay_shared_key);
+        } else if (!api_host.empty() && http_) {
+            byor_relay_ = std::make_shared<RelayClient>(*http_, api_host, relay_shared_key);
 #if defined(AEGIS_OBS_PLUGIN_BUILD)
-        blog(LOG_INFO, "[aegis-cm] relay client created on reconfigure: host=%s",
-             api_host.c_str());
+            blog(LOG_INFO, "[aegis-cm] byor relay client created on reconfigure: host=%s",
+                 api_host.c_str());
 #endif
+        }
+    }
+
+    // Reconfigure all active managed clients.
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        for (auto& [id, client] : active_clients_) {
+            client->Reconfigure(api_host, relay_shared_key);
+        }
     }
 }
 
@@ -278,13 +304,60 @@ void ConnectionManager::StatsPollingLoop()
             break;
         }
 
-        std::shared_ptr<RelayClient> relay;
+        // Collect BYOR relay + all active managed clients.
+        std::shared_ptr<RelayClient> byor;
         {
             std::lock_guard<std::mutex> lock(relay_mu_);
-            relay = relay_;
+            byor = byor_relay_;
         }
 
-        if (!relay || !relay->HasActiveSession()) {
+        // Snapshot active managed clients under lock.
+        std::vector<std::pair<std::string, std::shared_ptr<RelayClient>>> managed_clients;
+        {
+            std::lock_guard<std::mutex> lock(connections_mu_);
+            for (auto& [id, client] : active_clients_) {
+                managed_clients.emplace_back(id, client);
+            }
+        }
+
+        // Determine which clients have active sessions.
+        bool any_active = false;
+        std::shared_ptr<RelayClient> first_active_client;
+        std::string first_active_conn_id;
+
+        // Check BYOR first.
+        if (byor && byor->HasActiveSession()) {
+            any_active = true;
+            first_active_client = byor;
+        }
+
+        // Check managed clients and update per-connection status.
+        for (auto& [conn_id, client] : managed_clients) {
+            if (client->HasActiveSession()) {
+                any_active = true;
+                if (!first_active_client) {
+                    first_active_client = client;
+                    first_active_conn_id = conn_id;
+                }
+                // Update this connection's status to "connected".
+                std::lock_guard<std::mutex> lock(connections_mu_);
+                for (auto& conn : connections_) {
+                    if (conn.id == conn_id && conn.status == "connecting") {
+                        conn.status = "connected";
+                    }
+                }
+            } else {
+                // If a managed client lost its session, downgrade from "connected".
+                std::lock_guard<std::mutex> lock(connections_mu_);
+                for (auto& conn : connections_) {
+                    if (conn.id == conn_id && conn.status == "connected") {
+                        conn.status = "connecting";
+                    }
+                }
+            }
+        }
+
+        if (!any_active) {
             // Clear cached data when no relay is active.
             {
                 std::lock_guard<std::mutex> lock(snapshot_mu_);
@@ -294,10 +367,11 @@ void ConnectionManager::StatsPollingLoop()
             }
             // Downgrade any "connected" connections back to "connecting"
             // (relay lost session but connection hasn't been explicitly disconnected).
+            // Only for connections not tracked by active_clients_ (e.g. BYOR).
             {
                 std::lock_guard<std::mutex> lock(connections_mu_);
                 for (auto& conn : connections_) {
-                    if (conn.status == "connected") {
+                    if (conn.status == "connected" && conn.type == "byor") {
                         conn.status = "connecting";
                     }
                 }
@@ -305,29 +379,37 @@ void ConnectionManager::StatsPollingLoop()
             continue;
         }
 
-        // Transition any "connecting" connections to "connected" now that the
-        // relay session is confirmed active. Do this before the public_ip check
-        // so the dock shows "Connected" even while the IP is still populating.
-        {
-            std::lock_guard<std::mutex> lock(connections_mu_);
-            for (auto& conn : connections_) {
-                if (conn.status == "connecting") {
-                    conn.status = "connected";
-                }
-            }
+        // Poll stats from the first active client (legacy compat for single-snapshot).
+        if (!first_active_client) {
+            continue;
         }
 
-        const auto session = relay->CurrentSession();
+        const auto session = first_active_client->CurrentSession();
         if (!session || session->public_ip.empty()) {
             continue;
         }
 
         // Network I/O happens HERE, not on the OBS tick thread.
-        relay->PollRelayStats(session->public_ip);
-        relay->PollPerLinkStats(session->public_ip);
+        first_active_client->PollRelayStats(session->public_ip);
+        first_active_client->PollPerLinkStats(session->public_ip);
 
-        RelayStats     stats    = relay->CurrentStats();
-        PerLinkSnapshot per_link = relay->CurrentPerLinkStats();
+        // Also poll stats for any additional active managed clients.
+        for (auto& [conn_id, client] : managed_clients) {
+            if (client.get() == first_active_client.get()) {
+                continue;  // Already polled above.
+            }
+            if (!client->HasActiveSession()) {
+                continue;
+            }
+            const auto s = client->CurrentSession();
+            if (s && !s->public_ip.empty()) {
+                client->PollRelayStats(s->public_ip);
+                client->PollPerLinkStats(s->public_ip);
+            }
+        }
+
+        RelayStats     stats    = first_active_client->CurrentStats();
+        PerLinkSnapshot per_link = first_active_client->CurrentPerLinkStats();
 
         ConnectionSnapshot snap;
         if (per_link.available && !per_link.links.empty()) {
@@ -364,11 +446,21 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                                int heartbeat_interval_sec,
                                                const std::string& connection_id)
 {
+    // Create or reuse a per-connection RelayClient.
     std::shared_ptr<RelayClient> relay;
     {
-        std::lock_guard<std::mutex> lock(relay_mu_);
-        relay = relay_;
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        auto it = active_clients_.find(connection_id);
+        if (it != active_clients_.end()) {
+            relay = it->second;
+        } else if (!api_host_.empty() && http_) {
+            relay = std::make_shared<RelayClient>(*http_, api_host_, relay_shared_key_);
+            if (!connection_id.empty()) {
+                active_clients_[connection_id] = relay;
+            }
+        }
     }
+
     if (!relay) {
         blog(LOG_WARNING,
              "[aegis-cm] StartManagedRelayAsync: relay not configured request_id=%s",
@@ -382,36 +474,70 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
         return;
     }
 
+    // Pop pending config and configure the per-connection client.
+    {
+        std::lock_guard<std::mutex> lock(pending_start_mu_);
+        auto pit = pending_starts_.find(connection_id);
+        if (pit != pending_starts_.end()) {
+            relay->ConfigureNextManagedStart(pit->second.connection_id,
+                                             pit->second.region_preference,
+                                             pit->second.stream_slot_number,
+                                             pit->second.stream_token);
+            pending_starts_.erase(pit);
+        }
+    }
+
     std::string req_id = request_id;
     std::string conn_id = connection_id;
-    // Cancel any in-flight relay-start worker and join it outside the lock so
-    // it cannot outlive this object on plugin unload (use-after-free fix).
+
+    // Cancel only THIS connection's in-flight start worker and join it outside
+    // the lock so it cannot outlive this object on plugin unload.
     {
         std::thread old_worker;
         {
             std::lock_guard<std::mutex> lk(worker_mu_);
-            if (start_worker_.joinable()) {
-                start_cancel_.store(true);
-                old_worker = std::move(start_worker_);
+            auto wit = workers_.find(conn_id);
+            if (wit != workers_.end() && wit->second->start_worker.joinable()) {
+                wit->second->start_cancel.store(true);
+                old_worker = std::move(wit->second->start_worker);
             }
         }
         if (old_worker.joinable()) {
             old_worker.join();
-            blog(LOG_INFO, "[aegis-cm] relay_start: cancelled previous worker");
+            blog(LOG_INFO, "[aegis-cm] relay_start: cancelled previous worker for conn=%s",
+                 conn_id.c_str());
         }
     }
+
     // Bail if Shutdown() ran while we were waiting for the old worker.
     if (!initialized_) {
         return;
     }
+
     {
         std::lock_guard<std::mutex> lk(worker_mu_);
-        start_cancel_.store(false);
-        start_worker_ = std::thread([this, relay, jwt, req_id, conn_id, heartbeat_interval_sec]() {
+        // Ensure a ConnectionWorker exists for this connection.
+        auto& worker = workers_[conn_id];
+        if (!worker) {
+            worker = std::make_unique<ConnectionWorker>();
+        }
+        worker->start_cancel.store(false);
+
+        // Capture a raw pointer to the cancel flag; the worker owns its lifetime
+        // through workers_ map which outlives the thread.
+        std::atomic<bool>* cancel_flag = &worker->start_cancel;
+
+        worker->start_worker = std::thread([this, relay, jwt, req_id, conn_id,
+                                             heartbeat_interval_sec, cancel_flag]() {
             // Helper: reset connection status to idle on failure and wake stats thread.
             auto reset_on_failure = [&]() {
                 if (!conn_id.empty()) {
                     SetConnectionStatus(conn_id, "idle");
+                    // Remove from active_clients_ on failure so stats loop doesn't poll it.
+                    {
+                        std::lock_guard<std::mutex> lock(connections_mu_);
+                        active_clients_.erase(conn_id);
+                    }
                     stats_cv_.notify_all();
                 }
             };
@@ -425,10 +551,10 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                         const auto deadline =
                             std::chrono::steady_clock::now() + std::chrono::seconds(180);
                         while (std::chrono::steady_clock::now() < deadline) {
-                            if (start_cancel_.load()) {
+                            if (cancel_flag->load()) {
                                 blog(LOG_INFO,
-                                     "[aegis-cm] relay_start cancelled: request_id=%s",
-                                     req_id.c_str());
+                                     "[aegis-cm] relay_start cancelled: request_id=%s conn=%s",
+                                     req_id.c_str(), conn_id.c_str());
                                 reset_on_failure();
                                 return;
                             }
@@ -449,7 +575,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                             }
 
                             if (polled->status == "active") {
-                                if (start_cancel_.load()) {
+                                if (cancel_flag->load()) {
                                     reset_on_failure();
                                     return;
                                 }
@@ -457,8 +583,9 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                                          heartbeat_interval_sec);
                                 blog(LOG_INFO,
                                      "[aegis-cm] relay_start completed: request_id=%s"
-                                     " region=%s status=%s",
+                                     " conn=%s region=%s status=%s",
                                      req_id.c_str(),
+                                     conn_id.c_str(),
                                      polled->region.c_str(),
                                      polled->status.c_str());
                                 EmitDockActionResult("relay_start", req_id, "completed", true, "",
@@ -471,8 +598,8 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                             if (polled->status == "failed" || polled->status == "stopped") {
                                 blog(LOG_WARNING,
                                      "[aegis-cm] relay_start failed: request_id=%s"
-                                     " error=relay_start_failed",
-                                     req_id.c_str());
+                                     " conn=%s error=relay_start_failed",
+                                     req_id.c_str(), conn_id.c_str());
                                 reset_on_failure();
                                 EmitDockActionResult("relay_start", req_id, "failed", false,
                                                      "relay_start_failed", "");
@@ -488,17 +615,17 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                             std::this_thread::sleep_for(sleep_for);
                         }
 
-                        if (start_cancel_.load()) {
+                        if (cancel_flag->load()) {
                             blog(LOG_INFO,
-                                 "[aegis-cm] relay_start cancelled: request_id=%s",
-                                 req_id.c_str());
+                                 "[aegis-cm] relay_start cancelled: request_id=%s conn=%s",
+                                 req_id.c_str(), conn_id.c_str());
                             reset_on_failure();
                             return;
                         }
                         blog(LOG_WARNING,
                              "[aegis-cm] relay_start failed: request_id=%s"
-                             " error=provision_timeout",
-                             req_id.c_str());
+                             " conn=%s error=provision_timeout",
+                             req_id.c_str(), conn_id.c_str());
                         reset_on_failure();
                         EmitDockActionResult("relay_start", req_id, "failed", false,
                                              "provision_timeout", "");
@@ -510,8 +637,9 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                                   heartbeat_interval_sec);
                         blog(LOG_INFO,
                              "[aegis-cm] relay_start completed: request_id=%s"
-                             " region=%s status=%s",
+                             " conn=%s region=%s status=%s",
                              req_id.c_str(),
+                             conn_id.c_str(),
                              session->region.c_str(),
                              session->status.c_str());
                         EmitDockActionResult("relay_start", req_id, "completed", true, "",
@@ -520,8 +648,8 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                     } else {
                         blog(LOG_WARNING,
                              "[aegis-cm] relay_start failed: request_id=%s"
-                             " error=relay_start_failed",
-                             req_id.c_str());
+                             " conn=%s error=relay_start_failed",
+                             req_id.c_str(), conn_id.c_str());
                         reset_on_failure();
                         EmitDockActionResult("relay_start", req_id, "failed", false,
                                              "relay_start_failed", "");
@@ -529,16 +657,16 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                 } else {
                     blog(LOG_WARNING,
                          "[aegis-cm] relay_start failed: request_id=%s"
-                         " error=relay_start_failed",
-                         req_id.c_str());
+                         " conn=%s error=relay_start_failed",
+                         req_id.c_str(), conn_id.c_str());
                     reset_on_failure();
                     EmitDockActionResult("relay_start", req_id, "failed", false,
                                          "relay_start_failed", "");
                 }
             } catch (const std::exception& e) {
                 blog(LOG_WARNING,
-                     "[aegis-cm] relay_start exception: request_id=%s error=%s",
-                     req_id.c_str(), e.what());
+                     "[aegis-cm] relay_start exception: request_id=%s conn=%s error=%s",
+                     req_id.c_str(), conn_id.c_str(), e.what());
                 reset_on_failure();
                 EmitDockActionResult("relay_start", req_id, "failed", false, e.what(), "");
             }
@@ -547,17 +675,31 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
 }
 
 void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
-                                              const std::string& request_id)
+                                              const std::string& request_id,
+                                              const std::string& connection_id)
 {
+    // Find the relay client for this connection.
     std::shared_ptr<RelayClient> relay;
-    {
-        std::lock_guard<std::mutex> lock(relay_mu_);
-        relay = relay_;
+    if (!connection_id.empty()) {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        auto it = active_clients_.find(connection_id);
+        if (it != active_clients_.end()) {
+            relay = it->second;
+        }
     }
+
+    // Fallback to BYOR relay for legacy callers with no connection_id.
+    if (!relay) {
+        std::lock_guard<std::mutex> lock(relay_mu_);
+        if (byor_relay_ && byor_relay_->HasActiveSession()) {
+            relay = byor_relay_;
+        }
+    }
+
     if (!relay || !relay->HasActiveSession()) {
         blog(LOG_WARNING,
-             "[aegis-cm] StopManagedRelayAsync: no active session request_id=%s",
-             request_id.c_str());
+             "[aegis-cm] StopManagedRelayAsync: no active session request_id=%s conn=%s",
+             request_id.c_str(), connection_id.c_str());
         EmitDockActionResult("relay_stop", request_id, "failed", false,
                              "no_active_session", "");
         return;
@@ -566,36 +708,48 @@ void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
     auto session = relay->CurrentSession();
     std::string sid = session ? session->session_id : "";
     std::string req_id = request_id;
+    std::string conn_id = connection_id;
 
     EmitDockActionResult("relay_stop", request_id, "queued", true, "", "queued_native");
     {
         std::lock_guard<std::mutex> lk(worker_mu_);
-        if (stop_worker_.joinable()) {
-            stop_worker_.join();
+        // Ensure a ConnectionWorker exists for this connection.
+        std::string worker_key = conn_id.empty() ? "__legacy__" : conn_id;
+        auto& worker = workers_[worker_key];
+        if (!worker) {
+            worker = std::make_unique<ConnectionWorker>();
         }
-        stop_worker_ = std::thread([this, relay, jwt, sid, req_id]() {
+        if (worker->stop_worker.joinable()) {
+            worker->stop_worker.join();
+        }
+        worker->stop_worker = std::thread([this, relay, jwt, sid, req_id, conn_id]() {
             try {
                 relay->StopHeartbeatLoop();
                 const bool ok = relay->Stop(jwt, sid);
                 if (ok) {
                     blog(LOG_INFO,
-                         "[aegis-cm] relay_stop completed: request_id=%s",
-                         req_id.c_str());
+                         "[aegis-cm] relay_stop completed: request_id=%s conn=%s",
+                         req_id.c_str(), conn_id.c_str());
                     EmitDockActionResult("relay_stop", req_id, "completed", true, "", "");
                 } else {
                     blog(LOG_WARNING,
                          "[aegis-cm] relay_stop failed: request_id=%s"
-                         " error=relay_stop_failed",
-                         req_id.c_str());
+                         " conn=%s error=relay_stop_failed",
+                         req_id.c_str(), conn_id.c_str());
                     EmitDockActionResult("relay_stop", req_id, "failed", false,
                                          "relay_stop_failed", "");
+                }
+                // Remove from active_clients_ after stop.
+                if (!conn_id.empty()) {
+                    std::lock_guard<std::mutex> lock(connections_mu_);
+                    active_clients_.erase(conn_id);
                 }
                 // Wake stats thread so it clears cached data promptly.
                 stats_cv_.notify_all();
             } catch (const std::exception& e) {
                 blog(LOG_WARNING,
-                     "[aegis-cm] relay_stop exception: request_id=%s error=%s",
-                     req_id.c_str(), e.what());
+                     "[aegis-cm] relay_stop exception: request_id=%s conn=%s error=%s",
+                     req_id.c_str(), conn_id.c_str(), e.what());
                 EmitDockActionResult("relay_stop", req_id, "failed", false, e.what(), "");
             }
         });
@@ -605,7 +759,7 @@ void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
 #else  // non-OBS build stubs
 
 void ConnectionManager::StartManagedRelayAsync(const std::string&, const std::string&, int, const std::string&) {}
-void ConnectionManager::StopManagedRelayAsync(const std::string&, const std::string&) {}
+void ConnectionManager::StopManagedRelayAsync(const std::string&, const std::string&, const std::string&) {}
 
 #endif  // AEGIS_OBS_PLUGIN_BUILD
 
@@ -617,8 +771,8 @@ void ConnectionManager::ConnectDirect(const std::string& host, int port,
                                       const std::string& stream_id)
 {
     std::lock_guard<std::mutex> lock(relay_mu_);
-    if (relay_) {
-        relay_->ConnectDirect(host, port, stream_id);
+    if (byor_relay_) {
+        byor_relay_->ConnectDirect(host, port, stream_id);
         stats_cv_.notify_all();
     }
 }
@@ -628,7 +782,7 @@ void ConnectionManager::DisconnectDirect()
     std::shared_ptr<RelayClient> relay;
     {
         std::lock_guard<std::mutex> lock(relay_mu_);
-        relay = relay_;
+        relay = byor_relay_;
     }
     if (relay) {
         relay->DisconnectDirect();
@@ -638,23 +792,42 @@ void ConnectionManager::DisconnectDirect()
 
 void ConnectionManager::CancelPendingStart()
 {
-    start_cancel_.store(true);
+    std::lock_guard<std::mutex> lk(worker_mu_);
+    for (auto& [id, w] : workers_) {
+        w->start_cancel.store(true);
+    }
 }
 
 void ConnectionManager::EmergencyStop(const std::string& jwt)
 {
-    std::shared_ptr<RelayClient> relay;
+    // Emergency stop BYOR relay.
     {
-        std::lock_guard<std::mutex> lock(relay_mu_);
-        relay = relay_;
+        std::shared_ptr<RelayClient> byor;
+        {
+            std::lock_guard<std::mutex> lock(relay_mu_);
+            byor = byor_relay_;
+        }
+        if (byor && byor->HasActiveSession()) {
+            if (byor->IsBYORMode()) {
+                byor->DisconnectDirect();
+            } else if (!jwt.empty()) {
+                byor->EmergencyRelayStop(jwt);
+            }
+        }
     }
-    if (!relay || !relay->HasActiveSession()) {
-        return;
+
+    // Emergency stop all active managed clients.
+    std::vector<std::shared_ptr<RelayClient>> clients;
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        for (auto& [id, client] : active_clients_) {
+            clients.push_back(client);
+        }
     }
-    if (relay->IsBYORMode()) {
-        relay->DisconnectDirect();
-    } else if (!jwt.empty()) {
-        relay->EmergencyRelayStop(jwt);
+    for (auto& client : clients) {
+        if (client->HasActiveSession() && !jwt.empty()) {
+            client->EmergencyRelayStop(jwt);
+        }
     }
 }
 
@@ -670,20 +843,50 @@ ConnectionSnapshot ConnectionManager::CurrentSnapshot() const
 
 bool ConnectionManager::HasActiveSession() const
 {
-    std::lock_guard<std::mutex> lock(relay_mu_);
-    return relay_ && relay_->HasActiveSession();
+    // Check BYOR relay.
+    {
+        std::lock_guard<std::mutex> lock(relay_mu_);
+        if (byor_relay_ && byor_relay_->HasActiveSession()) {
+            return true;
+        }
+    }
+    // Check active managed clients.
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        for (auto& [id, client] : active_clients_) {
+            if (client->HasActiveSession()) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool ConnectionManager::IsBYORMode() const
 {
     std::lock_guard<std::mutex> lock(relay_mu_);
-    return relay_ && relay_->IsBYORMode();
+    return byor_relay_ && byor_relay_->IsBYORMode();
 }
 
 std::optional<RelaySession> ConnectionManager::CurrentSession() const
 {
-    std::lock_guard<std::mutex> lock(relay_mu_);
-    return relay_ ? relay_->CurrentSession() : std::nullopt;
+    // Return BYOR session if active.
+    {
+        std::lock_guard<std::mutex> lock(relay_mu_);
+        if (byor_relay_ && byor_relay_->HasActiveSession()) {
+            return byor_relay_->CurrentSession();
+        }
+    }
+    // Return first active managed session (legacy compat).
+    {
+        std::lock_guard<std::mutex> lock(connections_mu_);
+        for (auto& [id, client] : active_clients_) {
+            if (client->HasActiveSession()) {
+                return client->CurrentSession();
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 RelayStats ConnectionManager::CurrentStats() const
@@ -736,6 +939,21 @@ void ConnectionManager::RemoveConnection(const std::string& id)
                            [&id](const RelayConnectionConfig& c) { return c.id == id; }),
             connections_.end());
         active_clients_.erase(id);
+    }
+    // Also clean up any worker for this connection.
+    {
+        std::lock_guard<std::mutex> lk(worker_mu_);
+        auto wit = workers_.find(id);
+        if (wit != workers_.end()) {
+            wit->second->start_cancel.store(true);
+            if (wit->second->start_worker.joinable()) {
+                wit->second->start_worker.join();
+            }
+            if (wit->second->stop_worker.joinable()) {
+                wit->second->stop_worker.join();
+            }
+            workers_.erase(wit);
+        }
     }
     SaveConnections();
 }

@@ -68,6 +68,26 @@ struct RelayConnectionConfig {
 };
 
 // ---------------------------------------------------------------------------
+// Per-connection async worker (start/stop threads + cancellation flag).
+// Uses unique_ptr storage because std::atomic<bool> is not movable.
+// ---------------------------------------------------------------------------
+struct ConnectionWorker {
+    std::thread       start_worker;
+    std::thread       stop_worker;
+    std::atomic<bool> start_cancel{false};
+};
+
+// ---------------------------------------------------------------------------
+// Pending managed start config — stored before StartManagedRelayAsync is called
+// ---------------------------------------------------------------------------
+struct PendingManagedStart {
+    std::string connection_id;
+    std::string region_preference;
+    int stream_slot_number = 0;
+    std::string stream_token;
+};
+
+// ---------------------------------------------------------------------------
 // ConnectionManager — primary connection owner
 //
 // Owns all RelayClient instances. Runs background stats polling so that
@@ -118,27 +138,29 @@ public:
     // Directly set a connection's runtime status (e.g. to reset to "idle" on failure).
     void SetConnectionStatus(const std::string& id, const std::string& status);
 
+    // Store pending managed start config — called before StartManagedRelayAsync.
+    // Stores in pending_starts_ map instead of directly on a single RelayClient.
     void ConfigureManagedConnectionStart(const std::string& connection_id,
                                          const std::string& region_preference,
                                          int stream_slot_number,
                                          const std::string& stream_token)
     {
-        std::lock_guard<std::mutex> lock(relay_mu_);
-        if (relay_) {
-            relay_->ConfigureNextManagedStart(connection_id, region_preference,
-                                              stream_slot_number, stream_token);
-        }
+        std::lock_guard<std::mutex> lock(pending_start_mu_);
+        pending_starts_[connection_id] = {connection_id, region_preference,
+                                          stream_slot_number, stream_token};
     }
 
     // Stops managed relay asynchronously. Gets current session internally.
+    // connection_id identifies which managed relay to stop.
     void StopManagedRelayAsync(const std::string& jwt,
-                               const std::string& request_id);
+                               const std::string& request_id,
+                               const std::string& connection_id = "");
 
     // BYOR direct connect/disconnect (synchronous).
     void ConnectDirect(const std::string& host, int port, const std::string& stream_id);
     void DisconnectDirect();
 
-    // Cancel any in-flight relay_start worker.
+    // Cancel any in-flight relay_start worker(s).
     void CancelPendingStart();
 
     // Emergency stop on plugin unload (blocks up to 3 seconds).
@@ -153,8 +175,8 @@ public:
     PerLinkSnapshot             CurrentPerLinkStats() const;
 
 private:
-    // Legacy single relay client (shared_ptr prevents use-after-free on Disconnect).
-    std::shared_ptr<RelayClient> relay_;
+    // BYOR relay client (shared_ptr prevents use-after-free on Disconnect).
+    std::shared_ptr<RelayClient> byor_relay_;
     mutable std::mutex           relay_mu_;
 
     // Background stats polling thread.
@@ -164,11 +186,13 @@ private:
     std::condition_variable stats_cv_;
     void StatsPollingLoop();
 
-    // Relay start/stop worker threads (run async relay lifecycle ops).
-    std::mutex        worker_mu_;
-    std::thread       start_worker_;
-    std::thread       stop_worker_;
-    std::atomic<bool> start_cancel_{false};
+    // Per-connection worker threads (run async relay lifecycle ops).
+    std::mutex worker_mu_;
+    std::unordered_map<std::string, std::unique_ptr<ConnectionWorker>> workers_;
+
+    // Pending managed start configs — stored before StartManagedRelayAsync.
+    std::mutex pending_start_mu_;
+    std::unordered_map<std::string, PendingManagedStart> pending_starts_;
 
     // Cached stats — written by stats thread, read by OBS tick thread.
     mutable std::mutex snapshot_mu_;
@@ -176,7 +200,7 @@ private:
     RelayStats         cached_stats_;
     PerLinkSnapshot    cached_per_link_;
 
-    // Multi-connection list (Phase 2 — stubs for now).
+    // Multi-connection list (Phase 2).
     mutable std::mutex                                              connections_mu_;
     std::vector<RelayConnectionConfig>                             connections_;
     std::unordered_map<std::string, std::shared_ptr<RelayClient>> active_clients_;

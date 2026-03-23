@@ -1810,7 +1810,7 @@ bool DispatchDockAction(const std::string& action_json,
             g_connection_manager.Disconnect(conn_id, jwt);
             EmitCurrentStatusSnapshotToDock("connection_disconnect", false);
             // Async — StopManagedRelayAsync emits queued/completed/failed results.
-            g_connection_manager.StopManagedRelayAsync(jwt, request_id);
+            g_connection_manager.StopManagedRelayAsync(jwt, request_id, conn_id);
             return true;
         }
         if (it == conns.end()) {
