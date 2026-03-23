@@ -25,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -76,6 +77,40 @@ static std::mutex g_recent_dock_actions_mu;
 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_recent_dock_actions;
 static std::mutex g_connect_rate_limit_mu;
 static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_connect_rate_limit;
+
+// Per-action-type rate limiter: max kMaxActionsPerWindow calls per kRateLimitWindow.
+static constexpr int kMaxActionsPerWindow = 10;
+static constexpr std::chrono::seconds kRateLimitWindow(60);
+static std::mutex g_action_rate_mu;
+struct ActionRateEntry {
+    std::vector<std::chrono::steady_clock::time_point> timestamps;
+};
+static std::unordered_map<std::string, ActionRateEntry> g_action_rates;
+
+// Rate-limited action types (actions that hit the backend or modify state).
+static const std::unordered_set<std::string> kRateLimitedActions = {
+    "relay_start", "relay_stop", "connection_add", "connection_remove",
+    "connection_update", "auth_login_start", "auth_logout",
+    "auth_refresh", "relay_migrate", "rename_stream_slot",
+};
+
+static bool IsActionRateLimited(const std::string& action_type) {
+    if (kRateLimitedActions.find(action_type) == kRateLimitedActions.end())
+        return false;
+    std::lock_guard<std::mutex> lk(g_action_rate_mu);
+    auto& entry = g_action_rates[action_type];
+    auto now = std::chrono::steady_clock::now();
+    auto cutoff = now - kRateLimitWindow;
+    // Prune old timestamps
+    entry.timestamps.erase(
+        std::remove_if(entry.timestamps.begin(), entry.timestamps.end(),
+                        [&cutoff](const auto& t) { return t < cutoff; }),
+        entry.timestamps.end());
+    if (static_cast<int>(entry.timestamps.size()) >= kMaxActionsPerWindow)
+        return true;
+    entry.timestamps.push_back(now);
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 // Auth worker lifetime tracking (use-after-free fix for detached auth threads)
@@ -776,6 +811,10 @@ void ClearAllPendingDockActions() {
         std::lock_guard<std::mutex> lk(g_connect_rate_limit_mu);
         g_connect_rate_limit.clear();
     }
+    {
+        std::lock_guard<std::mutex> lk(g_action_rate_mu);
+        g_action_rates.clear();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -784,6 +823,15 @@ void ClearAllPendingDockActions() {
 bool DispatchDockAction(const std::string& action_json,
                         const std::string& action_type,
                         const std::string& request_id) {
+
+    if (IsActionRateLimited(action_type)) {
+        blog(LOG_WARNING,
+             "[aegis-obs-plugin] dock action rate_limited: type=%s request_id=%s",
+             action_type.c_str(), request_id.c_str());
+        EmitDockActionResult(action_type, request_id, "rate_limited", false,
+                             "Too many requests. Try again in a moment.", "");
+        return false;
+    }
 
     if (action_type == "switch_scene") {
         std::string scene_name;
