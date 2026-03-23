@@ -74,6 +74,8 @@ export const CONNECTION_STATUS = {
   ERROR: 'error',
 };
 
+export const ACTION_BILLING_CHECKOUT = 'billing_checkout';
+
 export const SCENE_LINK_STORAGE_KEY = "aegis.scene.intent.links.v1";
 export const SCENE_LINK_NAME_STORAGE_KEY = "aegis.scene.intent.links.by_name.v1";
 export const AUTO_SCENE_RULES_STORAGE_KEY = "aegis.auto.scene.rules.v2";
