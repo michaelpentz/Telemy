@@ -228,7 +228,6 @@ std::string BuildAuthStateDetailJson() {
             QJsonObject slotObj;
             slotObj["slot_number"] = slot.slot_number;
             slotObj["label"] = QString::fromStdString(slot.label);
-            slotObj["stream_token"] = QString::fromStdString(slot.stream_token);
             streamSlots.append(slotObj);
         }
         authObj["stream_slots"] = streamSlots;
