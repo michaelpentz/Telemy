@@ -628,6 +628,18 @@ void RelayClient::ClearStatsSnapshots()
     }
 }
 
+void RelayClient::StoreJWT(const std::string& jwt)
+{
+    std::lock_guard<std::mutex> lock(jwt_mutex_);
+    stored_jwt_ = jwt;
+}
+
+std::string RelayClient::GetStoredJWT() const
+{
+    std::lock_guard<std::mutex> lock(jwt_mutex_);
+    return stored_jwt_;
+}
+
 // ---------------------------------------------------------------------------
 // Control plane calls
 // ---------------------------------------------------------------------------
@@ -656,6 +668,9 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
     if (resp.body == "null" || resp.body.empty()) {
         return std::nullopt;
     }
+
+    // Store JWT for later use by stats polling loop.
+    StoreJWT(jwt);
 
     auto session = ParseSessionResponse(resp.body);
     if (session) {
@@ -689,11 +704,51 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
         current_session_ = session;
         byor_mode_ = false;
     }
+
+    // Parse per_link data from the API response if present.
+    // The per_link object lives inside the "session" wrapper in the JSON.
+    {
+        QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(resp.body));
+        QJsonObject root = doc.object();
+        QJsonObject sessionObj = root.contains("session") && root["session"].isObject()
+                                     ? root["session"].toObject()
+                                     : root;
+        if (sessionObj.contains("per_link") && sessionObj["per_link"].isObject()) {
+            QJsonObject plObj = sessionObj["per_link"].toObject();
+            PerLinkSnapshot snap;
+            snap.available = true;
+            snap.stream_id = plObj.value("stream_id").toString().toStdString();
+            QJsonArray connsArr = plObj.value("connections").toArray();
+            snap.conn_count = connsArr.size();
+            for (int i = 0; i < connsArr.size(); ++i) {
+                QJsonObject c = connsArr[i].toObject();
+                PerLinkStats link;
+                link.addr = c.value("addr").toString().toStdString();
+                link.asn_org = c.value("asn_org").toString().toStdString();
+                link.bytes = static_cast<uint64_t>(c.value("bytes").toDouble(0));
+                link.pkts = static_cast<uint64_t>(c.value("pkts").toDouble(0));
+                link.share_pct = c.value("share_pct").toDouble(0.0);
+                link.last_ms_ago = static_cast<uint32_t>(c.value("last_ms_ago").toInt(0));
+                link.uptime_s = static_cast<uint32_t>(c.value("uptime_s").toInt(0));
+                snap.links.push_back(std::move(link));
+            }
+            {
+                std::lock_guard<std::mutex> lk(per_link_mutex_);
+                per_link_ = std::move(snap);
+            }
+            blog(LOG_DEBUG, "[aegis-relay] per-link from API: stream_id=%s links=%d",
+                 per_link_.stream_id.c_str(), per_link_.conn_count);
+        }
+    }
+
     return session;
 }
 
 std::optional<RelaySession> RelayClient::Start(const std::string& jwt)
 {
+    // Store JWT for later use by stats polling loop.
+    StoreJWT(jwt);
+
     std::string uuid = GenerateUuidV4();
     QJsonObject clientContext;
     clientContext["obs_connected"] = true;

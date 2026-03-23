@@ -421,13 +421,13 @@ void ConnectionManager::StatsPollingLoop()
             const auto s = client->CurrentSession();
             if (s && !s->public_ip.empty()) {
                 client->PollRelayStats(s->public_ip);
-                // Filter per-link stats by this connection's stream_id so each
-                // connection only sees its own carrier data.
-                std::string filter_stream_id;
-                if (!s->stream_token.empty()) {
-                    filter_stream_id = "live_" + s->stream_token;
+                // Per-link stats for managed clients come from the control plane
+                // API response (per_link field in GetActive), not direct srtla_rec
+                // polling. GetActive parses and caches per_link internally.
+                std::string jwt = client->GetStoredJWT();
+                if (!jwt.empty()) {
+                    client->GetActive(jwt);
                 }
-                client->PollPerLinkStats(s->public_ip, filter_stream_id);
             }
         }
 

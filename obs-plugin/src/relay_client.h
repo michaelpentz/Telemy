@@ -238,6 +238,11 @@ public:
     void PollPerLinkStats(const std::string& relay_ip, const std::string& filter_stream_id = "");
     PerLinkSnapshot CurrentPerLinkStats() const;
 
+    // JWT storage for managed connections — allows stats polling loop to call
+    // GetActive() without needing the JWT from the start/heartbeat path.
+    void StoreJWT(const std::string& jwt);
+    std::string GetStoredJWT() const;
+
 private:
     HttpsClient& http_;
     std::wstring api_host_w_;  // wide string for WinHTTP
@@ -262,6 +267,10 @@ private:
 
     PerLinkSnapshot    per_link_;
     mutable std::mutex per_link_mutex_;
+
+    std::string        stored_jwt_;
+    mutable std::mutex jwt_mutex_;
+
     std::atomic<bool> byor_mode_{false};
     mutable std::mutex pending_managed_start_mutex_;
     std::string pending_managed_connection_id_;
