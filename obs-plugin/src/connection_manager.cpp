@@ -439,19 +439,36 @@ void ConnectionManager::StatsPollingLoop()
             }
         }
 
-        RelayStats     stats    = first_active_client->CurrentStats();
-        PerLinkSnapshot per_link = first_active_client->CurrentPerLinkStats();
+        // Use the client with the best data for the global cached snapshot.
+        // A newly-added client may not have stats yet, so prefer one that does.
+        RelayStats best_stats{};
+        PerLinkSnapshot best_per_link{};
+        // Try first_active_client first.
+        best_stats = first_active_client->CurrentStats();
+        best_per_link = first_active_client->CurrentPerLinkStats();
+        // If first_active_client has no data, check other clients.
+        if (!best_per_link.available || best_per_link.links.empty()) {
+            for (auto& [conn_id, client] : managed_clients) {
+                if (client.get() == first_active_client.get()) continue;
+                auto pl = client->CurrentPerLinkStats();
+                if (pl.available && !pl.links.empty()) {
+                    best_per_link = pl;
+                    best_stats = client->CurrentStats();
+                    break;
+                }
+            }
+        }
 
         ConnectionSnapshot snap;
-        if (per_link.available && !per_link.links.empty()) {
-            snap = BuildSnapshot(per_link, stats.available ? &stats : nullptr);
+        if (best_per_link.available && !best_per_link.links.empty()) {
+            snap = BuildSnapshot(best_per_link, best_stats.available ? &best_stats : nullptr);
         }
 
         {
             std::lock_guard<std::mutex> lock(snapshot_mu_);
             snapshot_        = std::move(snap);
-            cached_stats_    = stats;
-            cached_per_link_ = per_link;
+            cached_stats_    = best_stats;
+            cached_per_link_ = best_per_link;
         }
     }
 }
