@@ -29,6 +29,7 @@ struct OutputMetrics {
     bool active = false;
     uint64_t total_bytes = 0;
     uint32_t bitrate_kbps = 0;       // computed from byte delta between polls
+    uint32_t target_bitrate_kbps = 0;
     int frames_dropped = 0;
     int total_frames = 0;
     float drop_pct = 0.0f;           // 0.0–1.0

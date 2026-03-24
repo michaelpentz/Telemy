@@ -276,6 +276,13 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
             om.height = enc_h;
         }
     }
+    // Target bitrate from encoder settings.
+    obs_data_t* enc_settings = obs_encoder_get_settings(enc);
+    if (enc_settings) {
+        om.target_bitrate_kbps = static_cast<uint32_t>(
+            obs_data_get_int(enc_settings, "bitrate"));
+        obs_data_release(enc_settings);
+    }
 
     // Drop percentage.
     if (om.total_frames > 0) {
@@ -586,6 +593,7 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << "{";
         os << "\"name\":\"" << JsonEscape(out.name) << "\",";
         os << "\"bitrate_kbps\":" << out.bitrate_kbps << ",";
+        os << "\"target_bitrate_kbps\":" << out.target_bitrate_kbps << ",";
 
         // Format floats with controlled precision.
         char buf[64];
