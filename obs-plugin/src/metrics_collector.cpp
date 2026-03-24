@@ -242,27 +242,35 @@ struct OutputEnumContext {
     std::map<std::string, MetricsCollector::OutputDelta>* deltas;
 };
 
-// Callback for obs_enum_outputs(). The output pointer is NOT ref-counted here
-// — do NOT call obs_output_release().
+// Callback for obs_enum_outputs(). We take a strong reference via
+// obs_output_get_ref() to prevent use-after-free when an output is
+// destroyed on the main thread (e.g. virtual camera stop) while our
+// background metrics thread is iterating.
 static bool OutputEnumCallback(void* param, obs_output_t* output) {
     auto* ctx = static_cast<OutputEnumContext*>(param);
 
-    const char* raw_name = obs_output_get_name(output);
+    // Take a strong reference — returns NULL if the output is being destroyed.
+    obs_output_t* ref = obs_output_get_ref(output);
+    if (!ref) {
+        return true;  // output is mid-teardown, skip it
+    }
+
+    const char* raw_name = obs_output_get_name(ref);
     std::string name = raw_name ? raw_name : "(unnamed)";
 
     OutputMetrics om;
     om.name = name;
-    om.active = obs_output_active(output);
-    om.total_bytes = obs_output_get_total_bytes(output);
-    om.frames_dropped = obs_output_get_frames_dropped(output);
-    om.total_frames = obs_output_get_total_frames(output);
-    om.congestion = obs_output_get_congestion(output);
+    om.active = obs_output_active(ref);
+    om.total_bytes = obs_output_get_total_bytes(ref);
+    om.frames_dropped = obs_output_get_frames_dropped(ref);
+    om.total_frames = obs_output_get_total_frames(ref);
+    om.congestion = obs_output_get_congestion(ref);
     om.encoding_lag_ms = ctx->encoding_lag_ms;
-    om.width = obs_output_get_width(output);
-    om.height = obs_output_get_height(output);
+    om.width = obs_output_get_width(ref);
+    om.height = obs_output_get_height(ref);
 
     // Encoder info (non-owning pointer — do NOT release).
-    obs_encoder_t* enc = obs_output_get_video_encoder(output);
+    obs_encoder_t* enc = obs_output_get_video_encoder(ref);
     if (enc) {
         const char* enc_name = obs_encoder_get_name(enc);
         const char* enc_codec = obs_encoder_get_codec(enc);
@@ -275,13 +283,14 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
             om.width = enc_w;
             om.height = enc_h;
         }
-    }
-    // Target bitrate from encoder settings.
-    obs_data_t* enc_settings = obs_encoder_get_settings(enc);
-    if (enc_settings) {
-        om.target_bitrate_kbps = static_cast<uint32_t>(
-            obs_data_get_int(enc_settings, "bitrate"));
-        obs_data_release(enc_settings);
+        // Target bitrate from encoder settings (inside enc guard —
+        // virtual camera and other raw outputs have no encoder).
+        obs_data_t* enc_settings = obs_encoder_get_settings(enc);
+        if (enc_settings) {
+            om.target_bitrate_kbps = static_cast<uint32_t>(
+                obs_data_get_int(enc_settings, "bitrate"));
+            obs_data_release(enc_settings);
+        }
     }
 
     // Drop percentage.
@@ -324,6 +333,8 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
     }
 
     ctx->outputs->push_back(std::move(om));
+
+    obs_output_release(ref);  // drop the reference taken at callback entry
     return true;  // continue enumeration
 }
 
@@ -524,6 +535,7 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
         os << "\"relay_rtt_ms\":" << relay_stats->rtt_ms << ",";
         os << "\"relay_pkt_loss\":" << relay_stats->pkt_loss << ",";
         os << "\"relay_pkt_drop\":" << relay_stats->pkt_drop << ",";
+        os << "\"relay_pkt_recv\":" << relay_stats->pkt_recv << ",";
         os << "\"relay_recv_rate_mbps\":" << relay_stats->recv_rate_mbps << ",";
         os << "\"relay_bandwidth_mbps\":" << relay_stats->bandwidth_mbps << ",";
         os << "\"relay_latency_ms\":" << relay_stats->latency_ms << ",";

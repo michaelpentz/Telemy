@@ -55,7 +55,7 @@
 namespace {
 
 constexpr const char* kDockId = "aegis_obs_plugin_dock";
-constexpr const char* kDockTitle = "Aegis Dock (Telemy v0.0.5)";
+constexpr const char* kDockTitle = "Telemy";
 constexpr const char* kEnvDockBridgeRoot = "AEGIS_DOCK_BRIDGE_ROOT";
 constexpr const char* kDockActionTitlePrefix = "__AEGIS_DOCK_ACTION__:";
 constexpr const char* kDockReadyTitlePrefix = "__AEGIS_DOCK_READY__:";

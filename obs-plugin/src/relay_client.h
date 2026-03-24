@@ -33,6 +33,7 @@ struct RelayStats {
     double   rtt_ms = 0.0;
     uint64_t pkt_loss = 0;
     uint64_t pkt_drop = 0;
+    uint64_t pkt_recv = 0;
     double   recv_rate_mbps = 0.0;
     double   bandwidth_mbps = 0.0;
     uint32_t latency_ms = 0;

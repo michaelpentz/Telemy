@@ -1228,6 +1228,7 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
     s.rtt_ms           = pub.value("rtt").toDouble(0.0);
     s.pkt_loss         = static_cast<uint64_t>(pub.value("pktRcvLoss").toDouble(0));
     s.pkt_drop         = static_cast<uint64_t>(pub.value("pktRcvDrop").toDouble(0));
+    s.pkt_recv         = static_cast<uint64_t>(pub.value("pktRecv").toDouble(0));
     s.recv_rate_mbps   = pub.value("mbpsRecvRate").toDouble(0.0);
     s.bandwidth_mbps   = pub.value("mbpsBandwidth").toDouble(0.0);
     s.latency_ms       = static_cast<uint32_t>(pub.value("latency").toInt(0));

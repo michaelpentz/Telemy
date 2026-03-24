@@ -23,6 +23,7 @@ if (AEGIS_BUILD_OBS_PLUGIN)
 
   add_library(aegis-obs-plugin MODULE src/obs_plugin_entry.cpp)
   target_sources(aegis-obs-plugin PRIVATE
+    src/chatbot_runtime.cpp
     src/config_vault.cpp
     src/connection_manager.cpp
     src/metrics_collector.cpp

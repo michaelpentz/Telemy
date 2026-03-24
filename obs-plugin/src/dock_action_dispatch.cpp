@@ -1,5 +1,6 @@
 #include "dock_action_dispatch.h"
 #include "dock_replay_cache.h"
+#include "chatbot_runtime.h"
 #include "config_vault.h"
 #include "relay_client.h"
 #include "connection_manager.h"
@@ -52,6 +53,7 @@ void LogSceneSnapshot(const char* reason);
 extern aegis::HttpsClient                             g_http;
 extern aegis::Vault                                   g_vault;
 extern aegis::PluginConfig                            g_config;
+extern aegis::ChatbotRuntime                          g_chatbot_runtime;
 extern std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
 extern std::mutex                                     g_auth_state_mu;
 extern aegis::PluginAuthState                         g_auth_state;
@@ -311,6 +313,37 @@ bool TryExtractJsonIntField(
     }
     *out_value = val.toInt();
     return true;
+}
+
+std::string BuildChatbotActionDetailJson(
+    const aegis::ChatbotCommandRequest& request,
+    const aegis::ChatbotCommandResult& result) {
+    std::ostringstream detail;
+    detail << "{"
+           << "\"provider\":\"" << JsonEscape(request.provider) << "\","
+           << "\"channel\":\"" << JsonEscape(request.channel) << "\","
+           << "\"sender_name\":\"" << JsonEscape(request.sender_name) << "\","
+           << "\"sender_role\":\"" << JsonEscape(request.sender_role) << "\","
+           << "\"message_text\":\"" << JsonEscape(request.message_text) << "\","
+           << "\"handled\":" << (result.handled ? "true" : "false") << ","
+           << "\"ok\":" << (result.ok ? "true" : "false") << ","
+           << "\"action\":\"" << JsonEscape(result.action) << "\","
+           << "\"matched_command\":\"" << JsonEscape(result.matched_command) << "\","
+           << "\"scene_name\":\"" << JsonEscape(result.scene_name) << "\","
+           << "\"reply_text\":\"" << JsonEscape(result.reply_text) << "\","
+           << "\"error_code\":\"" << JsonEscape(result.error_code) << "\""
+           << "}";
+    return detail.str();
+}
+
+std::string BuildChatbotStatusReply() {
+    std::ostringstream reply;
+    reply << "Mode " << EffectiveDockModeFromConfig() << ". ";
+    reply << (g_config.manual_override ? "Manual override active." : "Auto scene switching active.");
+    if (g_config.chat_bot) {
+        reply << " Chatbot enabled.";
+    }
+    return reply.str();
 }
 
 } // namespace
@@ -1072,11 +1105,90 @@ bool DispatchDockAction(const std::string& action_json,
         }
         out.write(prefs_json.data(), static_cast<std::streamsize>(prefs_json.size()));
         out.close();
+        (void)g_chatbot_runtime.ApplyPrefsJson(prefs_json);
         blog(LOG_INFO,
             "[aegis-obs-plugin] dock action completed: type=save_scene_prefs request_id=%s bytes=%d",
             request_id.c_str(),
             static_cast<int>(prefs_json.size()));
+        EmitCurrentStatusSnapshotToDock("save_scene_prefs", false);
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+        return true;
+    }
+
+    if (action_type == "chatbot_simulate_message") {
+        std::string message_text;
+        std::string sender_name;
+        std::string sender_role;
+        std::string provider;
+        std::string channel;
+        (void)TryExtractJsonStringField(action_json, "messageText", &message_text);
+        (void)TryExtractJsonStringField(action_json, "senderName", &sender_name);
+        (void)TryExtractJsonStringField(action_json, "senderRole", &sender_role);
+        (void)TryExtractJsonStringField(action_json, "provider", &provider);
+        (void)TryExtractJsonStringField(action_json, "channel", &channel);
+        if (message_text.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_message_text", "");
+            return false;
+        }
+
+        aegis::ChatbotCommandRequest request;
+        request.provider = provider;
+        request.channel = channel;
+        request.sender_name = sender_name.empty() ? "dock-sim" : sender_name;
+        request.sender_role = sender_role.empty() ? "broadcaster" : sender_role;
+        request.message_text = message_text;
+
+        const aegis::ChatbotCommandResult result =
+            g_chatbot_runtime.HandleCommand(g_config.chat_bot, request);
+        const std::string detail = BuildChatbotActionDetailJson(request, result);
+
+        if (!result.handled) {
+            EmitDockActionResult(action_type, request_id, "ignored", true, "", detail);
+            return true;
+        }
+        if (!result.ok) {
+            EmitDockActionResult(action_type, request_id, "rejected", false,
+                                 result.error_code.empty() ? "chatbot_rejected" : result.error_code,
+                                 detail);
+            return true;
+        }
+
+        if (result.resume_automation) {
+            if (g_config.manual_override) {
+                g_config.manual_override = false;
+                if (!g_config.SaveToDisk()) {
+                    EmitDockActionResult(action_type, request_id, "failed", false, "save_failed", detail);
+                    return false;
+                }
+            }
+            EmitCurrentStatusSnapshotToDock("chatbot_resume_auto", false);
+            EmitDockActionResult(action_type, request_id, "completed", true, "", detail);
+            return true;
+        }
+
+        if (result.wants_status_reply) {
+            aegis::ChatbotCommandResult reply_result = result;
+            reply_result.reply_text = BuildChatbotStatusReply();
+            EmitDockActionResult(action_type, request_id, "completed", true, "",
+                                 BuildChatbotActionDetailJson(request, reply_result));
+            return true;
+        }
+
+        if (result.action == "switch_scene" && !result.scene_name.empty()) {
+            if (result.pause_automation && g_config.auto_scene_switch && !g_config.manual_override) {
+                g_config.manual_override = true;
+                if (!g_config.SaveToDisk()) {
+                    EmitDockActionResult(action_type, request_id, "failed", false, "save_failed", detail);
+                    return false;
+                }
+            }
+            EnqueueSwitchSceneRequest(request_id, result.scene_name, "chat_command");
+            EmitCurrentStatusSnapshotToDock("chatbot_scene_switch", false);
+            EmitDockActionResult(action_type, request_id, "queued", true, "", detail);
+            return true;
+        }
+
+        EmitDockActionResult(action_type, request_id, "completed", true, "", detail);
         return true;
     }
 

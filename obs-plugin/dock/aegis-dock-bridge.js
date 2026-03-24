@@ -302,7 +302,29 @@
           autoSwitchEnabled: autoSwitchEnabled,
           manualOverrideEnabled: manualOverrideEnabled,
         },
-        relay_connections: Array.isArray(snap.relay_connections) ? snap.relay_connections : [],
+        relay_connections: (Array.isArray(snap.relay_connections) ? snap.relay_connections : []).map(function(rc) {
+          if (!rc || typeof rc !== "object") return rc;
+          // Normalize flat stats_* fields (from C++ snapshot) into a nested stats object,
+          // and compute loss_pct for display.
+          var existingStats = rc.stats && typeof rc.stats === "object" ? rc.stats : null;
+          var statsAvailable = existingStats ? existingStats.available : (rc.stats_available === true);
+          var statsBitrateKbps = existingStats ? existingStats.bitrate_kbps : (rc.stats_bitrate_kbps || 0);
+          var statsRttMs = existingStats ? existingStats.rtt_ms : (rc.stats_rtt_ms || 0);
+          var statsPktLoss = existingStats ? (existingStats.pkt_loss || 0) : (rc.stats_pkt_loss || 0);
+          var statsPktRecv = existingStats ? (existingStats.pkt_recv || 0) : (rc.stats_pkt_recv || 0);
+          var statsPktTotal = statsPktLoss + statsPktRecv;
+          var statsLossPct = statsPktTotal > 0 ? statsPktLoss / statsPktTotal * 100 : 0;
+          return Object.assign({}, rc, {
+            stats: {
+              available: statsAvailable,
+              bitrate_kbps: statsBitrateKbps,
+              rtt_ms: statsRttMs,
+              pkt_loss: statsPktLoss,
+              pkt_recv: statsPktRecv,
+              loss_pct: statsLossPct,
+            },
+          });
+        }),
       connections: {
           items: Array.isArray(plugin.connections)
             ? plugin.connections
@@ -376,6 +398,13 @@
           rttMs: snap.relay_rtt_ms != null ? snap.relay_rtt_ms : null,
           pktLoss: snap.relay_pkt_loss || 0,
           pktDrop: snap.relay_pkt_drop || 0,
+          pktRecv: snap.relay_pkt_recv || 0,
+          lossPct: (function() {
+            var loss = snap.relay_pkt_loss || 0;
+            var recv = snap.relay_pkt_recv || 0;
+            var total = loss + recv;
+            return total > 0 ? loss / total * 100 : 0;
+          })(),
           recvRateMbps: snap.relay_recv_rate_mbps != null ? snap.relay_recv_rate_mbps : null,
           bandwidthMbps: snap.relay_bandwidth_mbps != null ? snap.relay_bandwidth_mbps : null,
           relayLatencyMs: snap.relay_latency_ms != null ? snap.relay_latency_ms : null,
@@ -418,6 +447,9 @@
         settings: {
           items: settingsItems,
         },
+        chatbot: (snap.chatbot && typeof snap.chatbot === "object")
+          ? Object.assign({}, snap.chatbot)
+          : null,
         events: events.slice(0, 12),
         pipe: {
           status: pipeStatus,
@@ -497,6 +529,19 @@
       notifyDockActionResult: function (result) {
         if (!result || typeof result !== "object") return;
         var msg = "Action " + String(result.actionType || "unknown") + ": " + String(result.status || "unknown");
+        if (result.actionType === "chatbot_simulate_message" && result.detail) {
+          var cd = result.detail;
+          if (typeof cd === "string") { try { cd = JSON.parse(cd); } catch (_e) { cd = null; } }
+          if (cd && typeof cd === "object") {
+            if (cd.reply_text) {
+              msg = "Chatbot: " + String(cd.reply_text);
+            } else if (cd.scene_name) {
+              msg = "Chatbot -> " + String(cd.scene_name);
+            } else if (cd.error_code) {
+              msg = "Chatbot rejected: " + String(cd.error_code);
+            }
+          }
+        }
         addEvent(result.ok ? "success" : (result.status === "rejected" ? "warning" : "error"), msg);
 
         // Track relay errors in bridge state (dock reads via getState())

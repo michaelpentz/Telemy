@@ -187,6 +187,10 @@ export function normalizeAutoSceneRulesValue(rules) {
         thresholdMbps: Number.isFinite(threshold) && threshold >= 0 ? threshold : null,
         isDefault: !!r.isDefault,
         bgColor: normalizeOptionalHexColor(r.bgColor) || getDefaultRuleBgColor({ id, intent }),
+        chatEnabled: r.chatEnabled !== false,
+        chatAliases: Array.isArray(r.chatAliases)
+          ? Array.from(new Set(r.chatAliases.map((alias) => String(alias || "").trim().toLowerCase()).filter(Boolean))).slice(0, 6)
+          : [],
       };
     })
     .filter(Boolean);

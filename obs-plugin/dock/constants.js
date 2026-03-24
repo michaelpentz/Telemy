@@ -76,18 +76,30 @@ export const CONNECTION_STATUS = {
 
 export const ACTION_BILLING_CHECKOUT = 'billing_checkout';
 
-export const SCENE_LINK_STORAGE_KEY = "aegis.scene.intent.links.v1";
-export const SCENE_LINK_NAME_STORAGE_KEY = "aegis.scene.intent.links.by_name.v1";
-export const AUTO_SCENE_RULES_STORAGE_KEY = "aegis.auto.scene.rules.v2";
-export const OUTPUT_CONFIG_STORAGE_KEY = "aegis.output.config.v1";
-// AUTO_SWITCH_SOURCE_OPTIONS removed — auto-switch source now derived from relay.active
+export const SCENE_LINK_STORAGE_KEY = "telemy.scene.intent.links.v1";
+export const SCENE_LINK_NAME_STORAGE_KEY = "telemy.scene.intent.links.by_name.v1";
+export const AUTO_SCENE_RULES_STORAGE_KEY = "telemy.auto.scene.rules.v2";
+export const OUTPUT_CONFIG_STORAGE_KEY = "telemy.output.config.v1";
+// AUTO_SWITCH_SOURCE_OPTIONS removed - auto-switch source now derived from relay.active
 export const DEFAULT_AUTO_SCENE_RULES = [
-  { id: "live_main", label: "Live - Main", intent: "LIVE", thresholdEnabled: false, thresholdMbps: null, isDefault: true, bgColor: "#2ea043" },
-  { id: "low_bitrate_fallback", label: "Low Bitrate Fallback", intent: "HOLD", thresholdEnabled: true, thresholdMbps: 1.0, isDefault: false, bgColor: "#d29922" },
-  { id: "brb_reconnecting", label: "BRB - Reconnecting", intent: "BRB", thresholdEnabled: true, thresholdMbps: 0.2, isDefault: false, bgColor: "#8b5cf6" },
-  { id: "starting_soon", label: "Starting Soon", intent: "OFFLINE", thresholdEnabled: false, thresholdMbps: null, isDefault: false, bgColor: "#8b8f98" },
-  { id: "ending", label: "Ending", intent: "OFFLINE", thresholdEnabled: false, thresholdMbps: null, isDefault: false, bgColor: "#8b8f98" },
+  { id: "live_main", label: "Live - Main", intent: "LIVE", thresholdEnabled: false, thresholdMbps: null, isDefault: true, bgColor: "#2ea043", chatEnabled: true, chatAliases: ["live"] },
+  { id: "low_bitrate_fallback", label: "Low Bitrate Fallback", intent: "HOLD", thresholdEnabled: true, thresholdMbps: 1.0, isDefault: false, bgColor: "#d29922", chatEnabled: false, chatAliases: [] },
+  { id: "brb_reconnecting", label: "BRB - Reconnecting", intent: "BRB", thresholdEnabled: true, thresholdMbps: 0.2, isDefault: false, bgColor: "#8b5cf6", chatEnabled: true, chatAliases: ["brb"] },
+  { id: "starting_soon", label: "Starting Soon", intent: "OFFLINE", thresholdEnabled: false, thresholdMbps: null, isDefault: false, bgColor: "#8b8f98", chatEnabled: false, chatAliases: [] },
+  { id: "ending", label: "Ending", intent: "OFFLINE", thresholdEnabled: false, thresholdMbps: null, isDefault: false, bgColor: "#8b8f98", chatEnabled: true, chatAliases: ["offline"] },
 ];
+
+export const DEFAULT_CHATBOT_CONFIG = {
+  provider: "none",
+  commandPrefix: "!telemy",
+  announceSceneSwitches: true,
+  announceAutoResume: true,
+  sendStatusReplies: true,
+  broadcasterOnly: true,
+  runtimeStatus: "disconnected",
+  runtimeLabel: "Not connected",
+  identityLabel: "@TelemyBot",
+};
 
 export const RULE_BG_PRESETS = [
   { id: "live", color: "#2ea043", label: "Live Green" },

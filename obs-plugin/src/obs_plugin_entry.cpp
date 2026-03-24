@@ -1,4 +1,5 @@
 #include "dock_js_bridge_api.h"
+#include "chatbot_runtime.h"
 #include "config_vault.h"
 #include "connection_manager.h"
 #include "metrics_collector.h"
@@ -89,6 +90,7 @@ aegis::Vault                                  g_vault;
 aegis::PluginConfig                           g_config;
 aegis::HttpsClient                            g_http;
 aegis::ConnectionManager                      g_connection_manager;
+aegis::ChatbotRuntime                         g_chatbot_runtime;
 std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
 std::mutex                                    g_auth_state_mu;
 aegis::PluginAuthState                        g_auth_state;
@@ -495,6 +497,7 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
         QJsonObject payload = doc.object();
         payload.insert(QStringLiteral("settings"), BuildDockSettingsJsonFromConfig());
         payload.insert(QStringLiteral("auth"), BuildAuthSnapshotJson());
+        payload.insert(QStringLiteral("chatbot"), g_chatbot_runtime.BuildSnapshotJson(g_config.chat_bot));
         // Serialize relay connection configs (v0.0.5 multi-connection model)
         {
             const auto conn_configs = g_connection_manager.ListConnections();
@@ -580,6 +583,8 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
                         obj[QStringLiteral("stats_available")]    = true;
                         obj[QStringLiteral("stats_bitrate_kbps")] = static_cast<int>(conn_st.bitrate_kbps);
                         obj[QStringLiteral("stats_rtt_ms")]       = conn_st.rtt_ms;
+                        obj[QStringLiteral("stats_pkt_loss")]     = static_cast<double>(conn_st.pkt_loss);
+                        obj[QStringLiteral("stats_pkt_recv")]     = static_cast<double>(conn_st.pkt_recv);
                     } else {
                         obj[QStringLiteral("stats_available")] = false;
                     }
@@ -1058,6 +1063,7 @@ bool obs_module_load(void) {
 
     g_vault.Load();
     g_config.LoadFromDisk();
+    g_chatbot_runtime.LoadPrefsFromDisk();
     LoadPluginAuthStateFromVault();
     const std::optional<std::string> relay_shared_key = g_vault.Get("relay_shared_key");
 
@@ -1129,9 +1135,9 @@ bool obs_module_load(void) {
         blog(LOG_INFO, "[aegis-obs-plugin] registered frontend event callback");
     }
     if (!g_tools_menu_show_dock_registered) {
-        obs_frontend_add_tools_menu_item("Show Aegis Dock (Telemy)", OnToolsMenuShowDock, nullptr);
+        obs_frontend_add_tools_menu_item("Show Telemy Dock", OnToolsMenuShowDock, nullptr);
         g_tools_menu_show_dock_registered = true;
-        blog(LOG_INFO, "[aegis-obs-plugin] registered Tools menu item: Show Aegis Dock (Telemy)");
+        blog(LOG_INFO, "[aegis-obs-plugin] registered Tools menu item: Show Telemy Dock");
     }
     LogSceneSnapshot("module_load");
 
@@ -1185,7 +1191,7 @@ void obs_module_unload(void) {
 }
 
 const char* obs_module_description(void) {
-    return "Aegis OBS Plugin (v0.0.5)";
+    return "Telemy OBS Plugin (v0.0.5)";
 }
 
 #else
