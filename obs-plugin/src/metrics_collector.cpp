@@ -214,6 +214,14 @@ void MetricsCollector::CollectObsGlobal() {
     current_.obs.streaming = obs_frontend_streaming_active();
     current_.obs.recording = obs_frontend_recording_active();
     current_.obs.studio_mode = obs_frontend_preview_program_mode_active();
+
+    // Track streaming start time for elapsed timer (survives dock reloads).
+    if (current_.obs.streaming && !prev_streaming_) {
+        streaming_start_ms_ = NowUnixMs();
+    } else if (!current_.obs.streaming) {
+        streaming_start_ms_ = 0;
+    }
+    prev_streaming_ = current_.obs.streaming;
     current_.obs.active_fps = obs_get_active_fps();
     current_.obs.render_missed_frames = obs_get_lagged_frames();
     current_.obs.render_total_frames = obs_get_total_frames();
@@ -258,6 +266,27 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
     const char* raw_name = obs_output_get_name(ref);
     std::string name = raw_name ? raw_name : "(unnamed)";
 
+    // Skip non-streaming outputs that provide no useful metrics and can
+    // crash during teardown (virtual camera, replay buffer, etc.).
+    // These outputs have no encoder — check early and skip.
+    obs_encoder_t* enc_peek = obs_output_get_video_encoder(ref);
+    if (!enc_peek) {
+        // Raw output (no encoder) — virtual camera, replay buffer, etc.
+        // Nothing useful to report; skip to avoid teardown race conditions.
+        obs_output_release(ref);
+        return true;
+    }
+
+    // Take a strong reference on the encoder to prevent use-after-free.
+    // obs_output_get_video_encoder() returns a non-owning pointer that can
+    // go stale if the encoder is destroyed on the main thread.
+    obs_encoder_t* enc = obs_encoder_get_ref(enc_peek);
+    if (!enc) {
+        // Encoder is mid-teardown — skip this output.
+        obs_output_release(ref);
+        return true;
+    }
+
     OutputMetrics om;
     om.name = name;
     om.active = obs_output_active(ref);
@@ -269,9 +298,8 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
     om.width = obs_output_get_width(ref);
     om.height = obs_output_get_height(ref);
 
-    // Encoder info (non-owning pointer — do NOT release).
-    obs_encoder_t* enc = obs_output_get_video_encoder(ref);
-    if (enc) {
+    // Encoder info — we hold a strong ref on enc, safe to access.
+    {
         const char* enc_name = obs_encoder_get_name(enc);
         const char* enc_codec = obs_encoder_get_codec(enc);
         om.encoder_name = enc_name ? enc_name : "";
@@ -283,8 +311,7 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
             om.width = enc_w;
             om.height = enc_h;
         }
-        // Target bitrate from encoder settings (inside enc guard —
-        // virtual camera and other raw outputs have no encoder).
+        // Target bitrate from encoder settings.
         obs_data_t* enc_settings = obs_encoder_get_settings(enc);
         if (enc_settings) {
             om.target_bitrate_kbps = static_cast<uint32_t>(
@@ -292,6 +319,7 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
             obs_data_release(enc_settings);
         }
     }
+    obs_encoder_release(enc);  // drop the encoder reference
 
     // Drop percentage.
     if (om.total_frames > 0) {
@@ -634,6 +662,10 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
 
     // ── OBS stats ────────────────────────────────────────────────────────
     os << "\"obs_stats\":{";
+
+    os << "\"streaming\":" << (snap.obs.streaming ? "true" : "false") << ",";
+    os << "\"recording\":" << (snap.obs.recording ? "true" : "false") << ",";
+    os << "\"streaming_start_ms\":" << streaming_start_ms_ << ",";
 
     {
         char buf[64];

@@ -139,6 +139,10 @@ private:
     uint64_t prev_idle_ = 0;
     uint64_t prev_total_ = 0;
 
+    // ── Streaming start time (for elapsed calculation) ────────────────────
+    uint64_t streaming_start_ms_ = 0;
+    bool prev_streaming_ = false;
+
     // ── Per-output delta tracking (bitrate / fps) ────────────────────────
     std::map<std::string, OutputDelta> output_deltas_;
 

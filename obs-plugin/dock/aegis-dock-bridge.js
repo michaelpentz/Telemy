@@ -67,6 +67,54 @@
       .filter(Boolean);
   }
 
+  // Clean up verbose OBS encoder instance names for display.
+  // obs_encoder_get_name() returns internal names like "streaming_h264",
+  // "advanced_video_recording", "ADVANCED_VIDEO_STREAMING VIDEO ENCODER", etc.
+  function cleanEncoderName(raw, codec) {
+    if (!raw) return codec ? codec.toUpperCase() : "Encoder";
+    var s = String(raw);
+    // Strip trailing " VIDEO ENCODER", " ENCODER" (case-insensitive)
+    s = s.replace(/\s*VIDEO\s*ENCODER\s*$/i, "").replace(/\s*ENCODER\s*$/i, "");
+    // Clean known OBS internal prefixes
+    s = s.replace(/^advanced[_\s]+video[_\s]+/i, "");
+    s = s.replace(/^simple[_\s]+/i, "");
+    s = s.replace(/^streaming[_\s]+/i, "");
+    s = s.replace(/^recording[_\s]+/i, "");
+    // Replace underscores with spaces
+    s = s.replace(/_/g, " ");
+    // Collapse whitespace
+    s = s.replace(/\s+/g, " ").trim();
+    // If we stripped everything, fall back to codec or original
+    if (!s) s = codec ? codec.toUpperCase() : String(raw);
+    return s;
+  }
+
+  // Clean up OBS output names — translate internal names to user-friendly labels.
+  // Most multi-stream plugins (StreamElements, Aitum, obs-multi-rtmp) set
+  // user-visible names already. This handles native OBS internal output names.
+  function cleanOutputName(raw) {
+    if (!raw) return null;
+    var s = String(raw);
+    // Known OBS internal output names
+    var knownNames = {
+      "adv_stream": "Stream",
+      "simple_stream": "Stream",
+      "default_service": "Stream",
+      "adv_file_output": "Recording",
+      "simple_file_output": "Recording",
+      "adv_stream2": "Stream 2",
+      "replay_buffer": "Replay Buffer",
+      "virtualcam_output": "Virtual Camera",
+    };
+    var lower = s.toLowerCase();
+    if (knownNames[lower]) return knownNames[lower];
+    // Strip "- Output" / " Output" suffix common in some plugins
+    s = s.replace(/\s*-?\s*[Oo]utput\s*$/, "");
+    // Replace underscores with spaces
+    s = s.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+    return s || raw;
+  }
+
   function buildEncoderOutputs(raw) {
     if (!Array.isArray(raw) || raw.length === 0) return { groups: [], hidden: [] };
     var groupMap = {};
@@ -75,12 +123,17 @@
     for (var i = 0; i < raw.length; i++) {
       var item = raw[i];
       if (!item || typeof item !== "object") continue;
+      // Prefer display_name from C++ multi-stream plugin resolution (e.g. StreamElements),
+      // then fall back to cleaned OBS output name.
+      var displayName = item.display_name || cleanOutputName(item.name) || item.platform || ("Output " + String(i + 1));
       var normalized = {
         id: item.id || ("output-" + String(i + 1)),
-        name: item.name || item.platform || ("Output " + String(i + 1)),
-        platform: item.platform || item.name || ("Output " + String(i + 1)),
+        name: displayName,
+        platform: item.platform || displayName,
         active: item.active !== false,
+        isPrimary: !!item.is_primary,
         kbps: Number(item.bitrate_kbps != null ? item.bitrate_kbps : (item.kbps != null ? item.kbps : 0)),
+        targetKbps: item.target_bitrate_kbps != null ? Number(item.target_bitrate_kbps) : (item.targetKbps != null ? Number(item.targetKbps) : 0),
         fps: item.fps != null ? Number(item.fps) : null,
         dropPct: item.drop_pct != null ? Number(item.drop_pct) : null,
         encodingLagMs: item.encoding_lag_ms != null ? Number(item.encoding_lag_ms) : null,
@@ -91,20 +144,47 @@
         hidden.push(normalized);
         continue;
       }
-      var groupKey = item.group || "Ungrouped";
+      // Derive group from encoder name + resolution when no explicit group is set.
+      // Group KEY includes resolution to distinguish same-encoder-different-canvas.
+      // Group DISPLAY NAME prefers canvas_name (from SE), then cleaned encoder name.
+      var resolution = item.resolution || (item.width && item.height ? (item.width + "x" + item.height) : null);
+      var cleanedEncoder = cleanEncoderName(item.encoder, item.codec);
+      var groupKey = item.group || (item.encoder && resolution ? (item.encoder + "|" + resolution) : (item.encoder || "Ungrouped"));
+      var groupDisplayName = item.group || item.canvas_name || (item.is_primary ? "Native Canvas" : cleanedEncoder);
+      normalized.resolution = resolution;
       if (!groupMap[groupKey]) {
-        groupMap[groupKey] = { name: groupKey, resolution: item.resolution || null, items: [], totalBitrateKbps: 0, avgLagMs: null };
+        groupMap[groupKey] = { name: groupDisplayName, resolution: resolution, items: [], totalBitrateKbps: 0, avgLagMs: null };
         groupOrder.push(groupKey);
       }
       groupMap[groupKey].items.push(normalized);
       groupMap[groupKey].totalBitrateKbps += (normalized.kbps || 0);
-      if (!groupMap[groupKey].resolution && item.resolution) {
-        groupMap[groupKey].resolution = item.resolution;
+      if (!groupMap[groupKey].resolution && resolution) {
+        groupMap[groupKey].resolution = resolution;
       }
     }
     var groups = [];
+    // Rename groups that contain a primary output to "Native Canvas"
+    // (the primary output may not be the first item processed for its group)
+    var hasPrimary = function(key) {
+      var items = groupMap[key].items;
+      for (var pi = 0; pi < items.length; pi++) { if (items[pi].isPrimary) return true; }
+      return false;
+    };
+    for (var ki = 0; ki < groupOrder.length; ki++) {
+      if (hasPrimary(groupOrder[ki]) && !groupMap[groupOrder[ki]].name.match(/canvas/i)) {
+        groupMap[groupOrder[ki]].name = "Native Canvas";
+      }
+    }
+    // Sort groups: groups containing a primary output come first
+    groupOrder.sort(function(a, b) {
+      var ap = hasPrimary(a) ? 0 : 1;
+      var bp = hasPrimary(b) ? 0 : 1;
+      return ap - bp;
+    });
     for (var gi = 0; gi < groupOrder.length; gi++) {
       var g = groupMap[groupOrder[gi]];
+      // Sort items within group: primary first
+      g.items.sort(function(a, b) { return (a.isPrimary ? 0 : 1) - (b.isPrimary ? 0 : 1); });
       var lagSum = 0; var lagCount = 0;
       for (var li = 0; li < g.items.length; li++) {
         if (g.items[li].encodingLagMs != null) { lagSum += g.items[li].encodingLagMs; lagCount++; }
@@ -279,9 +359,15 @@
       }
       var theme = snapshotTheme || lastTheme;
 
-      // Live status — prefer plugin override, fall back to snapshot health
-      var isLive = typeof plugin.isLive === "boolean" ? plugin.isLive : (health !== "offline");
-      var elapsedSec = plugin.elapsedSec || 0;
+      // Live status — prefer plugin override, then obs_stats.streaming, then health fallback
+      var obsStats = snap.obs_stats || {};
+      var obsStreaming = obsStats.streaming === true;
+      var isLive = typeof plugin.isLive === "boolean" ? plugin.isLive : (obsStreaming || health !== "offline");
+
+      // Elapsed time — prefer plugin override, then derive from C++ streaming_start_ms
+      // (C++ tracks the true start time so elapsed survives dock reloads mid-stream)
+      var streamingStartMs = obsStats.streaming_start_ms || 0;
+      var elapsedSec = plugin.elapsedSec || (streamingStartMs > 0 ? Math.floor((nowMs() - streamingStartMs) / 1000) : 0);
 
       // ── Build the dock-contract state ───────────────────────────────
 

@@ -19,6 +19,8 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -68,6 +70,155 @@ static std::string MaskRelayHost(const std::string& host) {
     const std::string tld           = host.substr(dot2);
     const std::string masked_domain = domain.empty() ? "***" : (domain.substr(0, 1) + "***");
     return prefix + masked_domain + tld;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-stream plugin output name resolution
+// ---------------------------------------------------------------------------
+// Reads StreamElements multi-streaming destinations.json to map UUID-based
+// output names back to user-friendly labels (e.g. "YT_Horiz", "YT_Vert").
+// Cached and refreshed every 60 seconds.
+
+static std::map<std::string, std::string> g_output_display_names;
+// Maps output ID (or prefix) → canvas display name (e.g. "Vertical")
+static std::map<std::string, std::string> g_output_canvas_names;
+static uint64_t g_output_names_last_load_ms = 0;
+static constexpr uint64_t kOutputNamesRefreshMs = 60000; // 60s
+
+static void LoadStreamElementsOutputNames() {
+    const QString appdata = QDir::homePath() + "/AppData/Roaming";
+    const QString se_base = appdata +
+        "/obs-studio/plugin_config/obs-streamelements-core"
+        "/scoped_config_storage/streamelements_multi-streaming";
+    QDir dir(se_base);
+    if (!dir.exists()) return;
+
+    // ── Load canvas/composition names (shared across accounts) ──────
+    // compositions/ sits at the multi-streaming level, NOT inside account subdirs.
+    // compositions/{uuid}.json → { "name": "Vertical", ... }
+    std::map<std::string, std::string> canvas_names; // compositionId → name
+    {
+        QDir comp_dir(se_base + "/compositions");
+        if (comp_dir.exists()) {
+            for (const auto& fname : comp_dir.entryList({"*.json"}, QDir::Files)) {
+                QFile cf(comp_dir.filePath(fname));
+                if (!cf.open(QIODevice::ReadOnly)) continue;
+                const QJsonDocument cdoc = QJsonDocument::fromJson(cf.readAll());
+                cf.close();
+                if (!cdoc.isObject()) continue;
+                const QString cname = cdoc.object().value("name").toString();
+                const QString cid = fname.left(fname.size() - 5);
+                if (!cname.isEmpty() && !cid.isEmpty()) {
+                    canvas_names[cid.toStdString()] = cname.toStdString();
+                }
+            }
+        }
+    }
+
+    for (const auto& sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString acct_base = se_base + "/" + sub;
+
+        // ── Load destinations ─────────────────────────────────────────
+        const QString dest_path = acct_base + "/destinations.json";
+        QFile f(dest_path);
+        if (!f.open(QIODevice::ReadOnly)) continue;
+        const QByteArray data = f.readAll();
+        f.close();
+
+        QJsonParseError err;
+        const QJsonDocument doc = QJsonDocument::fromJson(data, &err);
+        if (!doc.isArray()) continue;
+
+        for (const auto& val : doc.array()) {
+            if (!val.isObject()) continue;
+            const QJsonObject dest = val.toObject();
+            const QString display_name = dest.value("displayName").toString();
+            const QString dest_id = dest.value("id").toString();
+            if (display_name.isEmpty() || dest_id.isEmpty()) continue;
+
+            // Map destination ID → display name
+            g_output_display_names[dest_id.toStdString()] = display_name.toStdString();
+
+            // Each output has an ID and a videoCompositionId (canvas reference)
+            const QJsonArray outputs = dest.value("outputs").toArray();
+            for (const auto& out_val : outputs) {
+                if (!out_val.isObject()) continue;
+                const QJsonObject out_obj = out_val.toObject();
+                const QString out_id = out_obj.value("id").toString();
+                if (!out_id.isEmpty()) {
+                    g_output_display_names[out_id.toStdString()] = display_name.toStdString();
+
+                    // Resolve canvas name from videoCompositionId
+                    const QString comp_id = out_obj.value("videoCompositionId").toString();
+                    if (!comp_id.isEmpty() && comp_id != "default") {
+                        auto cit = canvas_names.find(comp_id.toStdString());
+                        if (cit != canvas_names.end()) {
+                            g_output_canvas_names[out_id.toStdString()] = cit->second;
+                            g_output_canvas_names[dest_id.toStdString()] = cit->second;
+                        }
+                    }
+                    // "default" canvas = OBS native — no canvas_name entry needed
+                }
+            }
+        }
+
+        if (!canvas_names.empty()) {
+            blog(LOG_INFO, "[aegis-obs-plugin] Loaded %d SE canvas name(s)",
+                 static_cast<int>(canvas_names.size()));
+        }
+    }
+}
+
+// Resolve an OBS output name to a user-friendly display name.
+static std::string ResolveOutputDisplayName(const std::string& obs_name) {
+    auto it = g_output_display_names.find(obs_name);
+    if (it != g_output_display_names.end()) return it->second;
+    for (const auto& kv : g_output_display_names) {
+        if (obs_name.size() > kv.first.size() &&
+            obs_name.compare(0, kv.first.size(), kv.first) == 0) {
+            return kv.second;
+        }
+    }
+    return obs_name;
+}
+
+// Resolve an OBS output name to its SE canvas name (e.g. "Vertical").
+// Returns empty string if no canvas mapping exists.
+static std::string ResolveOutputCanvasName(const std::string& obs_name) {
+    auto it = g_output_canvas_names.find(obs_name);
+    if (it != g_output_canvas_names.end()) return it->second;
+    for (const auto& kv : g_output_canvas_names) {
+        if (obs_name.size() > kv.first.size() &&
+            obs_name.compare(0, kv.first.size(), kv.first) == 0) {
+            return kv.second;
+        }
+    }
+    return "";
+}
+
+static void EnsureOutputNamesLoaded() {
+    const uint64_t now = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    if (now - g_output_names_last_load_ms < kOutputNamesRefreshMs &&
+        !g_output_display_names.empty()) {
+        return;
+    }
+    g_output_display_names.clear();
+    g_output_canvas_names.clear();
+    LoadStreamElementsOutputNames();
+    g_output_names_last_load_ms = now;
+    if (!g_output_display_names.empty()) {
+        blog(LOG_INFO, "[aegis-obs-plugin] Loaded %d multi-stream output name mappings, %d canvas mappings",
+             static_cast<int>(g_output_display_names.size()),
+             static_cast<int>(g_output_canvas_names.size()));
+        for (const auto& kv : g_output_display_names) {
+            blog(LOG_INFO, "[aegis-obs-plugin]   output: '%s' -> '%s'", kv.first.c_str(), kv.second.c_str());
+        }
+        for (const auto& kv : g_output_canvas_names) {
+            blog(LOG_INFO, "[aegis-obs-plugin]   canvas: '%s' -> '%s'", kv.first.c_str(), kv.second.c_str());
+        }
+    }
 }
 
 bool g_obs_timer_registered = false;
@@ -600,6 +751,85 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
             }
             payload.insert(QStringLiteral("relay_connections"), relay_conns_arr);
         }
+
+        // Query the native OBS streaming service platform (e.g. "Twitch", "YouTube").
+        // obs_service_get_name() returns the instance name ("default_service"), not the platform.
+        // The platform name is in the service settings under the "service" key.
+        QString nativeServiceName;
+        {
+            obs_service_t* svc = obs_frontend_get_streaming_service();
+            if (svc) {
+                obs_data_t* svc_settings = obs_service_get_settings(svc);
+                if (svc_settings) {
+                    const char* platform = obs_data_get_string(svc_settings, "service");
+                    if (platform && platform[0]) {
+                        nativeServiceName = QString::fromUtf8(platform);
+                    }
+                    // If no "service" key (custom RTMP), derive from server URL
+                    if (nativeServiceName.isEmpty()) {
+                        const char* server = obs_data_get_string(svc_settings, "server");
+                        if (server) {
+                            QString u = QString::fromUtf8(server).toLower();
+                            if (u.contains("twitch.tv")) nativeServiceName = "Twitch";
+                            else if (u.contains("youtube.com")) nativeServiceName = "YouTube";
+                            else if (u.contains("facebook.com")) nativeServiceName = "Facebook";
+                            else if (u.contains("live-video.net")) nativeServiceName = "Kick";
+                        }
+                    }
+                    obs_data_release(svc_settings);
+                }
+            }
+        }
+
+        // Resolve output display names:
+        // 1. Native OBS outputs (adv_stream, simple_stream) → platform name from service API
+        // 2. StreamElements outputs (UUID-based) → user label from destinations.json
+        // Also mark native stream as "primary" for sort ordering.
+        EnsureOutputNamesLoaded();
+        {
+            QJsonArray outputs = payload.value("multistream_outputs").toArray();
+            bool changed = false;
+            for (int i = 0; i < outputs.size(); ++i) {
+                QJsonObject out = outputs[i].toObject();
+                const std::string raw_name = out.value("name").toString().toStdString();
+
+                // Native OBS stream outputs → use platform service name
+                if (raw_name == "adv_stream" || raw_name == "simple_stream" ||
+                    raw_name == "adv_stream2" || raw_name == "default_service") {
+                    if (!nativeServiceName.isEmpty()) {
+                        out[QStringLiteral("display_name")] = nativeServiceName;
+                    }
+                    out[QStringLiteral("is_primary")] = true;
+                    outputs[i] = out;
+                    changed = true;
+                    continue;
+                }
+
+                // Multi-stream plugin outputs → resolve from cached map
+                if (!g_output_display_names.empty()) {
+                    const std::string resolved = ResolveOutputDisplayName(raw_name);
+                    if (resolved != raw_name) {
+                        out[QStringLiteral("display_name")] = QString::fromStdString(resolved);
+                        changed = true;
+                    }
+                }
+
+                // Resolve canvas name (e.g. "Vertical") from SE compositions
+                const std::string canvas = ResolveOutputCanvasName(raw_name);
+                if (!canvas.empty()) {
+                    out[QStringLiteral("canvas_name")] = QString::fromStdString(canvas);
+                    changed = true;
+                }
+
+                if (changed) {
+                    outputs[i] = out;
+                }
+            }
+            if (changed) {
+                payload[QStringLiteral("multistream_outputs")] = outputs;
+            }
+        }
+
         json = QJsonDocument(payload).toJson(QJsonDocument::Compact).toStdString();
     }
     json = AugmentSnapshotJsonWithTheme(json);
