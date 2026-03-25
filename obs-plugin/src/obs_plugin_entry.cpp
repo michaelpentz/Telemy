@@ -162,10 +162,6 @@ static void LoadStreamElementsOutputNames() {
             }
         }
 
-        if (!canvas_names.empty()) {
-            blog(LOG_INFO, "[aegis-obs-plugin] Loaded %d SE canvas name(s)",
-                 static_cast<int>(canvas_names.size()));
-        }
     }
 }
 
@@ -208,17 +204,6 @@ static void EnsureOutputNamesLoaded() {
     g_output_canvas_names.clear();
     LoadStreamElementsOutputNames();
     g_output_names_last_load_ms = now;
-    if (!g_output_display_names.empty()) {
-        blog(LOG_INFO, "[aegis-obs-plugin] Loaded %d multi-stream output name mappings, %d canvas mappings",
-             static_cast<int>(g_output_display_names.size()),
-             static_cast<int>(g_output_canvas_names.size()));
-        for (const auto& kv : g_output_display_names) {
-            blog(LOG_INFO, "[aegis-obs-plugin]   output: '%s' -> '%s'", kv.first.c_str(), kv.second.c_str());
-        }
-        for (const auto& kv : g_output_canvas_names) {
-            blog(LOG_INFO, "[aegis-obs-plugin]   canvas: '%s' -> '%s'", kv.first.c_str(), kv.second.c_str());
-        }
-    }
 }
 
 bool g_obs_timer_registered = false;
