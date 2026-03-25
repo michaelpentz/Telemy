@@ -229,6 +229,12 @@ QJsonObject BuildAuthSnapshotJson() {
     }
     authObj.insert(QStringLiteral("stream_slots"), streamSlots);
 
+    // Pass through linked_accounts as raw JSON from the API response.
+    if (!g_auth_state.session.linked_accounts_json.empty()) {
+        authObj.insert(QStringLiteral("linked_accounts"),
+            QJsonDocument::fromJson(QByteArray::fromStdString(g_auth_state.session.linked_accounts_json)).object());
+    }
+
     QJsonObject loginObj;
     const bool loginPending = !g_auth_state.login_attempt.Empty();
     loginObj.insert(QStringLiteral("pending"), loginPending);

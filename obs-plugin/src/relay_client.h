@@ -114,6 +114,7 @@ struct AuthSessionSnapshot {
     UsageSnapshot usage;
     std::optional<ActiveRelaySummary> active_relay;
     std::vector<StreamSlot> stream_slots;
+    std::string linked_accounts_json;  // raw JSON blob from API, injected as-is into dock state
 
     std::string ToVaultJson() const;
     static std::optional<AuthSessionSnapshot> FromVaultJson(const std::string& json);

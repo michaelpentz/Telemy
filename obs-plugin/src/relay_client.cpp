@@ -145,6 +145,12 @@ std::optional<AuthSessionSnapshot> ParseAuthSessionSnapshotObject(const QJsonObj
         }
     }
 
+    // Preserve linked_accounts as raw JSON for pass-through to dock.
+    const QJsonValue linkedAccountsValue = root.value("linked_accounts");
+    if (linkedAccountsValue.isObject()) {
+        snapshot.linked_accounts_json = QJsonDocument(linkedAccountsValue.toObject()).toJson(QJsonDocument::Compact).toStdString();
+    }
+
     if (snapshot.user.id.empty()) {
         return std::nullopt;
     }
@@ -209,6 +215,9 @@ std::string AuthSessionSnapshot::ToVaultJson() const
         streamSlots.append(SerializeStreamSlot(slot));
     }
     obj["stream_slots"] = streamSlots;
+    if (!linked_accounts_json.empty()) {
+        obj["linked_accounts"] = QJsonDocument::fromJson(QByteArray::fromStdString(linked_accounts_json)).object();
+    }
     return JsonStringify(obj);
 }
 

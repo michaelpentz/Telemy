@@ -433,6 +433,7 @@
           usage: auth.usage || null,
           stream_slots: auth.stream_slots || [],
           activeRelay: auth.active_relay || null,
+          linked_accounts: auth.linked_accounts || null,
           login: auth.login || { pending: false, poll_interval_seconds: 3 },
           lastErrorCode: auth.last_error_code || null,
           lastErrorMessage: auth.last_error_message || null,

@@ -269,6 +269,12 @@ std::string BuildAuthStateDetailJson() {
         }
         authObj["stream_slots"] = streamSlots;
 
+        // Pass through linked_accounts as raw JSON from the API response.
+        if (!g_auth_state.session.linked_accounts_json.empty()) {
+            authObj["linked_accounts"] = QJsonDocument::fromJson(
+                QByteArray::fromStdString(g_auth_state.session.linked_accounts_json)).object();
+        }
+
         QJsonObject loginObj;
         loginObj["pending"] = !g_auth_state.login_attempt.Empty();
         loginObj["login_attempt_id"] = QString::fromStdString(g_auth_state.login_attempt.login_attempt_id);
