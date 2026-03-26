@@ -46,6 +46,7 @@ bool TryExtractJsonBoolField(
 std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session);
 bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll);
 void LogSceneSnapshot(const char* reason);
+void SendChatAnnounce(const std::string& message);
 
 // ---------------------------------------------------------------------------
 // Extern globals — defined in obs_plugin_entry.cpp
@@ -653,6 +654,45 @@ bool SetDockSettingValueByKey(const std::string& key, bool value) {
     }
     if (key == "chat_bot") {
         g_config.chat_bot = value;
+        // Fire chat config to backend on background thread
+        std::thread([value]() {
+            const std::string jwt = CurrentControlPlaneJwtForActions();
+            if (jwt.empty()) return;
+
+            QJsonObject body;
+            body["enabled"] = value;
+            body["provider"] = QString("twitch");
+            body["command_prefix"] = QString::fromStdString(g_chatbot_runtime.GetCommandPrefix());
+            body["allowed_role"] = QString("broadcaster");
+            body["announce_scene_switches"] = g_chatbot_runtime.GetAnnounceSceneSwitches();
+            body["announce_auto_resume"] = g_chatbot_runtime.GetAnnounceAutoResume();
+            body["send_status_replies"] = g_chatbot_runtime.GetSendStatusReplies();
+
+            QJsonDocument doc(body);
+            std::string payload = doc.toJson(QJsonDocument::Compact).toStdString();
+
+            try {
+                aegis::HttpsClient http;
+                std::wstring wide_jwt(jwt.begin(), jwt.end());
+                auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/config", wide_jwt, payload);
+                if (resp.ok()) {
+                    QJsonDocument respDoc = QJsonDocument::fromJson(QByteArray::fromStdString(resp.body));
+                    if (respDoc.isObject()) {
+                        QJsonObject obj = respDoc.object();
+                        std::string status = obj.value("status").toString().toStdString();
+                        std::string label = obj.value("label").toString().toStdString();
+                        g_chatbot_runtime.SetRuntimeStatus(status, label);
+                        blog(LOG_INFO, "[chat-config] %s: %s", status.c_str(), label.c_str());
+                    }
+                } else {
+                    blog(LOG_WARNING, "[chat-config] request failed: %d", resp.status_code);
+                    g_chatbot_runtime.SetRuntimeStatus("error", "Setup failed");
+                }
+            } catch (const std::exception& e) {
+                blog(LOG_WARNING, "[chat-config] error: %s", e.what());
+                g_chatbot_runtime.SetRuntimeStatus("error", "Connection error");
+            }
+        }).detach();
         return true;
     }
     if (key == "alerts") {
@@ -887,12 +927,24 @@ bool DispatchDockAction(const std::string& action_json,
             return false;
         }
 
+        std::string reason;
+        (void)TryExtractJsonStringField(action_json, "reason", &reason);
+
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action queued: type=switch_scene request_id=%s scene=%s",
+            "[aegis-obs-plugin] dock action queued: type=switch_scene request_id=%s scene=%s reason=%s",
             request_id.c_str(),
-            scene_name.c_str());
-        EnqueueSwitchSceneRequest(request_id, scene_name, "dock_ui");
+            scene_name.c_str(),
+            reason.c_str());
+
+        const bool is_auto_switch = reason.rfind("auto_profile_", 0) == 0;
+        EnqueueSwitchSceneRequest(request_id, scene_name, is_auto_switch ? "auto_rule" : "dock_ui");
+
+        // Announce auto-scene switches to chat if enabled
+        if (is_auto_switch && g_chatbot_runtime.GetAnnounceSceneSwitches()) {
+            SendChatAnnounce("Auto-switching to " + scene_name);
+        }
+
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_for_obs_thread");
         return true;
     }

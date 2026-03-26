@@ -167,6 +167,32 @@ bool ChatbotRuntime::ApplyPrefsJson(const std::string& prefs_json) {
     return true;
 }
 
+std::string ChatbotRuntime::GetCommandPrefix() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return config_.command_prefix.empty() ? "!telemy" : config_.command_prefix;
+}
+
+bool ChatbotRuntime::GetAnnounceSceneSwitches() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return config_.announce_scene_switches;
+}
+
+bool ChatbotRuntime::GetAnnounceAutoResume() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return config_.announce_auto_resume;
+}
+
+bool ChatbotRuntime::GetSendStatusReplies() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return config_.send_status_replies;
+}
+
+void ChatbotRuntime::SetRuntimeStatus(const std::string& status, const std::string& label) {
+    std::lock_guard<std::mutex> lock(mu_);
+    config_.runtimeStatus = status;
+    config_.runtimeLabel = label;
+}
+
 QJsonObject ChatbotRuntime::BuildSnapshotJson(bool enabled) const {
     Config cfg;
     bool loaded = false;
@@ -190,6 +216,9 @@ QJsonObject ChatbotRuntime::BuildSnapshotJson(bool enabled) const {
     } else if (TrimCopy(cfg.channel).empty()) {
         runtime_status = QStringLiteral("config_error");
         runtime_label = QStringLiteral("Set a channel to enable commands");
+    } else if (!cfg.runtimeStatus.empty()) {
+        runtime_status = QString::fromStdString(cfg.runtimeStatus);
+        runtime_label = QString::fromStdString(cfg.runtimeLabel);
     } else {
         runtime_status = QStringLiteral("ready");
         runtime_label = QStringLiteral("Native command parser ready");

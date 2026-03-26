@@ -267,6 +267,26 @@ std::string CurrentControlPlaneJwt() {
 }
 
 // ---------------------------------------------------------------------------
+// Chat announce — sends a message to the user's chat via the control plane
+// ---------------------------------------------------------------------------
+void SendChatAnnounce(const std::string& message) {
+    if (!g_config.chat_bot) return;
+    const std::string jwt = CurrentControlPlaneJwt();
+    if (jwt.empty()) return;
+    std::thread([jwt, message]() {
+        try {
+            aegis::HttpsClient http;
+            std::wstring wide_jwt(jwt.begin(), jwt.end());
+            QJsonObject body;
+            body["message"] = QString::fromStdString(message);
+            QJsonDocument doc(body);
+            std::string payload = doc.toJson(QJsonDocument::Compact).toStdString();
+            http.Post(L"api.telemyapp.com", L"/api/v1/chat/announce", wide_jwt, payload);
+        } catch (...) {}
+    }).detach();
+}
+
+// ---------------------------------------------------------------------------
 // Chat command poll thread — polls /api/v1/chat/pending every 1.5s
 // ---------------------------------------------------------------------------
 void ChatPollLoop() {

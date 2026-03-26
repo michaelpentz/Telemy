@@ -52,6 +52,12 @@ public:
         bool enabled,
         const ChatbotCommandRequest& request) const;
 
+    std::string GetCommandPrefix() const;
+    bool GetAnnounceSceneSwitches() const;
+    bool GetAnnounceAutoResume() const;
+    bool GetSendStatusReplies() const;
+    void SetRuntimeStatus(const std::string& status, const std::string& label);
+
 private:
     struct Config {
         std::string provider = "twitch";
@@ -62,6 +68,8 @@ private:
         bool send_status_replies = true;
         bool broadcaster_only = true;
         std::string identity_label = "@TelemyBot";
+        std::string runtimeStatus;
+        std::string runtimeLabel;
         std::vector<ChatbotRuleConfig> rules;
     };
 
