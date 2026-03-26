@@ -58,6 +58,10 @@ public:
     bool GetSendStatusReplies() const;
     void SetRuntimeStatus(const std::string& status, const std::string& label);
 
+#if defined(AEGIS_OBS_PLUGIN_BUILD)
+    QJsonArray GetRulesJson() const;
+#endif
+
 private:
     struct Config {
         std::string provider = "twitch";

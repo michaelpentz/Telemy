@@ -193,6 +193,24 @@ void ChatbotRuntime::SetRuntimeStatus(const std::string& status, const std::stri
     config_.runtimeLabel = label;
 }
 
+QJsonArray ChatbotRuntime::GetRulesJson() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    QJsonArray arr;
+    for (const auto& rule : config_.rules) {
+        if (rule.aliases.empty() || rule.linked_scene_name.empty()) continue;
+        QJsonObject obj;
+        obj.insert(QStringLiteral("label"), QString::fromStdString(rule.label));
+        obj.insert(QStringLiteral("scene_name"), QString::fromStdString(rule.linked_scene_name));
+        QJsonArray aliases;
+        for (const auto& a : rule.aliases) {
+            aliases.append(QString::fromStdString(a));
+        }
+        obj.insert(QStringLiteral("aliases"), aliases);
+        arr.append(obj);
+    }
+    return arr;
+}
+
 QJsonObject ChatbotRuntime::BuildSnapshotJson(bool enabled) const {
     Config cfg;
     bool loaded = false;

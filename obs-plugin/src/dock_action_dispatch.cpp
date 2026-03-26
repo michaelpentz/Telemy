@@ -685,6 +685,7 @@ bool SetDockSettingValueByKey(const std::string& key, bool value) {
             body["announce_scene_switches"] = g_chatbot_runtime.GetAnnounceSceneSwitches();
             body["announce_auto_resume"] = g_chatbot_runtime.GetAnnounceAutoResume();
             body["send_status_replies"] = g_chatbot_runtime.GetSendStatusReplies();
+            body["rules"] = g_chatbot_runtime.GetRulesJson();
 
             QJsonDocument doc(body);
             std::string payload = doc.toJson(QJsonDocument::Compact).toStdString();
@@ -1137,6 +1138,7 @@ bool DispatchDockAction(const std::string& action_json,
         contents << in.rdbuf();
         in.close();
         const std::string data = contents.str();
+        (void)g_chatbot_runtime.ApplyPrefsJson(data);
         blog(LOG_INFO,
             "[aegis-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s bytes=%d",
             request_id.c_str(),
@@ -1266,6 +1268,38 @@ bool DispatchDockAction(const std::string& action_json,
         }
 
         EmitDockActionResult(action_type, request_id, "completed", true, "", detail);
+        return true;
+    }
+
+    // -- chat_test_command: post command as broadcaster in chat for E2E test --
+    if (action_type == "chat_test_command") {
+        QJsonObject root = QJsonDocument::fromJson(
+            QByteArray::fromStdString(action_json)).object();
+        std::string command_text = root.value("commandText").toString().toStdString();
+        if (command_text.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false, "missing_command", "");
+            return true;
+        }
+        std::thread([command_text, action_type, request_id]() {
+            const std::string jwt = CurrentControlPlaneJwtForActions();
+            if (jwt.empty()) return;
+            QJsonObject body;
+            body["message"] = QString::fromStdString(command_text);
+            std::string payload = QJsonDocument(body).toJson(QJsonDocument::Compact).toStdString();
+            try {
+                aegis::HttpsClient http;
+                std::wstring wide_jwt(jwt.begin(), jwt.end());
+                auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/test", payload, wide_jwt);
+                if (resp.ok()) {
+                    blog(LOG_INFO, "[chat-test] sent: %s", command_text.c_str());
+                } else {
+                    blog(LOG_WARNING, "[chat-test] failed: %d", resp.status_code);
+                }
+            } catch (const std::exception& e) {
+                blog(LOG_WARNING, "[chat-test] error: %s", e.what());
+            }
+        }).detach();
+        EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         return true;
     }
 

@@ -179,6 +179,17 @@ export function normalizeAutoSceneRulesValue(rules) {
       const thresholdEnabled = typeof r.thresholdEnabled === "boolean"
         ? r.thresholdEnabled
         : (Number.isFinite(threshold) && threshold >= 0);
+      const explicitAliases = Array.isArray(r.chatAliases)
+        ? Array.from(new Set(r.chatAliases.map((alias) => String(alias || "").trim().toLowerCase()).filter(Boolean))).slice(0, 6)
+        : [];
+      // Backfill default aliases for built-in rules that have none (e.g. loaded from old prefs)
+      const defaultRule = explicitAliases.length === 0
+        ? DEFAULT_AUTO_SCENE_RULES.find((d) => d.id === id)
+        : null;
+      const chatAliases = explicitAliases.length > 0 ? explicitAliases
+        : (defaultRule && Array.isArray(defaultRule.chatAliases) ? defaultRule.chatAliases : []);
+      const chatEnabled = r.chatEnabled != null ? r.chatEnabled !== false
+        : (defaultRule ? defaultRule.chatEnabled !== false : true);
       return {
         id,
         label,
@@ -187,10 +198,8 @@ export function normalizeAutoSceneRulesValue(rules) {
         thresholdMbps: Number.isFinite(threshold) && threshold >= 0 ? threshold : null,
         isDefault: !!r.isDefault,
         bgColor: normalizeOptionalHexColor(r.bgColor) || getDefaultRuleBgColor({ id, intent }),
-        chatEnabled: r.chatEnabled !== false,
-        chatAliases: Array.isArray(r.chatAliases)
-          ? Array.from(new Set(r.chatAliases.map((alias) => String(alias || "").trim().toLowerCase()).filter(Boolean))).slice(0, 6)
-          : [],
+        chatEnabled,
+        chatAliases,
       };
     })
     .filter(Boolean);

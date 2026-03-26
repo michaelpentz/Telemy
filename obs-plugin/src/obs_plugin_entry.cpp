@@ -299,8 +299,21 @@ void ChatPollLoop() {
                 std::string sender = cmd.value("sender").toString().toStdString();
 
                 if (type == "switch_scene" && !scene.empty()) {
+                    // Pause auto-switching when a chat command overrides the scene
+                    if (g_config.auto_scene_switch && !g_config.manual_override) {
+                        g_config.manual_override = true;
+                        g_config.SaveToDisk();
+                        blog(LOG_INFO, "[chat-poll] paused auto-switch for chat command from %s", sender.c_str());
+                    }
                     EnqueueSwitchSceneRequest(
                         "chat_" + sender, scene, "chat_command");
+                }
+                if (type == "resume_auto") {
+                    if (g_config.manual_override) {
+                        g_config.manual_override = false;
+                        g_config.SaveToDisk();
+                        blog(LOG_INFO, "[chat-poll] resumed auto-switch via chat command from %s", sender.c_str());
+                    }
                 }
             }
         } catch (const std::exception& e) {
