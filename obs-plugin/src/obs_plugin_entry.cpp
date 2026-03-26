@@ -216,6 +216,12 @@ float g_metrics_poll_accum_seconds = 0.0f;
 aegis::MetricsCollector g_metrics;
 bool g_dock_action_selftest_attempted = false;
 
+// Chat command poll — declared here, defined after globals are available
+std::atomic<bool> g_chat_poll_running{false};
+std::thread g_chat_poll_thread;
+void StartChatPollThread();
+void StopChatPollThread();
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -258,6 +264,64 @@ std::string CurrentControlPlaneJwt() {
 
     const auto legacy = g_vault.Get(kLegacyRelayJwtVaultKey);
     return legacy.value_or("");
+}
+
+// ---------------------------------------------------------------------------
+// Chat command poll thread — polls /api/v1/chat/pending every 1.5s
+// ---------------------------------------------------------------------------
+void ChatPollLoop() {
+    aegis::HttpsClient chat_http;
+    while (g_chat_poll_running.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        if (!g_chat_poll_running.load()) break;
+        if (!g_config.chat_bot) continue;
+
+        const std::string jwt = CurrentControlPlaneJwt();
+        if (jwt.empty()) continue;
+
+        try {
+            std::wstring wide_jwt(jwt.begin(), jwt.end());
+            auto resp = chat_http.Get(
+                L"api.telemyapp.com",
+                L"/api/v1/chat/pending",
+                wide_jwt);
+            if (!resp.ok() || resp.body.empty()) continue;
+
+            QJsonDocument doc = QJsonDocument::fromJson(
+                QByteArray::fromStdString(resp.body));
+            if (!doc.isObject()) continue;
+
+            QJsonArray cmds = doc.object().value("commands").toArray();
+            for (const QJsonValue& val : cmds) {
+                QJsonObject cmd = val.toObject();
+                std::string type = cmd.value("type").toString().toStdString();
+                std::string scene = cmd.value("scene_name").toString().toStdString();
+                std::string sender = cmd.value("sender").toString().toStdString();
+
+                if (type == "switch_scene" && !scene.empty()) {
+                    EnqueueSwitchSceneRequest(
+                        "chat_" + sender, scene, "chat_command");
+                }
+            }
+        } catch (const std::exception& e) {
+            blog(LOG_WARNING, "[chat-poll] error: %s", e.what());
+        }
+    }
+}
+
+void StartChatPollThread() {
+    if (g_chat_poll_running.load()) return;
+    g_chat_poll_running.store(true);
+    g_chat_poll_thread = std::thread(ChatPollLoop);
+    blog(LOG_INFO, "[chat-poll] started chat command poll thread");
+}
+
+void StopChatPollThread() {
+    g_chat_poll_running.store(false);
+    if (g_chat_poll_thread.joinable()) {
+        g_chat_poll_thread.join();
+    }
+    blog(LOG_INFO, "[chat-poll] stopped chat command poll thread");
 }
 
 bool SavePluginAuthStateToVaultLocked() {
@@ -1099,6 +1163,7 @@ void OnFrontendEvent(enum obs_frontend_event event, void*) {
         break;
     case OBS_FRONTEND_EVENT_EXIT:
         g_frontend_exit_seen = true;
+        StopChatPollThread();
         ShutdownBrowserDockHostBridge();
         break;
     default:
@@ -1334,6 +1399,7 @@ bool obs_module_load(void) {
         CurrentControlPlaneJwt(), g_config.relay_heartbeat_interval_sec);
 
     g_metrics.Start(g_config.metrics_poll_interval_ms);
+    StartChatPollThread();
 
     if (!g_obs_timer_registered) {
         obs_add_tick_callback(SwitchScenePumpTick, nullptr);
