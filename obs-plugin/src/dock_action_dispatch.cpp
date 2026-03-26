@@ -46,8 +46,6 @@ bool TryExtractJsonBoolField(
 std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session);
 bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll);
 void LogSceneSnapshot(const char* reason);
-void SendChatAnnounce(const std::string& message);
-
 // ---------------------------------------------------------------------------
 // Extern globals — defined in obs_plugin_entry.cpp
 // ---------------------------------------------------------------------------
@@ -202,6 +200,26 @@ std::string CurrentControlPlaneJwtForActions() {
         }
     }
     return g_vault.Get(kLegacyRelayJwtVaultKey).value_or("");
+}
+
+// ---------------------------------------------------------------------------
+// Chat announce — sends a message to the user's chat via the control plane.
+// ---------------------------------------------------------------------------
+void SendChatAnnounce(const std::string& message) {
+    if (!g_config.chat_bot) return;
+    const std::string jwt = CurrentControlPlaneJwtForActions();
+    if (jwt.empty()) return;
+    std::thread([jwt, message]() {
+        try {
+            aegis::HttpsClient http;
+            std::wstring wide_jwt(jwt.begin(), jwt.end());
+            QJsonObject body;
+            body["message"] = QString::fromStdString(message);
+            QJsonDocument doc(body);
+            std::string payload = doc.toJson(QJsonDocument::Compact).toStdString();
+            http.Post(L"api.telemyapp.com", L"/api/v1/chat/announce", payload, wide_jwt);
+        } catch (...) {}
+    }).detach();
 }
 
 std::string CurrentRefreshTokenForActions() {
@@ -674,7 +692,7 @@ bool SetDockSettingValueByKey(const std::string& key, bool value) {
             try {
                 aegis::HttpsClient http;
                 std::wstring wide_jwt(jwt.begin(), jwt.end());
-                auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/config", wide_jwt, payload);
+                auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/config", payload, wide_jwt);
                 if (resp.ok()) {
                     QJsonDocument respDoc = QJsonDocument::fromJson(QByteArray::fromStdString(resp.body));
                     if (respDoc.isObject()) {
