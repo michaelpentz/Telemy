@@ -710,6 +710,7 @@ bool SetDockSettingValueByKey(const std::string& key, bool value) {
                 blog(LOG_WARNING, "[chat-config] error: %s", e.what());
                 g_chatbot_runtime.SetRuntimeStatus("error", "Connection error");
             }
+            EmitCurrentStatusSnapshotToDock("chat_config_result", false);
         }).detach();
         return true;
     }
