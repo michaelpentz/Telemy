@@ -4,7 +4,7 @@ Telemy incorporates and interacts with the following third-party components:
 
 ## SRT Relay (srtla)
 
-- **Repository:** [michaelpentz/srtla](https://github.com/michaelpentz/srtla)
+- **Repository:** [Telemyapp/srtla](https://github.com/Telemyapp/srtla)
 - **License:** GNU Affero General Public License v3.0 (AGPL-3.0)
 - **Original Author:** BELABOX project
 - **Additional Copyright:** IRLToolkit Inc., OpenIRL
@@ -12,14 +12,14 @@ Telemy incorporates and interacts with the following third-party components:
 
 ## SRT Relay Receiver (srtla-receiver)
 
-- **Repository:** [michaelpentz/srtla-receiver](https://github.com/michaelpentz/srtla-receiver)
+- **Repository:** [Telemyapp/srtla-receiver](https://github.com/Telemyapp/srtla-receiver)
 - **License:** GNU General Public License v3.0 (GPL-3.0)
 - **Original Author:** OpenIRL
 - **Relationship:** Docker image used for relay infrastructure. Source code is available at the repository linked above.
 
 ## Go Dependencies
 
-All Go module dependencies use permissive licenses (MIT, BSD, Apache-2.0).
+All Go module dependencies use permissive licenses (MIT, BSD).
 See `control-plane/go.mod` for the full dependency list.
 
 ## OBS Studio SDK
