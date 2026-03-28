@@ -7,7 +7,7 @@
 //
 // Classic-script compatible (no ESM/module imports).
 
-(function initAegisDockBridgeGlobal(globalObj) {
+(function initTelemyDockBridgeGlobal(globalObj) {
   const g = globalObj || (typeof window !== "undefined" ? window : globalThis);
   if (!g) return;
 
@@ -211,7 +211,7 @@
 
   // ── Bridge Host Factory ──────────────────────────────────────────────────
 
-  function createAegisDockBridgeHost(options) {
+  function createTelemyDockBridgeHost(options) {
     var listeners = new Set();
     var cfg = Object.assign({ eventLimit: 50 }, options || {});
 
@@ -821,18 +821,18 @@
     };
   }
 
-  function attachAegisDockBridgeToWindow(bridge, key) {
-    g[key || "__AEGIS_DOCK_BRIDGE__"] = bridge;
+  function attachTelemyDockBridgeToWindow(bridge, key) {
+    g[key || "__TELEMY_DOCK_BRIDGE__"] = bridge;
     return bridge;
   }
 
   var exported = {
-    createAegisDockBridgeHost: createAegisDockBridgeHost,
-    attachAegisDockBridgeToWindow: attachAegisDockBridgeToWindow,
+    createTelemyDockBridgeHost: createTelemyDockBridgeHost,
+    attachTelemyDockBridgeToWindow: attachTelemyDockBridgeToWindow,
   };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = exported;
   }
-  g.AegisDockBridge = exported;
+  g.TelemyDockBridge = exported;
 })(typeof window !== "undefined" ? window : undefined);

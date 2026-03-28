@@ -4,11 +4,11 @@
 #include <string>
 #include <vector>
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 #include <QJsonObject>
 #endif
 
-namespace aegis {
+namespace telemy {
 
 struct ChatbotRuleConfig {
     std::string id;
@@ -44,7 +44,7 @@ public:
     void LoadPrefsFromDisk();
     bool ApplyPrefsJson(const std::string& prefs_json);
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     QJsonObject BuildSnapshotJson(bool enabled) const;
 #endif
 
@@ -58,7 +58,7 @@ public:
     bool GetSendStatusReplies() const;
     void SetRuntimeStatus(const std::string& status, const std::string& label);
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     QJsonArray GetRulesJson() const;
 #endif
 
@@ -86,4 +86,4 @@ private:
     bool prefs_loaded_ = false;
 };
 
-} // namespace aegis
+} // namespace telemy

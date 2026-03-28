@@ -1,7 +1,7 @@
 #include "chatbot_runtime.h"
 #include "config_vault.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 #include <QFile>
 #include <QDir>
@@ -14,7 +14,7 @@
 #include <cctype>
 #include <sstream>
 
-namespace aegis {
+namespace telemy {
 
 namespace {
 
@@ -387,6 +387,6 @@ ChatbotCommandResult ChatbotRuntime::HandleCommand(
     return result;
 }
 
-} // namespace aegis
+} // namespace telemy
 
-#endif // AEGIS_OBS_PLUGIN_BUILD
+#endif // TELEMY_OBS_PLUGIN_BUILD

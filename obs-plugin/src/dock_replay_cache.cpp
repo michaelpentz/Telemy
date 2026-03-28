@@ -2,7 +2,7 @@
 #include "dock_theme.h"
 #include "dock_action_dispatch.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 #include <obs-module.h>
 #include <QJsonDocument>
@@ -198,8 +198,8 @@ bool EmitDockNativeJsonArgCall(const char* method_name, const std::string& paylo
         return false;
     }
     std::ostringstream js;
-    js << "if (window.aegisDockNative && typeof window.aegisDockNative." << method_name
-       << " === 'function') { window.aegisDockNative." << method_name << "("
+    js << "if (window.telemyDockNative && typeof window.telemyDockNative." << method_name
+       << " === 'function') { window.telemyDockNative." << method_name << "("
        << JsStringLiteral(payload_json) << "); }";
     const bool delivered = TryExecuteDockBrowserJs(js.str());
     if (delivered) {
@@ -222,7 +222,7 @@ bool EmitDockNativeJsonArgCall(const char* method_name, const std::string& paylo
                 *already_logged = true;
                 blog(
                     LOG_INFO,
-                    "[aegis-obs-plugin] dock js sink delivery validated post-page-ready: method=%s payload_bytes=%d",
+                    "[telemy-obs-plugin] dock js sink delivery validated post-page-ready: method=%s payload_bytes=%d",
                     method_name,
                     static_cast<int>(payload_json.size()));
             }
@@ -236,8 +236,8 @@ bool EmitDockNativePipeStatus(const char* status, const char* reason) {
         return false;
     }
     std::ostringstream js;
-    js << "if (window.aegisDockNative && typeof window.aegisDockNative.receivePipeStatus === "
-          "'function') { window.aegisDockNative.receivePipeStatus("
+    js << "if (window.telemyDockNative && typeof window.telemyDockNative.receivePipeStatus === "
+          "'function') { window.telemyDockNative.receivePipeStatus("
        << JsStringLiteral(status) << ",";
     if (reason && *reason) {
         js << JsStringLiteral(reason);
@@ -250,8 +250,8 @@ bool EmitDockNativePipeStatus(const char* status, const char* reason) {
 
 bool EmitDockNativeCurrentScene(const std::string& scene_name) {
     std::ostringstream js;
-    js << "if (window.aegisDockNative && typeof window.aegisDockNative.receiveCurrentScene === "
-          "'function') { window.aegisDockNative.receiveCurrentScene(";
+    js << "if (window.telemyDockNative && typeof window.telemyDockNative.receiveCurrentScene === "
+          "'function') { window.telemyDockNative.receiveCurrentScene(";
     if (scene_name.empty()) {
         js << "null";
     } else {
@@ -321,7 +321,7 @@ void ReplayDockStateToJsSinkIfAvailable() {
             EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", themed);
         blog(
             delivered ? LOG_INFO : LOG_WARNING,
-            "[aegis-obs-plugin] dock replay status snapshot: delivered=%s bytes=%d",
+            "[telemy-obs-plugin] dock replay status snapshot: delivered=%s bytes=%d",
             delivered ? "true" : "false",
             static_cast<int>(themed.size()));
     } else {
@@ -337,7 +337,7 @@ void ReplayDockStateToJsSinkIfAvailable() {
                 EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", synthetic_json);
             blog(
                 delivered ? LOG_INFO : LOG_WARNING,
-                "[aegis-obs-plugin] dock replay: synthetic theme snapshot emitted "
+                "[telemy-obs-plugin] dock replay: synthetic theme snapshot emitted "
                 "delivered=%s bytes=%d",
                 delivered ? "true" : "false",
                 static_cast<int>(synthetic_json.size()));
@@ -348,7 +348,7 @@ void ReplayDockStateToJsSinkIfAvailable() {
             EmitDockNativeJsonArgCall("receiveSceneSnapshotJson", snapshot.scene_snapshot_json);
         blog(
             delivered ? LOG_INFO : LOG_WARNING,
-            "[aegis-obs-plugin] dock replay scene snapshot: delivered=%s bytes=%d js_sink=%s page_ready=%s",
+            "[telemy-obs-plugin] dock replay scene snapshot: delivered=%s bytes=%d js_sink=%s page_ready=%s",
             delivered ? "true" : "false",
             static_cast<int>(snapshot.scene_snapshot_json.size()),
             sink_state.js_sink_registered ? "true" : "false",
@@ -356,7 +356,7 @@ void ReplayDockStateToJsSinkIfAvailable() {
     } else {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock replay scene snapshot: skipped (cached_scene_snapshot=%s) js_sink=%s page_ready=%s",
+            "[telemy-obs-plugin] dock replay scene snapshot: skipped (cached_scene_snapshot=%s) js_sink=%s page_ready=%s",
             snapshot.has_scene_snapshot ? "empty_payload" : "none",
             sink_state.js_sink_registered ? "true" : "false",
             sink_state.page_ready ? "true" : "false");
@@ -384,7 +384,7 @@ void ReemitDockStatusSnapshotWithCurrentTheme(const char* reason) {
         snapshot_json = g_dock_replay_cache.status_snapshot_json;
     }
     if (snapshot_json.empty()) {
-        blog(LOG_DEBUG, "[aegis-obs-plugin] theme refresh skipped: no cached status_snapshot (reason=%s)",
+        blog(LOG_DEBUG, "[telemy-obs-plugin] theme refresh skipped: no cached status_snapshot (reason=%s)",
              reason ? reason : "unknown");
         return;
     }
@@ -397,7 +397,7 @@ void ReemitDockStatusSnapshotWithCurrentTheme(const char* reason) {
     const bool delivered = EmitDockNativeJsonArgCall("receiveStatusSnapshotJson", themed);
     blog(
         delivered ? LOG_INFO : LOG_DEBUG,
-        "[aegis-obs-plugin] dock theme refresh status_snapshot re-emitted: delivered=%s reason=%s bytes=%d",
+        "[telemy-obs-plugin] dock theme refresh status_snapshot re-emitted: delivered=%s reason=%s bytes=%d",
         delivered ? "true" : "false",
         reason ? reason : "unknown",
         static_cast<int>(themed.size()));
@@ -499,7 +499,7 @@ void EmitDockActionResult(const std::string& action_type,
         BuildDockActionResultJson(action_type, request_id, status, ok, error, detail);
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] dock action result: action_type=%s request_id=%s status=%s ok=%s error=%s detail=%s",
+        "[telemy-obs-plugin] dock action result: action_type=%s request_id=%s status=%s ok=%s error=%s detail=%s",
         action_type.empty() ? "" : action_type.c_str(),
         request_id.empty() ? "" : request_id.c_str(),
         status.empty() ? "" : status.c_str(),
@@ -513,7 +513,7 @@ void EmitDockActionResult(const std::string& action_type,
         if (ShouldLogDockFallbackPayload(DockFallbackLogKind::DockActionResultJson, &phase, &attempt)) {
             blog(
                 LOG_DEBUG,
-                "[aegis-obs-plugin] dock bridge fallback payload phase=%s attempt=%u receiveDockActionResultJson=%s",
+                "[telemy-obs-plugin] dock bridge fallback payload phase=%s attempt=%u receiveDockActionResultJson=%s",
                 phase ? phase : "unknown",
                 attempt,
                 payload_json.c_str());
@@ -536,7 +536,7 @@ void EmitDockSceneSwitchCompleted(const std::string& request_id,
                 DockFallbackLogKind::SceneSwitchCompletedJson, &phase, &attempt)) {
             blog(
                 LOG_INFO,
-                "[aegis-obs-plugin] dock bridge fallback payload phase=%s attempt=%u receiveSceneSwitchCompletedJson=%s",
+                "[telemy-obs-plugin] dock bridge fallback payload phase=%s attempt=%u receiveSceneSwitchCompletedJson=%s",
                 phase ? phase : "unknown",
                 attempt,
                 payload_json.c_str());
@@ -561,7 +561,7 @@ bool EmitDockSceneSnapshotPayload(const std::string& payload_json) {
     const DockJsSinkProbeState sink_state = GetDockJsSinkProbeState();
     blog(
         delivered ? LOG_DEBUG : LOG_INFO,
-        "[aegis-obs-plugin] dock scene snapshot dispatch: delivered=%s via=%s bytes=%d js_sink=%s page_ready=%s",
+        "[telemy-obs-plugin] dock scene snapshot dispatch: delivered=%s via=%s bytes=%d js_sink=%s page_ready=%s",
         delivered ? "true" : "false",
         emitter_copy ? "emitter" : "native_js_call",
         static_cast<int>(payload_json.size()),
@@ -611,7 +611,7 @@ void HandleRelayActionResultIfPresent(const std::string& envelope_json) {
 
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] relay action result resolved: request_id=%s action_type=%s pending_match=%s ok=%s",
+        "[telemy-obs-plugin] relay action result resolved: request_id=%s action_type=%s pending_match=%s ok=%s",
         request_id.c_str(),
         action_type.c_str(),
         pending_match ? "true" : "false",
@@ -628,4 +628,4 @@ void HandleRelayActionResultIfPresent(const std::string& envelope_json) {
     }
 }
 
-#endif // AEGIS_OBS_PLUGIN_BUILD
+#endif // TELEMY_OBS_PLUGIN_BUILD

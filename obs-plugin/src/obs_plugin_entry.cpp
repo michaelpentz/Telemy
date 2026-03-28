@@ -9,8 +9,8 @@
 #include "dock_replay_cache.h"
 #include "dock_action_dispatch.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST)
 #include "obs_browser_dock_host_scaffold.h"
 #endif
 #include <obs-module.h>
@@ -40,7 +40,7 @@
 #include <vector>
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("aegis-obs-plugin", "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE("telemy-obs-plugin", "en-US")
 
 namespace {
 
@@ -213,7 +213,7 @@ bool g_tools_menu_show_dock_registered = false;
 float g_switch_pump_accum_seconds = 0.0f;
 float g_theme_poll_accum_seconds = 0.0f;
 float g_metrics_poll_accum_seconds = 0.0f;
-aegis::MetricsCollector g_metrics;
+telemy::MetricsCollector g_metrics;
 bool g_dock_action_selftest_attempted = false;
 
 // Chat command poll — declared here, defined after globals are available
@@ -228,14 +228,14 @@ void StopChatPollThread();
 // Globals — defined here (single definition), referenced via extern by
 // dock_action_dispatch.cpp.
 // ---------------------------------------------------------------------------
-aegis::Vault                                  g_vault;
-aegis::PluginConfig                           g_config;
-aegis::HttpsClient                            g_http;
-aegis::ConnectionManager                      g_connection_manager;
-aegis::ChatbotRuntime                         g_chatbot_runtime;
-std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
+telemy::Vault                                  g_vault;
+telemy::PluginConfig                           g_config;
+telemy::HttpsClient                            g_http;
+telemy::ConnectionManager                      g_connection_manager;
+telemy::ChatbotRuntime                         g_chatbot_runtime;
+std::unique_ptr<telemy::ControlPlaneAuthClient> g_auth;
 std::mutex                                    g_auth_state_mu;
-aegis::PluginAuthState                        g_auth_state;
+telemy::PluginAuthState                        g_auth_state;
 
 namespace {
 
@@ -270,7 +270,7 @@ std::string CurrentControlPlaneJwt() {
 // Chat command poll thread — polls /api/v1/chat/pending every 1.5s
 // ---------------------------------------------------------------------------
 void ChatPollLoop() {
-    aegis::HttpsClient chat_http;
+    telemy::HttpsClient chat_http;
     while (g_chat_poll_running.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1500));
         if (!g_chat_poll_running.load()) break;
@@ -340,7 +340,7 @@ void StopChatPollThread() {
 bool SavePluginAuthStateToVaultLocked() {
     const bool ok = g_vault.Set(kPluginAuthVaultKey, g_auth_state.ToVaultJson());
     if (!ok) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] auth state persist failed");
+        blog(LOG_WARNING, "[telemy-obs-plugin] auth state persist failed");
     }
     if (!g_auth_state.tokens.cp_access_jwt.empty()) {
         (void)g_vault.Set(kLegacyRelayJwtVaultKey, g_auth_state.tokens.cp_access_jwt);
@@ -355,7 +355,7 @@ void PersistPluginAuthState() {
 
 void ClearPluginAuthState(bool clear_legacy_jwt) {
     std::lock_guard<std::mutex> lock(g_auth_state_mu);
-    g_auth_state = aegis::PluginAuthState{};
+    g_auth_state = telemy::PluginAuthState{};
     (void)g_vault.Remove(kPluginAuthVaultKey);
     if (clear_legacy_jwt) {
         (void)g_vault.Remove(kLegacyRelayJwtVaultKey);
@@ -364,14 +364,14 @@ void ClearPluginAuthState(bool clear_legacy_jwt) {
 
 void LoadPluginAuthStateFromVault() {
     std::lock_guard<std::mutex> lock(g_auth_state_mu);
-    g_auth_state = aegis::PluginAuthState{};
+    g_auth_state = telemy::PluginAuthState{};
     const auto raw = g_vault.Get(kPluginAuthVaultKey);
     if (!raw) {
         return;
     }
-    const auto parsed = aegis::PluginAuthState::FromVaultJson(*raw);
+    const auto parsed = telemy::PluginAuthState::FromVaultJson(*raw);
     if (!parsed) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] auth state parse failed");
+        blog(LOG_WARNING, "[telemy-obs-plugin] auth state parse failed");
         return;
     }
     g_auth_state = *parsed;
@@ -381,7 +381,7 @@ void LoadPluginAuthStateFromVault() {
             !g_auth_state.tokens.Empty() ||
             !g_auth_state.session.user.id.empty();
         if (have_session || HasExpiredIsoTimestamp(g_auth_state.login_attempt.expires_at)) {
-            blog(LOG_INFO, "[aegis-obs-plugin] clearing stale persisted login attempt");
+            blog(LOG_INFO, "[telemy-obs-plugin] clearing stale persisted login attempt");
             g_auth_state.login_attempt.Clear();
             if (g_auth_state.last_error_code.empty()) {
                 g_auth_state.last_error_code = "stale_login_attempt_cleared";
@@ -473,7 +473,7 @@ bool OpenBrowserUrl(const std::string& url_text) {
     return QDesktopServices::openUrl(url);
 }
 
-void ApplyCompletedAuthResult(const aegis::AuthPollResult& result) {
+void ApplyCompletedAuthResult(const telemy::AuthPollResult& result) {
     if (!result.session) {
         return;
     }
@@ -622,7 +622,7 @@ bool IsEnvEnabled(const char* name) {
 // ---------------------------------------------------------------------------
 // Relay session detail JSON builder — called from dock_action_dispatch.cpp
 // ---------------------------------------------------------------------------
-std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session) {
+std::string BuildRelaySessionDetailJson(const telemy::RelaySession& session) {
     std::ostringstream detail;
     detail << "{\"session_id\":\"" << JsonEscape(session.session_id) << "\""
            << ",\"status\":\"" << JsonEscape(session.status) << "\""
@@ -647,7 +647,7 @@ std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session) {
 // ---------------------------------------------------------------------------
 namespace {
 
-std::string DeriveHealthFromSnapshot(const aegis::MetricsSnapshot& snapshot) {
+std::string DeriveHealthFromSnapshot(const telemy::MetricsSnapshot& snapshot) {
     std::string health = "good";
     if (!snapshot.obs.streaming && !snapshot.obs.recording) {
         return "offline";
@@ -688,7 +688,7 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
     // All relay state and stats come from ConnectionManager's cached values
     // (updated by its background stats thread — no network I/O on the tick thread).
     const auto relay_session_holder = g_connection_manager.CurrentSession();
-    const aegis::RelaySession* relay_session_ptr = relay_session_holder.has_value()
+    const telemy::RelaySession* relay_session_ptr = relay_session_holder.has_value()
                                                        ? &(*relay_session_holder) : nullptr;
     std::string relay_status = "inactive";
     std::string relay_region;
@@ -697,15 +697,15 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
         relay_region = relay_session_ptr->region;
     }
 
-    aegis::RelayStats relay_stats = g_connection_manager.CurrentStats();
-    const aegis::RelayStats* relay_stats_ptr =
+    telemy::RelayStats relay_stats = g_connection_manager.CurrentStats();
+    const telemy::RelayStats* relay_stats_ptr =
         relay_stats.available ? &relay_stats : nullptr;
 
-    aegis::PerLinkSnapshot per_link = g_connection_manager.CurrentPerLinkStats();
-    const aegis::PerLinkSnapshot* per_link_ptr =
+    telemy::PerLinkSnapshot per_link = g_connection_manager.CurrentPerLinkStats();
+    const telemy::PerLinkSnapshot* per_link_ptr =
         per_link.available ? &per_link : nullptr;
 
-    aegis::ConnectionSnapshot connection_snapshot = g_connection_manager.CurrentSnapshot();
+    telemy::ConnectionSnapshot connection_snapshot = g_connection_manager.CurrentSnapshot();
 
     std::string json =
         g_metrics.BuildStatusSnapshotJson(mode, health, relay_status, relay_region,
@@ -905,7 +905,7 @@ bool EmitCurrentStatusSnapshotToDock(const char* reason, bool /*force_poll*/) {
     }
     blog(
         delivered ? LOG_INFO : LOG_DEBUG,
-        "[aegis-obs-plugin] status snapshot emitted: delivered=%s reason=%s mode=%s",
+        "[telemy-obs-plugin] status snapshot emitted: delivered=%s reason=%s mode=%s",
         delivered ? "true" : "false",
         reason ? reason : "unknown",
         mode.c_str());
@@ -985,7 +985,7 @@ void LogSceneSnapshot(const char* reason) {
 
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] obs scene snapshot: reason=%s current=\"%s\" count=%d",
+        "[telemy-obs-plugin] obs scene snapshot: reason=%s current=\"%s\" count=%d",
         reason ? reason : "unknown",
         current.empty() ? "" : current.c_str(),
         static_cast<int>(names.size()));
@@ -996,7 +996,7 @@ void LogSceneSnapshot(const char* reason) {
                 DockFallbackLogKind::SceneSnapshotJson, &phase, &attempt)) {
             blog(
                 LOG_INFO,
-                "[aegis-obs-plugin] dock bridge fallback payload phase=%s attempt=%u setObsSceneSnapshot=%s",
+                "[telemy-obs-plugin] dock bridge fallback payload phase=%s attempt=%u setObsSceneSnapshot=%s",
                 phase ? phase : "unknown",
                 attempt,
                 dock_payload_json.c_str());
@@ -1004,7 +1004,7 @@ void LogSceneSnapshot(const char* reason) {
     }
 
     for (size_t i = 0; i < names.size(); ++i) {
-        blog(LOG_DEBUG, "[aegis-obs-plugin] scene[%d]=\"%s\"", static_cast<int>(i), names[i].c_str());
+        blog(LOG_DEBUG, "[telemy-obs-plugin] scene[%d]=\"%s\"", static_cast<int>(i), names[i].c_str());
     }
 }
 
@@ -1044,18 +1044,18 @@ void PollObsThemeChangesOnObsThread() {
 // ---------------------------------------------------------------------------
 namespace {
 
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST)
 void InitializeBrowserDockHostBridge() {
-    aegis_obs_browser_dock_host_scaffold_initialize();
+    telemy_obs_browser_dock_host_scaffold_initialize();
 }
 
 void ShutdownBrowserDockHostBridge() {
-    aegis_obs_browser_dock_host_scaffold_shutdown();
+    telemy_obs_browser_dock_host_scaffold_shutdown();
 }
 #else
 void InitializeBrowserDockHostBridge() {
     RegisterDockBrowserJsExecuteSink({});
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock host scaffold disabled (build flag off)");
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock host scaffold disabled (build flag off)");
 }
 
 void ShutdownBrowserDockHostBridge() {
@@ -1076,26 +1076,26 @@ void MaybeRunDockActionSelfTestAfterPageReady() {
     }
     g_dock_action_selftest_attempted = true;
 
-    if (!IsEnvEnabled("AEGIS_DOCK_ENABLE_SELFTEST")) {
+    if (!IsEnvEnabled("TELEMY_DOCK_ENABLE_SELFTEST")) {
         return;
     }
 
-    const char* raw_action_json = std::getenv("AEGIS_DOCK_SELFTEST_ACTION_JSON");
+    const char* raw_action_json = std::getenv("TELEMY_DOCK_SELFTEST_ACTION_JSON");
     if (!raw_action_json || !*raw_action_json) {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock selftest enabled but no action json provided (AEGIS_DOCK_SELFTEST_ACTION_JSON)");
+            "[telemy-obs-plugin] dock selftest enabled but no action json provided (TELEMY_DOCK_SELFTEST_ACTION_JSON)");
         return;
     }
 
     const std::string action_json(raw_action_json);
-    const char* raw_direct = std::getenv("AEGIS_DOCK_SELFTEST_DIRECT_PLUGIN_INTAKE");
+    const char* raw_direct = std::getenv("TELEMY_DOCK_SELFTEST_DIRECT_PLUGIN_INTAKE");
     const bool direct_intake = (raw_direct && *raw_direct && std::string(raw_direct) != "0");
     if (direct_intake) {
-        const bool accepted = aegis_obs_shim_receive_dock_action_json(action_json.c_str());
+        const bool accepted = telemy_obs_shim_receive_dock_action_json(action_json.c_str());
         blog(
             accepted ? LOG_INFO : LOG_WARNING,
-            "[aegis-obs-plugin] dock selftest direct plugin intake ok=%s json=%s",
+            "[telemy-obs-plugin] dock selftest direct plugin intake ok=%s json=%s",
             accepted ? "true" : "false",
             action_json.c_str());
         return;
@@ -1107,21 +1107,21 @@ void MaybeRunDockActionSelfTestAfterPageReady() {
        << JsStringLiteral(action_json)
        << ";"
           "var sent=false;"
-          "if(window.aegisDockNative&&typeof window.aegisDockNative.sendDockActionJson==='function'){"
-          "  try{ window.aegisDockNative.sendDockActionJson(payload); sent=true; }catch(_e){}"
+          "if(window.telemyDockNative&&typeof window.telemyDockNative.sendDockActionJson==='function'){"
+          "  try{ window.telemyDockNative.sendDockActionJson(payload); sent=true; }catch(_e){}"
           "}"
           "if(typeof document!=='undefined'&&typeof document.title==='string'&&typeof encodeURIComponent==='function'){"
-          "  try{ document.title='__AEGIS_DOCK_ACTION__:'+encodeURIComponent(payload); sent=true; }catch(_e){}"
+          "  try{ document.title='__TELEMY_DOCK_ACTION__:'+encodeURIComponent(payload); sent=true; }catch(_e){}"
           "}"
           "if(typeof location!=='undefined'&&typeof location.hash==='string'&&typeof encodeURIComponent==='function'){"
-          "  try{ location.hash='__AEGIS_DOCK_ACTION__:'+encodeURIComponent(payload); sent=true; }catch(_e){}"
+          "  try{ location.hash='__TELEMY_DOCK_ACTION__:'+encodeURIComponent(payload); sent=true; }catch(_e){}"
           "}"
           "return sent; })();";
 
     const bool dispatched = TryExecuteDockBrowserJs(js.str());
     blog(
         dispatched ? LOG_INFO : LOG_WARNING,
-        "[aegis-obs-plugin] dock selftest action dispatch page_ready ok=%s json=%s (path=native_api_plus_title_hash)",
+        "[telemy-obs-plugin] dock selftest action dispatch page_ready ok=%s json=%s (path=native_api_plus_title_hash)",
         dispatched ? "true" : "false",
         action_json.c_str());
 }
@@ -1160,7 +1160,7 @@ void OnFrontendEvent(enum obs_frontend_event event, void*) {
         return;
     }
 
-    blog(LOG_INFO, "[aegis-obs-plugin] frontend event: %s", event_name);
+    blog(LOG_INFO, "[telemy-obs-plugin] frontend event: %s", event_name);
 
     switch (event) {
     case OBS_FRONTEND_EVENT_SCENE_CHANGED:
@@ -1185,14 +1185,14 @@ void OnFrontendEvent(enum obs_frontend_event event, void*) {
 }
 
 void OnToolsMenuShowDock(void*) {
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
-    const bool ok = aegis_obs_browser_dock_host_scaffold_show_dock();
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST)
+    const bool ok = telemy_obs_browser_dock_host_scaffold_show_dock();
     blog(
         ok ? LOG_INFO : LOG_WARNING,
-        "[aegis-obs-plugin] tools menu action: show dock -> %s",
+        "[telemy-obs-plugin] tools menu action: show dock -> %s",
         ok ? "ok" : "no_dock_widget");
 #else
-    blog(LOG_WARNING, "[aegis-obs-plugin] tools menu action: show dock unavailable (dock host disabled)");
+    blog(LOG_WARNING, "[telemy-obs-plugin] tools menu action: show dock unavailable (dock host disabled)");
 #endif
 }
 
@@ -1229,10 +1229,10 @@ void SwitchScenePumpTick(void*, float seconds) {
 // Extern "C" dock JS bridge API implementations
 // ---------------------------------------------------------------------------
 
-extern "C" void aegis_obs_shim_register_dock_js_executor(
-    aegis_dock_js_execute_fn fn,
+extern "C" void telemy_obs_shim_register_dock_js_executor(
+    telemy_dock_js_execute_fn fn,
     void* user_data) {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     if (!fn) {
         RegisterDockBrowserJsExecuteSink({});
         return;
@@ -1247,20 +1247,20 @@ extern "C" void aegis_obs_shim_register_dock_js_executor(
 #endif
 }
 
-extern "C" void aegis_obs_shim_clear_dock_js_executor(void) {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+extern "C" void telemy_obs_shim_clear_dock_js_executor(void) {
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     RegisterDockBrowserJsExecuteSink({});
 #endif
 }
 
-extern "C" void aegis_obs_shim_replay_dock_state(void) {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+extern "C" void telemy_obs_shim_replay_dock_state(void) {
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     ReplayDockStateToJsSinkIfAvailable();
 #endif
 }
 
-extern "C" void aegis_obs_shim_notify_dock_page_ready(void) {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+extern "C" void telemy_obs_shim_notify_dock_page_ready(void) {
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     {
         std::lock_guard<std::mutex> lock(GetDockJsDeliveryValidationMutex());
         auto& state = GetDockJsDeliveryValidationRef();
@@ -1279,14 +1279,14 @@ extern "C" void aegis_obs_shim_notify_dock_page_ready(void) {
 
     QTimer::singleShot(1000, qApp, []() {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] deferred page-ready scene snapshot firing");
+             "[telemy-obs-plugin] deferred page-ready scene snapshot firing");
         LogSceneSnapshot("page_ready_deferred");
     });
 #endif
 }
 
-extern "C" void aegis_obs_shim_notify_dock_page_unloaded(void) {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+extern "C" void telemy_obs_shim_notify_dock_page_unloaded(void) {
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     {
         std::lock_guard<std::mutex> lock(GetDockJsDeliveryValidationMutex());
         GetDockJsDeliveryValidationRef().page_ready = false;
@@ -1295,8 +1295,8 @@ extern "C" void aegis_obs_shim_notify_dock_page_unloaded(void) {
 #endif
 }
 
-extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_utf8) {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+extern "C" bool telemy_obs_shim_receive_dock_action_json(const char* action_json_utf8) {
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     if (!action_json_utf8 || *action_json_utf8 == '\0') {
         EmitDockActionResult("", "", "rejected", false, "empty_action_json", "");
         return false;
@@ -1305,7 +1305,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     const std::string action_json(action_json_utf8);
     std::string action_type;
     if (!TryExtractJsonStringField(action_json, "type", &action_type) || action_type.empty()) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] dock action parse rejected: missing type");
+        blog(LOG_WARNING, "[telemy-obs-plugin] dock action parse rejected: missing type");
         EmitDockActionResult("", "", "rejected", false, "missing_action_type", "");
         return false;
     }
@@ -1317,7 +1317,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     }
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] dock action parse: type=%s request_id=%s bytes=%d",
+        "[telemy-obs-plugin] dock action parse: type=%s request_id=%s bytes=%d",
         action_type.c_str(),
         request_id.empty() ? "" : request_id.c_str(),
         static_cast<int>(action_json.size()));
@@ -1340,7 +1340,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
     if (ShouldDeduplicateDockActionByRequestId(action_type, request_id)) {
         blog(
             LOG_DEBUG,
-            "[aegis-obs-plugin] dock action deduplicated: type=%s request_id=%s",
+            "[telemy-obs-plugin] dock action deduplicated: type=%s request_id=%s",
             action_type.c_str(),
             request_id.c_str());
         return true;
@@ -1358,7 +1358,7 @@ extern "C" bool aegis_obs_shim_receive_dock_action_json(const char* action_json_
 // ---------------------------------------------------------------------------
 
 bool obs_module_load(void) {
-    blog(LOG_INFO, "[aegis-obs-plugin] module load");
+    blog(LOG_INFO, "[telemy-obs-plugin] module load");
 
     g_vault.Load();
     g_config.LoadFromDisk();
@@ -1366,24 +1366,24 @@ bool obs_module_load(void) {
     LoadPluginAuthStateFromVault();
     const std::optional<std::string> relay_shared_key = g_vault.Get("relay_shared_key");
 
-    if (aegis::IsExplicitInsecureHttpHost(g_config.relay_api_host)) {
+    if (telemy::IsExplicitInsecureHttpHost(g_config.relay_api_host)) {
         blog(LOG_WARNING,
-             "[aegis-obs-plugin] relay client skipped: relay_api_host uses insecure http://");
+             "[telemy-obs-plugin] relay client skipped: relay_api_host uses insecure http://");
         g_connection_manager.Initialize(&g_vault, &g_http, "", "",
                                         g_config.relay_heartbeat_interval_sec);
     } else if (!g_config.relay_api_host.empty()) {
-        g_auth = std::make_unique<aegis::ControlPlaneAuthClient>(g_http, g_config.relay_api_host);
+        g_auth = std::make_unique<telemy::ControlPlaneAuthClient>(g_http, g_config.relay_api_host);
         g_connection_manager.Initialize(&g_vault, &g_http,
                                         g_config.relay_api_host,
                                         relay_shared_key.value_or(""),
                                         g_config.relay_heartbeat_interval_sec);
         blog(LOG_INFO,
-            "[aegis-obs-plugin] connection manager initialized: host=%s shared_key=%s",
+            "[telemy-obs-plugin] connection manager initialized: host=%s shared_key=%s",
             g_config.relay_api_host.c_str(),
             relay_shared_key.has_value() ? "configured" : "missing");
     } else {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] relay client skipped: relay_api_host not configured");
+             "[telemy-obs-plugin] relay client skipped: relay_api_host not configured");
         g_connection_manager.Initialize(&g_vault, &g_http, "", "",
                                         g_config.relay_heartbeat_interval_sec);
     }
@@ -1401,7 +1401,7 @@ bool obs_module_load(void) {
                     c.stream_token = slot.stream_token;
                     g_connection_manager.UpdateConnection(c.id, c);
                     blog(LOG_INFO,
-                         "[aegis-obs-plugin] refreshed stream_token for conn=%s slot=%d",
+                         "[telemy-obs-plugin] refreshed stream_token for conn=%s slot=%d",
                          c.id.c_str(), c.stream_slot_number);
                     break;
                 }
@@ -1420,7 +1420,7 @@ bool obs_module_load(void) {
         g_switch_pump_accum_seconds = 0.0f;
         g_theme_poll_accum_seconds = 0.0f;
         g_metrics_poll_accum_seconds = 0.0f;
-        blog(LOG_INFO, "[aegis-obs-plugin] registered switch-scene pump timer");
+        blog(LOG_INFO, "[telemy-obs-plugin] registered switch-scene pump timer");
     }
 
     SetDockSceneSnapshotEmitter({});
@@ -1432,12 +1432,12 @@ bool obs_module_load(void) {
     if (!g_frontend_event_callback_registered) {
         obs_frontend_add_event_callback(OnFrontendEvent, nullptr);
         g_frontend_event_callback_registered = true;
-        blog(LOG_INFO, "[aegis-obs-plugin] registered frontend event callback");
+        blog(LOG_INFO, "[telemy-obs-plugin] registered frontend event callback");
     }
     if (!g_tools_menu_show_dock_registered) {
         obs_frontend_add_tools_menu_item("Show Telemy Dock", OnToolsMenuShowDock, nullptr);
         g_tools_menu_show_dock_registered = true;
-        blog(LOG_INFO, "[aegis-obs-plugin] registered Tools menu item: Show Telemy Dock");
+        blog(LOG_INFO, "[telemy-obs-plugin] registered Tools menu item: Show Telemy Dock");
     }
     LogSceneSnapshot("module_load");
 
@@ -1445,14 +1445,14 @@ bool obs_module_load(void) {
 }
 
 void obs_module_unload(void) {
-    blog(LOG_INFO, "[aegis-obs-plugin] module unload");
+    blog(LOG_INFO, "[telemy-obs-plugin] module unload");
     if (g_frontend_event_callback_registered) {
         if (!g_frontend_exit_seen) {
             obs_frontend_remove_event_callback(OnFrontendEvent, nullptr);
         } else {
             blog(
                 LOG_INFO,
-                "[aegis-obs-plugin] skipping frontend callback remove after EXIT event");
+                "[telemy-obs-plugin] skipping frontend callback remove after EXIT event");
         }
         g_frontend_event_callback_registered = false;
     }
@@ -1476,7 +1476,7 @@ void obs_module_unload(void) {
 
     // Emergency relay teardown + shutdown ConnectionManager.
     if (g_connection_manager.HasActiveSession()) {
-        blog(LOG_INFO, "[aegis-obs-plugin] relay emergency stop on unload");
+        blog(LOG_INFO, "[telemy-obs-plugin] relay emergency stop on unload");
         const std::string jwt = CurrentControlPlaneJwt();
         g_connection_manager.EmergencyStop(jwt);
     }
@@ -1487,7 +1487,7 @@ void obs_module_unload(void) {
     // prevent use-after-free if a thread is still referencing g_auth.
     DrainAuthWorkers();
     g_auth.reset();
-    blog(LOG_INFO, "[aegis-obs-plugin] connection manager destroyed");
+    blog(LOG_INFO, "[telemy-obs-plugin] connection manager destroyed");
 }
 
 const char* obs_module_description(void) {
@@ -1495,7 +1495,7 @@ const char* obs_module_description(void) {
 }
 
 #else
-int aegis_obs_plugin_entry_placeholder() {
+int telemy_obs_plugin_entry_placeholder() {
     return 0;
 }
 #endif

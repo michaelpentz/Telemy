@@ -1,4 +1,4 @@
-// Tests for aegis::Vault — DPAPI-encrypted secret store.
+// Tests for telemy::Vault — DPAPI-encrypted secret store.
 //
 // These tests exercise the Vault class with real DPAPI calls, so they only
 // run on Windows.  The tests use a temporary directory for vault files to
@@ -31,11 +31,11 @@
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Vault: Set then Get roundtrip", "[vault][windows]") {
-    aegis::Vault vault;
+    telemy::Vault vault;
     REQUIRE(vault.Load());
 
     // Use a key name that won't collide with real config.
-    const std::string test_key = "__aegis_test_roundtrip__";
+    const std::string test_key = "__telemy_test_roundtrip__";
     const std::string test_value = "hello-dpapi-world-12345";
 
     // Set — encrypts with DPAPI and persists.
@@ -51,18 +51,18 @@ TEST_CASE("Vault: Set then Get roundtrip", "[vault][windows]") {
 }
 
 TEST_CASE("Vault: Get nonexistent key returns nullopt", "[vault][windows]") {
-    aegis::Vault vault;
+    telemy::Vault vault;
     REQUIRE(vault.Load());
 
-    auto result = vault.Get("__aegis_test_no_such_key_ever__");
+    auto result = vault.Get("__telemy_test_no_such_key_ever__");
     REQUIRE_FALSE(result.has_value());
 }
 
 TEST_CASE("Vault: overwrite existing key", "[vault][windows]") {
-    aegis::Vault vault;
+    telemy::Vault vault;
     REQUIRE(vault.Load());
 
-    const std::string test_key = "__aegis_test_overwrite__";
+    const std::string test_key = "__telemy_test_overwrite__";
 
     REQUIRE(vault.Set(test_key, "value-one"));
     REQUIRE(vault.Set(test_key, "value-two"));
@@ -76,18 +76,18 @@ TEST_CASE("Vault: overwrite existing key", "[vault][windows]") {
 }
 
 TEST_CASE("Vault: Remove returns false for missing key", "[vault][windows]") {
-    aegis::Vault vault;
+    telemy::Vault vault;
     REQUIRE(vault.Load());
 
-    CHECK_FALSE(vault.Remove("__aegis_test_never_set_key__"));
+    CHECK_FALSE(vault.Remove("__telemy_test_never_set_key__"));
 }
 
 TEST_CASE("Vault: Keys() includes set keys and excludes removed", "[vault][windows]") {
-    aegis::Vault vault;
+    telemy::Vault vault;
     REQUIRE(vault.Load());
 
-    const std::string k1 = "__aegis_test_keys_a__";
-    const std::string k2 = "__aegis_test_keys_b__";
+    const std::string k1 = "__telemy_test_keys_a__";
+    const std::string k2 = "__telemy_test_keys_b__";
 
     vault.Set(k1, "a");
     vault.Set(k2, "b");
@@ -115,10 +115,10 @@ TEST_CASE("Vault: Keys() includes set keys and excludes removed", "[vault][windo
 }
 
 TEST_CASE("Vault: Set and Get with special characters", "[vault][windows]") {
-    aegis::Vault vault;
+    telemy::Vault vault;
     REQUIRE(vault.Load());
 
-    const std::string test_key = "__aegis_test_special__";
+    const std::string test_key = "__telemy_test_special__";
     // Value with unicode, newlines, and quotes.
     const std::string test_value = "p@ss\nw0rd\twith\"quotes\"&\xC3\xA9";
 
@@ -139,19 +139,19 @@ TEST_CASE("Vault: skipped on non-Windows", "[vault][!mayfail]") {
 #endif
 
 TEST_CASE("Config: explicit http relay host is rejected", "[config][host]") {
-    CHECK(aegis::IsExplicitInsecureHttpHost("http://relay.telemyapp.com"));
-    CHECK(aegis::IsExplicitInsecureHttpHost(" HTTP://relay.telemyapp.com:443"));
+    CHECK(telemy::IsExplicitInsecureHttpHost("http://relay.telemyapp.com"));
+    CHECK(telemy::IsExplicitInsecureHttpHost(" HTTP://relay.telemyapp.com:443"));
 }
 
 TEST_CASE("Config: https and bare relay hosts remain allowed", "[config][host]") {
-    CHECK_FALSE(aegis::IsExplicitInsecureHttpHost(""));
-    CHECK_FALSE(aegis::IsExplicitInsecureHttpHost("relay.telemyapp.com"));
-    CHECK_FALSE(aegis::IsExplicitInsecureHttpHost("https://relay.telemyapp.com"));
+    CHECK_FALSE(telemy::IsExplicitInsecureHttpHost(""));
+    CHECK_FALSE(telemy::IsExplicitInsecureHttpHost("relay.telemyapp.com"));
+    CHECK_FALSE(telemy::IsExplicitInsecureHttpHost("https://relay.telemyapp.com"));
 }
 
 #ifdef _WIN32
 TEST_CASE("Config: BYOR fields persist across save and load", "[config][byor][windows]") {
-    const std::filesystem::path config_path(aegis::PluginConfig::ConfigFilePath());
+    const std::filesystem::path config_path(telemy::PluginConfig::ConfigFilePath());
     struct ConfigRestoreGuard {
         std::filesystem::path path;
         bool had_original = false;
@@ -176,7 +176,7 @@ TEST_CASE("Config: BYOR fields persist across save and load", "[config][byor][wi
             std::istreambuf_iterator<char>());
     }
 
-    aegis::PluginConfig config;
+    telemy::PluginConfig config;
     config.LoadFromDisk();
     config.byor_enabled = true;
     config.byor_relay_host = "byor.telemy.test";
@@ -184,7 +184,7 @@ TEST_CASE("Config: BYOR fields persist across save and load", "[config][byor][wi
     config.byor_stream_id = "live/custom";
     REQUIRE(config.SaveToDisk());
 
-    aegis::PluginConfig loaded;
+    telemy::PluginConfig loaded;
     REQUIRE(loaded.LoadFromDisk());
     CHECK(loaded.byor_enabled);
     CHECK(loaded.byor_relay_host == "byor.telemy.test");

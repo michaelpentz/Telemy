@@ -1,6 +1,6 @@
 #pragma once
 
-// DPAPI-based secret vault and JSON config manager for the Aegis OBS plugin.
+// DPAPI-based secret vault and JSON config manager for the Telemy OBS plugin.
 // Windows-only: uses CryptProtectData / CryptUnprotectData for per-user encryption.
 // Thread-safe: all public methods are guarded by internal mutexes.
 
@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace aegis {
+namespace telemy {
 
 // Returns true when a host string explicitly opts out of TLS via an
 // "http://" prefix. Bare hosts and "https://" hosts return false.
@@ -61,7 +61,7 @@ private:
 // PluginConfig — JSON config persisted to %APPDATA%/Telemy/config.json
 // ---------------------------------------------------------------------------
 struct PluginConfig {
-    std::string relay_api_host;                   // e.g. "api.aegis.example.com"
+    std::string relay_api_host;                   // e.g. "api.telemy.example.com"
     int relay_heartbeat_interval_sec = 30;
     int metrics_poll_interval_ms     = 500;
     bool byor_enabled                = false;
@@ -96,4 +96,4 @@ private:
     std::string raw_json_snapshot_;
 };
 
-} // namespace aegis
+} // namespace telemy

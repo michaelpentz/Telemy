@@ -45,7 +45,7 @@ v0.0.4 is a complete architecture rewrite. The hybrid Rust bridge + C++ shim + I
 
 ### Single DLL Plugin
 
-The entire plugin is now one file: `aegis-obs-plugin.dll`. It loads directly into OBS as a standard plugin module. Metrics collection, relay communication, config management, and dock hosting all run inside the OBS process.
+The entire plugin is now one file: `telemy-obs-plugin.dll`. It loads directly into OBS as a standard plugin module. Metrics collection, relay communication, config management, and dock hosting all run inside the OBS process.
 
 ### Native Metrics Collection
 

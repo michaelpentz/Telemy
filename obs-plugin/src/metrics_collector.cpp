@@ -2,7 +2,7 @@
 #include "connection_manager.h"
 #include "relay_client.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #endif
@@ -27,17 +27,17 @@
 // In an OBS plugin build, blog() is available via obs-module.h.
 // Outside OBS (unit-test / standalone harness), fall back to fprintf.
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
-#define METRICS_LOG_INFO(fmt, ...) blog(LOG_INFO, "[aegis-metrics] " fmt, ##__VA_ARGS__)
-#define METRICS_LOG_WARN(fmt, ...) blog(LOG_WARNING, "[aegis-metrics] " fmt, ##__VA_ARGS__)
-#define METRICS_LOG_ERROR(fmt, ...) blog(LOG_ERROR, "[aegis-metrics] " fmt, ##__VA_ARGS__)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
+#define METRICS_LOG_INFO(fmt, ...) blog(LOG_INFO, "[telemy-metrics] " fmt, ##__VA_ARGS__)
+#define METRICS_LOG_WARN(fmt, ...) blog(LOG_WARNING, "[telemy-metrics] " fmt, ##__VA_ARGS__)
+#define METRICS_LOG_ERROR(fmt, ...) blog(LOG_ERROR, "[telemy-metrics] " fmt, ##__VA_ARGS__)
 #else
-#define METRICS_LOG_INFO(fmt, ...) fprintf(stderr, "[aegis-metrics][info] " fmt "\n", ##__VA_ARGS__)
-#define METRICS_LOG_WARN(fmt, ...) fprintf(stderr, "[aegis-metrics][warn] " fmt "\n", ##__VA_ARGS__)
-#define METRICS_LOG_ERROR(fmt, ...) fprintf(stderr, "[aegis-metrics][error] " fmt "\n", ##__VA_ARGS__)
+#define METRICS_LOG_INFO(fmt, ...) fprintf(stderr, "[telemy-metrics][info] " fmt "\n", ##__VA_ARGS__)
+#define METRICS_LOG_WARN(fmt, ...) fprintf(stderr, "[telemy-metrics][warn] " fmt "\n", ##__VA_ARGS__)
+#define METRICS_LOG_ERROR(fmt, ...) fprintf(stderr, "[telemy-metrics][error] " fmt "\n", ##__VA_ARGS__)
 #endif
 
-namespace aegis {
+namespace telemy {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -210,7 +210,7 @@ MetricsSnapshot MetricsCollector::Latest() const {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void MetricsCollector::CollectObsGlobal() {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     current_.obs.streaming = obs_frontend_streaming_active();
     current_.obs.recording = obs_frontend_recording_active();
     current_.obs.studio_mode = obs_frontend_preview_program_mode_active();
@@ -240,7 +240,7 @@ void MetricsCollector::CollectObsGlobal() {
 // Per-output enumeration
 // ─────────────────────────────────────────────────────────────────────────────
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 struct OutputEnumContext {
     MetricsCollector* self;
@@ -366,10 +366,10 @@ static bool OutputEnumCallback(void* param, obs_output_t* output) {
     return true;  // continue enumeration
 }
 
-#endif  // AEGIS_OBS_PLUGIN_BUILD
+#endif  // TELEMY_OBS_PLUGIN_BUILD
 
 void MetricsCollector::CollectOutputs() {
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     std::vector<OutputMetrics> outputs;
 
     // Encoding lag proxy from average render frame time.
@@ -487,10 +487,10 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     const std::string& health,
     const std::string& relay_status,
     const std::string& relay_region,
-    const aegis::RelaySession* relay_session,
-    const aegis::RelayStats* relay_stats,
-    const aegis::PerLinkSnapshot* per_link_stats,
-    const aegis::ConnectionSnapshot* connection_snapshot) const
+    const telemy::RelaySession* relay_session,
+    const telemy::RelayStats* relay_stats,
+    const telemy::PerLinkSnapshot* per_link_stats,
+    const telemy::ConnectionSnapshot* connection_snapshot) const
 {
     const auto& snap = current_;
 
@@ -722,4 +722,4 @@ std::string MetricsCollector::BuildStatusSnapshotJson(
     return os.str();
 }
 
-}  // namespace aegis
+}  // namespace telemy

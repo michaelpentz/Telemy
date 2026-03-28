@@ -1,6 +1,6 @@
 "use strict";
 
-// v0.0.5 — Host-side adapter around aegis-dock-bridge.js for browser-dock integration.
+// v0.0.5 — Host-side adapter around telemy-dock-bridge.js for browser-dock integration.
 // Defines stable entry points for plugin/local callbacks and status snapshot delivery.
 // IPC envelope support retained as no-op stubs for backward compatibility.
 
@@ -9,14 +9,14 @@ var bridgeModule = null;
 function loadBridgeModule() {
   if (bridgeModule) return bridgeModule;
 
-  if (typeof window !== "undefined" && window.AegisDockBridge) {
-    bridgeModule = window.AegisDockBridge;
+  if (typeof window !== "undefined" && window.TelemyDockBridge) {
+    bridgeModule = window.TelemyDockBridge;
     return bridgeModule;
   }
 
   if (typeof require === "function") {
     try {
-      bridgeModule = require("./aegis-dock-bridge.js");
+      bridgeModule = require("./telemy-dock-bridge.js");
       return bridgeModule;
     } catch (_err) {
       // In embedded browser contexts a `require` symbol may exist but not be usable for local assets.
@@ -24,13 +24,13 @@ function loadBridgeModule() {
     }
   }
 
-  throw new Error("aegis-dock-bridge module not available");
+  throw new Error("telemy-dock-bridge module not available");
 }
 
-function createAegisDockBridgeHost(options) {
+function createTelemyDockBridgeHost(options) {
   var opts = options || {};
   var bridgeApi = loadBridgeModule();
-  var bridge = opts.bridge || bridgeApi.createAegisDockBridgeHost(opts.bridgeOptions || {});
+  var bridge = opts.bridge || bridgeApi.createTelemyDockBridgeHost(opts.bridgeOptions || {});
   var listeners = new Set();
 
   function emit(eventName, payload) {
@@ -296,27 +296,27 @@ function createAegisDockBridgeHost(options) {
   return host;
 }
 
-function attachAegisDockBridgeHostToWindow(targetWindow, host, options) {
+function attachTelemyDockBridgeHostToWindow(targetWindow, host, options) {
   var win = targetWindow || (typeof window !== "undefined" ? window : null);
   if (!win) return null;
   var opts = options || {};
-  var key = opts.key || "aegisDockHost";
+  var key = opts.key || "telemyDockHost";
   win[key] = host;
   return host;
 }
 
-function createWindowAegisDockBridgeHost(options) {
-  var host = createAegisDockBridgeHost(options);
+function createWindowTelemyDockBridgeHost(options) {
+  var host = createTelemyDockBridgeHost(options);
   if (typeof window !== "undefined") {
-    attachAegisDockBridgeHostToWindow(window, host, options);
+    attachTelemyDockBridgeHostToWindow(window, host, options);
   }
   return host;
 }
 
 var exported = {
-  createAegisDockBridgeHost: createAegisDockBridgeHost,
-  createWindowAegisDockBridgeHost: createWindowAegisDockBridgeHost,
-  attachAegisDockBridgeHostToWindow: attachAegisDockBridgeHostToWindow,
+  createTelemyDockBridgeHost: createTelemyDockBridgeHost,
+  createWindowTelemyDockBridgeHost: createWindowTelemyDockBridgeHost,
+  attachTelemyDockBridgeHostToWindow: attachTelemyDockBridgeHostToWindow,
 };
 
 if (typeof module !== "undefined" && module.exports) {
@@ -324,5 +324,5 @@ if (typeof module !== "undefined" && module.exports) {
 }
 
 if (typeof window !== "undefined") {
-  window.AegisDockBridgeHost = exported;
+  window.TelemyDockBridgeHost = exported;
 }

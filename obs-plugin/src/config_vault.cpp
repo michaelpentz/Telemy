@@ -28,7 +28,7 @@
 // CryptBinaryToStringA / CryptStringToBinaryA.  (Also listed in CMakeLists.)
 #pragma comment(lib, "crypt32.lib")
 
-namespace aegis {
+namespace telemy {
 
 bool IsExplicitInsecureHttpHost(const std::string& value)
 {
@@ -549,4 +549,4 @@ bool PluginConfig::SaveToDisk()
     return true;
 }
 
-} // namespace aegis
+} // namespace telemy

@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 #include <QColor>
 #include <QJsonObject>
 #include <QString>
@@ -27,7 +27,7 @@ struct ObsDockThemeSlots {
     bool valid = false;
 };
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 // Qt color helpers
 QString ColorToCssHex(const QColor& color);
@@ -58,4 +58,4 @@ void RefreshCachedObsDockThemeFromQt(const char* reason);
 // Merge current cached theme into a status snapshot JSON string.
 std::string AugmentSnapshotJsonWithTheme(const std::string& snapshot_json);
 
-#endif // AEGIS_OBS_PLUGIN_BUILD
+#endif // TELEMY_OBS_PLUGIN_BUILD

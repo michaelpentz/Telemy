@@ -23,20 +23,20 @@ export function useDockState() {
     let sceneRetry2;
 
     const stateEvents = [
-      "aegis:dock:native-ready",
-      "aegis:dock:host-fallback",
-      "aegis:dock:scene-snapshot",
-      "aegis:dock:scene-snapshot-json",
-      "aegis:dock:current-scene",
-      "aegis:dock:pipe-status",
-      "aegis:dock:scene-switch-completed",
-      "aegis:dock:action-native-result",
+      "telemy:dock:native-ready",
+      "telemy:dock:host-fallback",
+      "telemy:dock:scene-snapshot",
+      "telemy:dock:scene-snapshot-json",
+      "telemy:dock:current-scene",
+      "telemy:dock:pipe-status",
+      "telemy:dock:scene-switch-completed",
+      "telemy:dock:action-native-result",
     ];
 
     let refresh = () => {};
     const initNativeBridge = () => {
       if (didInit) return true;
-      const native = window.aegisDockNative;
+      const native = window.telemyDockNative;
       if (!native || typeof native.getState !== "function") return false;
 
       didInit = true;
@@ -49,7 +49,7 @@ export function useDockState() {
       try { setState(native.getState()); } catch (_) {}
       stateEvents.forEach(e => window.addEventListener(e, refresh));
 
-      const host = window.aegisDockHost;
+      const host = window.telemyDockHost;
       if (host && typeof host.subscribe === "function") {
         unsub = host.subscribe(() => refresh());
       }
@@ -140,14 +140,14 @@ export function useDockState() {
         }
       }
     };
-    window.addEventListener("aegis:dock:action-native-result", handler);
-    return () => window.removeEventListener("aegis:dock:action-native-result", handler);
+    window.addEventListener("telemy:dock:action-native-result", handler);
+    return () => window.removeEventListener("telemy:dock:action-native-result", handler);
   }, []);
 
   const sendAction = useCallback((action) => {
-    const native = window.aegisDockNative;
+    const native = window.telemyDockNative;
     if (!native || typeof native.sendDockAction !== "function") {
-      console.log("[aegis-dock] sendDockAction (no native):", action);
+      console.log("[telemy-dock] sendDockAction (no native):", action);
       return null;
     }
     // Ensure requestId

@@ -1,6 +1,6 @@
 #pragma once
 
-// Native OBS metrics collector for the Aegis OBS plugin.
+// Native OBS metrics collector for the Telemy OBS plugin.
 // Gathers telemetry directly from OBS C APIs, Win32 system APIs, and
 // optionally NVIDIA NVML — no network hop, no external process.
 // Thread-safety: Poll() runs in a dedicated background thread started by Start().
@@ -15,7 +15,7 @@
 #include <thread>
 #include <vector>
 
-namespace aegis {
+namespace telemy {
 
 struct RelaySession;
 struct RelayStats;
@@ -102,10 +102,10 @@ public:
         const std::string& health,          // "good", "degraded", "offline"
         const std::string& relay_status,    // "inactive", "provisioning", "active", "grace"
         const std::string& relay_region,    // "" if none
-        const aegis::RelaySession* relay_session = nullptr,
-        const aegis::RelayStats* relay_stats = nullptr,
-        const aegis::PerLinkSnapshot* per_link_stats = nullptr,
-        const aegis::ConnectionSnapshot* connection_snapshot = nullptr
+        const telemy::RelaySession* relay_session = nullptr,
+        const telemy::RelayStats* relay_stats = nullptr,
+        const telemy::PerLinkSnapshot* per_link_stats = nullptr,
+        const telemy::ConnectionSnapshot* connection_snapshot = nullptr
     ) const;
 
     /// Returns a copy of the most recent snapshot. Safe to call from any thread.
@@ -166,4 +166,4 @@ private:
     NvmlGetTemp_t nvml_get_temp_ = nullptr;
 };
 
-}  // namespace aegis
+}  // namespace telemy

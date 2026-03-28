@@ -8,12 +8,12 @@
 #include <vector>
 
 // OBS logging — available in plugin builds; silently omitted in unit tests
-// that define AEGIS_NO_OBS_LOG.
-#ifndef AEGIS_NO_OBS_LOG
+// that define TELEMY_NO_OBS_LOG.
+#ifndef TELEMY_NO_OBS_LOG
 #include <obs-module.h>
-#define AEGIS_LOG_WARN(msg) blog(LOG_WARNING, "https: %s", (msg))
+#define TELEMY_LOG_WARN(msg) blog(LOG_WARNING, "https: %s", (msg))
 #else
-#define AEGIS_LOG_WARN(msg) ((void)0)
+#define TELEMY_LOG_WARN(msg) ((void)0)
 #endif
 
 namespace {
@@ -24,7 +24,7 @@ namespace {
     std::ostringstream ss;
     ss << fn_name << " failed (WinHTTP error " << err << ")";
     std::string msg = ss.str();
-    AEGIS_LOG_WARN(msg.c_str());
+    TELEMY_LOG_WARN(msg.c_str());
     throw std::runtime_error(msg);
 }
 
@@ -71,7 +71,7 @@ static HostPort parse_host_port(const std::wstring& raw) {
 
 }  // namespace
 
-namespace aegis {
+namespace telemy {
 
 // ---------------------------------------------------------------------------
 // WinHttpHandle destructor — defined here so HINTERNET is in scope.
@@ -162,7 +162,7 @@ static HttpResponse read_response(HINTERNET request)
         resp.body.append(buffer.data(), bytes_read);
 
         if (resp.body.size() > kMaxResponseBodyBytes) {
-            AEGIS_LOG_WARN("response body exceeded 1 MB limit, truncating");
+            TELEMY_LOG_WARN("response body exceeded 1 MB limit, truncating");
             resp.body.resize(kMaxResponseBodyBytes);
             break;
         }
@@ -267,7 +267,7 @@ HttpResponse HttpsClient::Post(const std::wstring& host,
 {
     auto hp = parse_host_port(host);
 
-#ifndef AEGIS_NO_OBS_LOG
+#ifndef TELEMY_NO_OBS_LOG
     {
         // Convert wide host to narrow for logging.
         int n = WideCharToMultiByte(CP_UTF8, 0, hp.host.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -372,7 +372,7 @@ HttpResponse HttpsClient::Put(const std::wstring& host,
 {
     auto hp = parse_host_port(host);
 
-#ifndef AEGIS_NO_OBS_LOG
+#ifndef TELEMY_NO_OBS_LOG
     {
         int n = WideCharToMultiByte(CP_UTF8, 0, hp.host.c_str(), -1, nullptr, 0, nullptr, nullptr);
         std::string narrow(n > 0 ? n : 1, '\0');
@@ -459,4 +459,4 @@ HttpResponse HttpsClient::Put(const std::wstring& host,
     return read_response(reinterpret_cast<HINTERNET>(request.h));
 }
 
-}  // namespace aegis
+}  // namespace telemy

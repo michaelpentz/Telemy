@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace aegis {
+namespace telemy {
 
 namespace {
 
@@ -321,8 +321,8 @@ void ControlPlaneAuthClient::Reconfigure(const std::string& api_host)
 std::vector<std::pair<std::wstring, std::wstring>> ControlPlaneAuthClient::CommonClientHeaders()
 {
     return {
-        {L"X-Aegis-Client-Version", L"0.0.5"},
-        {L"X-Aegis-Client-Platform", L"windows"},
+        {L"X-Telemy-Client-Version", L"0.0.5"},
+        {L"X-Telemy-Client-Platform", L"windows"},
     };
 }
 
@@ -770,7 +770,7 @@ std::optional<RelaySession> RelayClient::GetActive(const std::string& jwt,
                 std::lock_guard<std::mutex> lk(per_link_mutex_);
                 per_link_ = std::move(snap);
             }
-            blog(LOG_DEBUG, "[aegis-relay] per-link from API: stream_id=%s links=%d",
+            blog(LOG_DEBUG, "[telemy-relay] per-link from API: stream_id=%s links=%d",
                  per_link_.stream_id.c_str(), per_link_.conn_count);
         }
     }
@@ -1178,7 +1178,7 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
         if (current_session_)
             stream_token = current_session_->stream_token;
     }
-    std::string stream_id = stream_token.empty() ? std::string("play_aegis") : stream_token;
+    std::string stream_id = stream_token.empty() ? std::string("play_telemy") : stream_token;
     if (!stream_id.empty() &&
         stream_id.find('/') == std::string::npos &&
         stream_id.rfind("live_", 0) != 0 &&
@@ -1193,7 +1193,7 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
         resp = http_.Get(host_w, path_w);
     } catch (const std::exception& e) {
         if (!is_byor) {
-            blog(LOG_DEBUG, "[aegis-relay] stats poll http error: %s", e.what());
+            blog(LOG_DEBUG, "[telemy-relay] stats poll http error: %s", e.what());
         }
         std::lock_guard<std::mutex> lk(stats_mutex_);
         stats_.available = false;
@@ -1202,7 +1202,7 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
 
     if (resp.status_code != 200 || resp.body.empty()) {
         if (!is_byor) {
-            blog(LOG_DEBUG, "[aegis-relay] stats poll failed: status=%lu",
+            blog(LOG_DEBUG, "[telemy-relay] stats poll failed: status=%lu",
                  resp.status_code);
         }
         std::lock_guard<std::mutex> lk(stats_mutex_);
@@ -1249,7 +1249,7 @@ void RelayClient::PollRelayStats(const std::string& relay_ip)
     }
 
     blog(LOG_DEBUG,
-         "[aegis-relay] stats poll ok: bitrate=%u rtt=%.1f loss=%llu drop=%llu latency=%u",
+         "[telemy-relay] stats poll ok: bitrate=%u rtt=%.1f loss=%llu drop=%llu latency=%u",
          s.bitrate_kbps, s.rtt_ms,
          static_cast<unsigned long long>(s.pkt_loss),
          static_cast<unsigned long long>(s.pkt_drop),
@@ -1285,7 +1285,7 @@ void RelayClient::PollPerLinkStats(const std::string& relay_ip, const std::strin
         resp = http_.Get(host_w, path_w);
     } catch (const std::exception& e) {
         if (!is_byor) {
-            blog(LOG_DEBUG, "[aegis-relay] per-link stats http error: %s", e.what());
+            blog(LOG_DEBUG, "[telemy-relay] per-link stats http error: %s", e.what());
         }
         std::lock_guard<std::mutex> lk(per_link_mutex_);
         per_link_.available = false;
@@ -1294,7 +1294,7 @@ void RelayClient::PollPerLinkStats(const std::string& relay_ip, const std::strin
 
     if (resp.status_code != 200 || resp.body.empty()) {
         if (!is_byor) {
-            blog(LOG_DEBUG, "[aegis-relay] per-link stats failed: status=%lu",
+            blog(LOG_DEBUG, "[telemy-relay] per-link stats failed: status=%lu",
                  resp.status_code);
         }
         std::lock_guard<std::mutex> lk(per_link_mutex_);
@@ -1362,7 +1362,7 @@ void RelayClient::PollPerLinkStats(const std::string& relay_ip, const std::strin
         per_link_ = std::move(snap);
     }
 
-    blog(LOG_DEBUG, "[aegis-relay] per-link stats ok: conn_count=%d links=%zu",
+    blog(LOG_DEBUG, "[telemy-relay] per-link stats ok: conn_count=%d links=%zu",
          per_link_.conn_count, per_link_.links.size());
 }
 
@@ -1372,4 +1372,4 @@ PerLinkSnapshot RelayClient::CurrentPerLinkStats() const
     return per_link_;
 }
 
-}  // namespace aegis
+}  // namespace telemy

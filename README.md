@@ -4,7 +4,7 @@ IRL streaming platform for OBS — native telemetry, relay management, and bonde
 
 ## What It Is
 
-Telemy is a single-DLL OBS plugin (`aegis-obs-plugin.dll`) that runs entirely inside the OBS process. It collects metrics directly from the OBS C API, manages relay connections (managed pool relays and Bring Your Own Relay), and drives a React dock UI via CEF JavaScript injection.
+Telemy is a single-DLL OBS plugin (`telemy-obs-plugin.dll`) that runs entirely inside the OBS process. It collects metrics directly from the OBS C API, manages relay connections (managed pool relays and Bring Your Own Relay), and drives a React dock UI via CEF JavaScript injection.
 
 No standalone process. No IPC. No Rust dependency.
 
@@ -13,7 +13,7 @@ No standalone process. No IPC. No Rust dependency.
 | Component | Description |
 |-----------|-------------|
 | `obs-plugin/` | C++ OBS plugin — metrics collection, relay management, dock hosting |
-| `aegis-control-plane/` | Go backend — relay provisioning, JWT auth, session state |
+| `control-plane/` | Go backend — relay provisioning, JWT auth, session state |
 | `srtla-fork/` | Forked `srtla_rec` with per-link stats + ASN lookup |
 | `srtla-receiver-fork/` | Forked Docker image (`michaelpentz/srtla-receiver`) |
 | `obs-plugin/dock/` | React dock UI source (esbuild bundle) |
@@ -24,9 +24,9 @@ From `telemy-v0.0.5/obs-plugin/`:
 
 ```bash
 cmake -B build-obs-cef \
-  -DAEGIS_BUILD_OBS_PLUGIN=ON \
-  -DAEGIS_ENABLE_OBS_BROWSER_DOCK_HOST=ON \
-  -DAEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF=ON \
+  -DTELEMY_BUILD_OBS_PLUGIN=ON \
+  -DTELEMY_ENABLE_OBS_BROWSER_DOCK_HOST=ON \
+  -DTELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF=ON \
   -DOBS_INCLUDE_DIRS="<path-to-obs-libobs>;<path-to-obs-frontend-api>" \
   -DOBS_LIBRARIES="obs;obs-frontend-api" \
   -DOBS_LIBRARY_DIRS="<path-to-obs-import-libs>" \
@@ -36,15 +36,15 @@ cmake -B build-obs-cef \
 cmake --build build-obs-cef --config Release
 ```
 
-**Deploy**: Copy `aegis-obs-plugin.dll` to `<OBS>/obs-plugins/64bit/`. Copy dock assets to `<OBS>/data/obs-plugins/aegis-obs-plugin/`. Restart OBS.
+**Deploy**: Copy `telemy-obs-plugin.dll` to `<OBS>/obs-plugins/64bit/`. Copy dock assets to `<OBS>/data/obs-plugins/telemy-obs-plugin/`. Restart OBS.
 
 ## Dock JS Build
 
 From `telemy-v0.0.5/obs-plugin/dock/`:
 
 ```bash
-NODE_PATH=../../../dock-preview/node_modules npx esbuild aegis-dock-entry.jsx \
-  --bundle --format=iife --jsx=automatic --outfile=aegis-dock-app.js \
+NODE_PATH=../../../dock-preview/node_modules npx esbuild telemy-dock-entry.jsx \
+  --bundle --format=iife --jsx=automatic --outfile=telemy-dock-app.js \
   --target=es2020 --minify
 ```
 

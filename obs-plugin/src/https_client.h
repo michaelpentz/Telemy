@@ -9,7 +9,7 @@
 // to keep <windows.h>/<winhttp.h> out of every translation unit that
 // includes this header.
 
-namespace aegis {
+namespace telemy {
 
 // -----------------------------------------------------------------------
 // RAII wrapper for HINTERNET handles (connect / request scoped handles).
@@ -101,4 +101,4 @@ private:
     void* session_ = nullptr;  // HINTERNET — opaque in header, cast in .cpp
 };
 
-}  // namespace aegis
+}  // namespace telemy

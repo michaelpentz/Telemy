@@ -4,7 +4,7 @@
 // Extracted from obs_plugin_entry.cpp (RF-028).
 //
 // Contains the action handler dispatch table invoked by
-// aegis_obs_shim_receive_dock_action_json, plus supporting utilities
+// telemy_obs_shim_receive_dock_action_json, plus supporting utilities
 // (dedup, pending action tracking, config-setting helpers).
 
 #include <chrono>
@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 #include <QJsonObject>
 
 // ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ ProvisionStepInfo stepToInfo(const std::string& step);
 
 // ---------------------------------------------------------------------------
 // Dispatch the body of a dock action JSON payload.
-// Called from aegis_obs_shim_receive_dock_action_json in obs_plugin_entry.cpp.
+// Called from telemy_obs_shim_receive_dock_action_json in obs_plugin_entry.cpp.
 // Returns true if the action was accepted for handling/queueing.
 // ---------------------------------------------------------------------------
 bool DispatchDockAction(const std::string& action_json,
@@ -150,4 +150,4 @@ void ClearAllPendingDockActions();
 // ---------------------------------------------------------------------------
 void DrainAuthWorkers();
 
-#endif // AEGIS_OBS_PLUGIN_BUILD
+#endif // TELEMY_OBS_PLUGIN_BUILD

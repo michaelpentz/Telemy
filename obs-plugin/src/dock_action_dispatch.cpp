@@ -5,7 +5,7 @@
 #include "relay_client.h"
 #include "connection_manager.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -43,20 +43,20 @@ bool TryExtractJsonBoolField(
     const std::string& json_text,
     const char* field_name,
     bool* out_value);
-std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session);
+std::string BuildRelaySessionDetailJson(const telemy::RelaySession& session);
 bool EmitCurrentStatusSnapshotToDock(const char* reason, bool force_poll);
 void LogSceneSnapshot(const char* reason);
 // ---------------------------------------------------------------------------
 // Extern globals — defined in obs_plugin_entry.cpp
 // ---------------------------------------------------------------------------
-extern aegis::HttpsClient                             g_http;
-extern aegis::Vault                                   g_vault;
-extern aegis::PluginConfig                            g_config;
-extern aegis::ChatbotRuntime                          g_chatbot_runtime;
-extern std::unique_ptr<aegis::ControlPlaneAuthClient> g_auth;
+extern telemy::HttpsClient                             g_http;
+extern telemy::Vault                                   g_vault;
+extern telemy::PluginConfig                            g_config;
+extern telemy::ChatbotRuntime                          g_chatbot_runtime;
+extern std::unique_ptr<telemy::ControlPlaneAuthClient> g_auth;
 extern std::mutex                                     g_auth_state_mu;
-extern aegis::PluginAuthState                         g_auth_state;
-extern aegis::ConnectionManager                       g_connection_manager;
+extern telemy::PluginAuthState                         g_auth_state;
+extern telemy::ConnectionManager                       g_connection_manager;
 
 // ---------------------------------------------------------------------------
 // Module-local globals
@@ -167,14 +167,14 @@ void ClearLoginAttemptStateLocked(const std::string& error_code,
     PersistAuthStateLocked();
 }
 
-std::optional<aegis::StreamSlot> FindStreamSlotLocked(int slot_number) {
+std::optional<telemy::StreamSlot> FindStreamSlotLocked(int slot_number) {
     if (slot_number < 0) {
         return std::nullopt;
     }
     const auto it = std::find_if(
         g_auth_state.session.stream_slots.begin(),
         g_auth_state.session.stream_slots.end(),
-        [slot_number](const aegis::StreamSlot& slot) {
+        [slot_number](const telemy::StreamSlot& slot) {
             return slot.slot_number == slot_number;
         });
     if (it == g_auth_state.session.stream_slots.end()) {
@@ -211,7 +211,7 @@ void SendChatAnnounce(const std::string& message) {
     if (jwt.empty()) return;
     std::thread([jwt, message]() {
         try {
-            aegis::HttpsClient http;
+            telemy::HttpsClient http;
             std::wstring wide_jwt(jwt.begin(), jwt.end());
             QJsonObject body;
             body["message"] = QString::fromStdString(message);
@@ -229,14 +229,14 @@ std::string CurrentRefreshTokenForActions() {
 
 void ClearAuthStateAndPersist(bool clear_legacy_jwt) {
     std::lock_guard<std::mutex> lock(g_auth_state_mu);
-    g_auth_state = aegis::PluginAuthState{};
+    g_auth_state = telemy::PluginAuthState{};
     (void)g_vault.Remove(kPluginAuthVaultKey);
     if (clear_legacy_jwt) {
         (void)g_vault.Remove(kLegacyRelayJwtVaultKey);
     }
 }
 
-void ApplyCompletedAuthResultAndPersist(const aegis::AuthPollResult& result) {
+void ApplyCompletedAuthResultAndPersist(const telemy::AuthPollResult& result) {
     if (!result.session) {
         return;
     }
@@ -341,8 +341,8 @@ bool TryExtractJsonIntField(
 }
 
 std::string BuildChatbotActionDetailJson(
-    const aegis::ChatbotCommandRequest& request,
-    const aegis::ChatbotCommandResult& result) {
+    const telemy::ChatbotCommandRequest& request,
+    const telemy::ChatbotCommandResult& result) {
     std::ostringstream detail;
     detail << "{"
            << "\"provider\":\"" << JsonEscape(request.provider) << "\","
@@ -691,7 +691,7 @@ bool SetDockSettingValueByKey(const std::string& key, bool value) {
             std::string payload = doc.toJson(QJsonDocument::Compact).toStdString();
 
             try {
-                aegis::HttpsClient http;
+                telemy::HttpsClient http;
                 std::wstring wide_jwt(jwt.begin(), jwt.end());
                 auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/config", payload, wide_jwt);
                 if (resp.ok()) {
@@ -768,7 +768,7 @@ void HandleSwitchSceneRequestOnObsThread(
     if (scene_name.empty()) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-plugin] switch_scene request missing scene_name (request_id=%s reason=%s)",
+            "[telemy-obs-plugin] switch_scene request missing scene_name (request_id=%s reason=%s)",
             request_id.c_str(),
             reason.c_str());
         if (!request_id.empty() && IsDockUiActionReason(reason)) {
@@ -783,7 +783,7 @@ void HandleSwitchSceneRequestOnObsThread(
     if (!scene_source) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-plugin] switch_scene target not found: request_id=%s scene=%s reason=%s",
+            "[telemy-obs-plugin] switch_scene target not found: request_id=%s scene=%s reason=%s",
             request_id.c_str(),
             scene_name.c_str(),
             reason.c_str());
@@ -797,7 +797,7 @@ void HandleSwitchSceneRequestOnObsThread(
 
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] switch_scene applying: request_id=%s scene=%s reason=%s",
+        "[telemy-obs-plugin] switch_scene applying: request_id=%s scene=%s reason=%s",
         request_id.c_str(),
         scene_name.c_str(),
         reason.c_str());
@@ -817,7 +817,7 @@ void HandleSwitchSceneRequestOnObsThread(
         } else {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-plugin] switch_scene verify failed: request_id=%s scene=%s reason=%s",
+                "[telemy-obs-plugin] switch_scene verify failed: request_id=%s scene=%s reason=%s",
                 request_id.c_str(),
                 scene_name.c_str(),
                 reason.c_str());
@@ -917,7 +917,7 @@ void ClearAllPendingDockActions() {
 }
 
 // ---------------------------------------------------------------------------
-// Main action dispatch — the body of aegis_obs_shim_receive_dock_action_json
+// Main action dispatch — the body of telemy_obs_shim_receive_dock_action_json
 // ---------------------------------------------------------------------------
 bool DispatchDockAction(const std::string& action_json,
                         const std::string& action_type,
@@ -925,7 +925,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (IsActionRateLimited(action_type)) {
         blog(LOG_WARNING,
-             "[aegis-obs-plugin] dock action rate_limited: type=%s request_id=%s",
+             "[telemy-obs-plugin] dock action rate_limited: type=%s request_id=%s",
              action_type.c_str(), request_id.c_str());
         EmitDockActionResult(action_type, request_id, "rate_limited", false,
                              "Too many requests. Try again in a moment.", "");
@@ -941,7 +941,7 @@ bool DispatchDockAction(const std::string& action_json,
         if (scene_name.empty()) {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=switch_scene request_id=%s error=missing_scene_name",
+                "[telemy-obs-plugin] dock action rejected: type=switch_scene request_id=%s error=missing_scene_name",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_scene_name", "");
             return false;
@@ -952,7 +952,7 @@ bool DispatchDockAction(const std::string& action_json,
 
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action queued: type=switch_scene request_id=%s scene=%s reason=%s",
+            "[telemy-obs-plugin] dock action queued: type=switch_scene request_id=%s scene=%s reason=%s",
             request_id.c_str(),
             scene_name.c_str(),
             reason.c_str());
@@ -972,7 +972,7 @@ bool DispatchDockAction(const std::string& action_json,
     if (action_type == "request_status") {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action request_status: request_id=%s",
+            "[telemy-obs-plugin] dock action request_status: request_id=%s",
             request_id.c_str());
         const bool delivered = EmitCurrentStatusSnapshotToDock("dock_request_status", true);
         EmitDockActionResult(
@@ -991,7 +991,7 @@ bool DispatchDockAction(const std::string& action_json,
         if (!IsRecognizedDockMode(mode)) {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=set_mode request_id=%s mode=%s error=invalid_mode",
+                "[telemy-obs-plugin] dock action rejected: type=set_mode request_id=%s mode=%s error=invalid_mode",
                 request_id.c_str(),
                 mode.empty() ? "" : mode.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "invalid_mode", "");
@@ -999,7 +999,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action set_mode: request_id=%s mode=%s",
+            "[telemy-obs-plugin] dock action set_mode: request_id=%s mode=%s",
             request_id.c_str(),
             mode.c_str());
         g_config.dock_mode = mode;
@@ -1027,7 +1027,7 @@ bool DispatchDockAction(const std::string& action_json,
         if (key.empty()) {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=set_setting request_id=%s error=missing_setting_key",
+                "[telemy-obs-plugin] dock action rejected: type=set_setting request_id=%s error=missing_setting_key",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_setting_key", "");
             return false;
@@ -1035,7 +1035,7 @@ bool DispatchDockAction(const std::string& action_json,
         if (!has_value) {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=set_setting request_id=%s key=%s error=missing_setting_value",
+                "[telemy-obs-plugin] dock action rejected: type=set_setting request_id=%s key=%s error=missing_setting_value",
                 request_id.c_str(),
                 key.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_setting_value", "");
@@ -1044,7 +1044,7 @@ bool DispatchDockAction(const std::string& action_json,
         if (!IsRecognizedDockSettingKey(key)) {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=set_setting request_id=%s key=%s error=unsupported_setting_key",
+                "[telemy-obs-plugin] dock action rejected: type=set_setting request_id=%s key=%s error=unsupported_setting_key",
                 request_id.c_str(),
                 key.c_str());
             EmitDockActionResult(
@@ -1053,7 +1053,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action set_setting: request_id=%s key=%s value=%s",
+            "[telemy-obs-plugin] dock action set_setting: request_id=%s key=%s value=%s",
             request_id.c_str(),
             key.c_str(),
             value ? "true" : "false");
@@ -1082,7 +1082,7 @@ bool DispatchDockAction(const std::string& action_json,
         char* config_dir = obs_module_config_path("");
         if (!config_dir) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=load_scene_prefs request_id=%s error=no_config_path",
+                "[telemy-obs-plugin] dock action failed: type=load_scene_prefs request_id=%s error=no_config_path",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "no_config_path", "");
             return false;
@@ -1092,12 +1092,12 @@ bool DispatchDockAction(const std::string& action_json,
 
         std::ifstream in(prefs_path, std::ios::in | std::ios::binary);
         if (!in.is_open()) {
-            // v0.0.4 migration: try old aegis-obs-shim config path
+            // v0.0.4 migration: try old telemy-obs-shim config path
             std::string old_prefs_path;
             {
-                auto pos = prefs_path.rfind("aegis-obs-plugin");
+                auto pos = prefs_path.rfind("telemy-obs-plugin");
                 if (pos != std::string::npos) {
-                    old_prefs_path = prefs_path.substr(0, pos) + "aegis-obs-shim/dock_scene_prefs.json";
+                    old_prefs_path = prefs_path.substr(0, pos) + "telemy-obs-shim/dock_scene_prefs.json";
                 }
             }
             if (!old_prefs_path.empty()) {
@@ -1108,8 +1108,8 @@ bool DispatchDockAction(const std::string& action_json,
                     old_in.close();
                     const std::string old_data = old_contents.str();
                     blog(LOG_INFO,
-                        "[aegis-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s "
-                        "migrated_from=aegis-obs-shim bytes=%d",
+                        "[telemy-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s "
+                        "migrated_from=telemy-obs-shim bytes=%d",
                         request_id.c_str(),
                         static_cast<int>(old_data.size()));
                     // Save to new path for future loads
@@ -1129,7 +1129,7 @@ bool DispatchDockAction(const std::string& action_json,
 
             // No prefs file at either path -- return empty object so the dock hydrates cleanly
             blog(LOG_INFO,
-                "[aegis-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s detail=no_prefs_file",
+                "[telemy-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s detail=no_prefs_file",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "completed", true, "", "{}");
             return true;
@@ -1140,7 +1140,7 @@ bool DispatchDockAction(const std::string& action_json,
         const std::string data = contents.str();
         (void)g_chatbot_runtime.ApplyPrefsJson(data);
         blog(LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s bytes=%d",
+            "[telemy-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s bytes=%d",
             request_id.c_str(),
             static_cast<int>(data.size()));
         EmitDockActionResult(action_type, request_id, "completed", true, "", data);
@@ -1153,7 +1153,7 @@ bool DispatchDockAction(const std::string& action_json,
         (void)TryExtractJsonStringField(action_json, "prefsJson", &prefs_json);
         if (prefs_json.empty()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=save_scene_prefs request_id=%s error=missing_prefs_json",
+                "[telemy-obs-plugin] dock action rejected: type=save_scene_prefs request_id=%s error=missing_prefs_json",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_prefs_json", "");
             return false;
@@ -1162,7 +1162,7 @@ bool DispatchDockAction(const std::string& action_json,
         char* config_dir = obs_module_config_path("");
         if (!config_dir) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=save_scene_prefs request_id=%s error=no_config_path",
+                "[telemy-obs-plugin] dock action failed: type=save_scene_prefs request_id=%s error=no_config_path",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "no_config_path", "");
             return false;
@@ -1176,7 +1176,7 @@ bool DispatchDockAction(const std::string& action_json,
         std::ofstream out(prefs_path, std::ios::out | std::ios::trunc | std::ios::binary);
         if (!out.is_open()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=save_scene_prefs request_id=%s error=file_write_failed path=%s",
+                "[telemy-obs-plugin] dock action failed: type=save_scene_prefs request_id=%s error=file_write_failed path=%s",
                 request_id.c_str(),
                 prefs_path.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "file_write_failed", "");
@@ -1186,7 +1186,7 @@ bool DispatchDockAction(const std::string& action_json,
         out.close();
         (void)g_chatbot_runtime.ApplyPrefsJson(prefs_json);
         blog(LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=save_scene_prefs request_id=%s bytes=%d",
+            "[telemy-obs-plugin] dock action completed: type=save_scene_prefs request_id=%s bytes=%d",
             request_id.c_str(),
             static_cast<int>(prefs_json.size()));
         EmitCurrentStatusSnapshotToDock("save_scene_prefs", false);
@@ -1210,14 +1210,14 @@ bool DispatchDockAction(const std::string& action_json,
             return false;
         }
 
-        aegis::ChatbotCommandRequest request;
+        telemy::ChatbotCommandRequest request;
         request.provider = provider;
         request.channel = channel;
         request.sender_name = sender_name.empty() ? "dock-sim" : sender_name;
         request.sender_role = sender_role.empty() ? "broadcaster" : sender_role;
         request.message_text = message_text;
 
-        const aegis::ChatbotCommandResult result =
+        const telemy::ChatbotCommandResult result =
             g_chatbot_runtime.HandleCommand(g_config.chat_bot, request);
         const std::string detail = BuildChatbotActionDetailJson(request, result);
 
@@ -1246,7 +1246,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
 
         if (result.wants_status_reply) {
-            aegis::ChatbotCommandResult reply_result = result;
+            telemy::ChatbotCommandResult reply_result = result;
             reply_result.reply_text = BuildChatbotStatusReply();
             EmitDockActionResult(action_type, request_id, "completed", true, "",
                                  BuildChatbotActionDetailJson(request, reply_result));
@@ -1287,7 +1287,7 @@ bool DispatchDockAction(const std::string& action_json,
             body["message"] = QString::fromStdString(command_text);
             std::string payload = QJsonDocument(body).toJson(QJsonDocument::Compact).toStdString();
             try {
-                aegis::HttpsClient http;
+                telemy::HttpsClient http;
                 std::wstring wide_jwt(jwt.begin(), jwt.end());
                 auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/test", payload, wide_jwt);
                 if (resp.ok()) {
@@ -1307,7 +1307,7 @@ bool DispatchDockAction(const std::string& action_json,
     if (action_type == "request_scene_snapshot") {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=request_scene_snapshot request_id=%s",
+            "[telemy-obs-plugin] dock action completed: type=request_scene_snapshot request_id=%s",
             request_id.c_str());
         LogSceneSnapshot("dock_request");
         EmitDockActionResult(action_type, request_id, "completed", true, "", "scene_snapshot_emitted");
@@ -1322,7 +1322,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "auth_login_start") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action auth_login_start: request_id=%s",
+             "[telemy-obs-plugin] dock action auth_login_start: request_id=%s",
              request_id.c_str());
         if (!g_auth) {
             EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
@@ -1378,7 +1378,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "auth_login_poll") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action auth_login_poll: request_id=%s",
+             "[telemy-obs-plugin] dock action auth_login_poll: request_id=%s",
              request_id.c_str());
         if (!g_auth) {
             EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
@@ -1415,12 +1415,12 @@ bool DispatchDockAction(const std::string& action_json,
                     return;
                 }
 
-                if (result->status == aegis::AuthPollStatus::Pending) {
+                if (result->status == telemy::AuthPollStatus::Pending) {
                     EmitDockActionResult("auth_login_poll", req_id, "pending", true, "", "");
                     return;
                 }
 
-                if (result->status == aegis::AuthPollStatus::Completed) {
+                if (result->status == telemy::AuthPollStatus::Completed) {
                     ApplyCompletedAuthResultAndPersist(*result);
                     EmitCurrentStatusSnapshotToDock("auth_login_poll_completed", false);
                     EmitDockActionResult("auth_login_poll", req_id, "completed", true, "",
@@ -1462,7 +1462,7 @@ bool DispatchDockAction(const std::string& action_json,
                     PersistAuthStateLocked();
                 }
                 EmitCurrentStatusSnapshotToDock("auth_login_poll_terminal", false);
-                const char* status = result->status == aegis::AuthPollStatus::Expired ? "expired" : "denied";
+                const char* status = result->status == telemy::AuthPollStatus::Expired ? "expired" : "denied";
                 EmitDockActionResult("auth_login_poll", req_id, status, false, reason, "");
             } catch (const std::exception& e) {
                 {
@@ -1480,7 +1480,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "auth_refresh") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action auth_refresh: request_id=%s",
+             "[telemy-obs-plugin] dock action auth_refresh: request_id=%s",
              request_id.c_str());
         if (!g_auth) {
             EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
@@ -1512,7 +1512,7 @@ bool DispatchDockAction(const std::string& action_json,
                     }
                 } else {
                     auto result = g_auth->Refresh(refresh_token);
-                    if (!result || result->status != aegis::AuthPollStatus::Completed || !result->session) {
+                    if (!result || result->status != telemy::AuthPollStatus::Completed || !result->session) {
                         EmitDockActionResult("auth_refresh", req_id, "failed", false, "session_refresh_failed", "");
                         return;
                     }
@@ -1575,7 +1575,7 @@ bool DispatchDockAction(const std::string& action_json,
         // SEC-007: Only allow https:// URLs to prevent file://, smb://, javascript:// exploitation.
         if (authorize_url.rfind("https://", 0) != 0) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=auth_open_browser request_id=%s error=invalid_url_scheme",
+                "[telemy-obs-plugin] dock action rejected: type=auth_open_browser request_id=%s error=invalid_url_scheme",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "invalid_url_scheme", "");
             return false;
@@ -1604,7 +1604,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "auth_logout") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action auth_logout: request_id=%s",
+             "[telemy-obs-plugin] dock action auth_logout: request_id=%s",
              request_id.c_str());
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         TrackAuthWorker(std::async(std::launch::async, [req_id = request_id]() {
@@ -1641,12 +1641,12 @@ bool DispatchDockAction(const std::string& action_json,
     if (action_type == "relay_start") {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action relay_start: request_id=%s",
+            "[telemy-obs-plugin] dock action relay_start: request_id=%s",
             request_id.c_str());
         const std::string jwt = CurrentControlPlaneJwtForActions();
         if (jwt.empty()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_start request_id=%s error=no_control_plane_auth",
+                "[telemy-obs-plugin] dock action failed: type=relay_start request_id=%s error=no_control_plane_auth",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "no_control_plane_auth", "");
             return false;
@@ -1659,11 +1659,11 @@ bool DispatchDockAction(const std::string& action_json,
     if (action_type == "relay_stop") {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action relay_stop: request_id=%s",
+            "[telemy-obs-plugin] dock action relay_stop: request_id=%s",
             request_id.c_str());
         if (!g_connection_manager.HasActiveSession()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_stop request_id=%s error=no_active_session",
+                "[telemy-obs-plugin] dock action failed: type=relay_stop request_id=%s error=no_active_session",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "no_active_session", "");
             return false;
@@ -1676,7 +1676,7 @@ bool DispatchDockAction(const std::string& action_json,
     if (action_type == "relay_connect_direct") {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action relay_connect_direct: request_id=%s",
+            "[telemy-obs-plugin] dock action relay_connect_direct: request_id=%s",
             request_id.c_str());
         std::string relay_host = g_config.byor_relay_host;
         std::string stream_id = g_config.byor_stream_id;
@@ -1689,14 +1689,14 @@ bool DispatchDockAction(const std::string& action_json,
 
         if (relay_host.empty()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=missing_byor_relay_host",
+                "[telemy-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=missing_byor_relay_host",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "missing_byor_relay_host", "");
             return false;
         }
         if (relay_port < 1 || relay_port > 65535) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=invalid_byor_relay_port",
+                "[telemy-obs-plugin] dock action failed: type=relay_connect_direct request_id=%s error=invalid_byor_relay_port",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "invalid_byor_relay_port", "");
             return false;
@@ -1712,7 +1712,7 @@ bool DispatchDockAction(const std::string& action_json,
             return false;
         }
         blog(LOG_INFO,
-            "[aegis-obs-plugin] relay_connect_direct completed: request_id=%s host=%s port=%d",
+            "[telemy-obs-plugin] relay_connect_direct completed: request_id=%s host=%s port=%d",
             request_id.c_str(),
             relay_host.c_str(),
             relay_port);
@@ -1724,11 +1724,11 @@ bool DispatchDockAction(const std::string& action_json,
     if (action_type == "relay_disconnect_direct") {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] dock action relay_disconnect_direct: request_id=%s",
+            "[telemy-obs-plugin] dock action relay_disconnect_direct: request_id=%s",
             request_id.c_str());
         if (!g_connection_manager.IsBYORMode() || !g_connection_manager.HasActiveSession()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=relay_disconnect_direct request_id=%s error=no_active_byor_session",
+                "[telemy-obs-plugin] dock action failed: type=relay_disconnect_direct request_id=%s error=no_active_byor_session",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "no_active_byor_session", "");
             return false;
@@ -1737,7 +1737,7 @@ bool DispatchDockAction(const std::string& action_json,
         EmitDockActionResult(action_type, request_id, "queued", true, "", "queued_native");
         g_connection_manager.DisconnectDirect();
         blog(LOG_INFO,
-            "[aegis-obs-plugin] relay_disconnect_direct completed: request_id=%s",
+            "[telemy-obs-plugin] relay_disconnect_direct completed: request_id=%s",
             request_id.c_str());
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         return true;
@@ -1765,7 +1765,7 @@ bool DispatchDockAction(const std::string& action_json,
         detail << "\"alerts\":" << (g_config.alerts ? "true" : "false");
         detail << "}";
         blog(LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=load_config request_id=%s",
+            "[telemy-obs-plugin] dock action completed: type=load_config request_id=%s",
             request_id.c_str());
         EmitDockActionResult(action_type, request_id, "completed", true, "", detail.str());
         return true;
@@ -1804,9 +1804,9 @@ bool DispatchDockAction(const std::string& action_json,
         (void)TryExtractJsonStringField(action_json, "grafana_otlp_endpoint",
                                          &grafana_otlp_endpoint);
 
-        if (aegis::IsExplicitInsecureHttpHost(relay_api_host)) {
+        if (telemy::IsExplicitInsecureHttpHost(relay_api_host)) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=save_config request_id=%s error=insecure_relay_api_host",
+                "[telemy-obs-plugin] dock action rejected: type=save_config request_id=%s error=insecure_relay_api_host",
                 request_id.c_str());
             EmitDockActionResult(
                 action_type,
@@ -1829,7 +1829,7 @@ bool DispatchDockAction(const std::string& action_json,
             }
             if (!vault_saved) {
                 blog(LOG_WARNING,
-                    "[aegis-obs-plugin] dock action failed: type=save_config request_id=%s error=relay_shared_key_vault_failed",
+                    "[telemy-obs-plugin] dock action failed: type=save_config request_id=%s error=relay_shared_key_vault_failed",
                     request_id.c_str());
                 EmitDockActionResult(action_type, request_id, "failed", false, "relay_shared_key_vault_failed", "");
                 return false;
@@ -1873,7 +1873,7 @@ bool DispatchDockAction(const std::string& action_json,
         const bool saved = g_config.SaveToDisk();
         if (!saved) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=save_config request_id=%s error=save_failed",
+                "[telemy-obs-plugin] dock action failed: type=save_config request_id=%s error=save_failed",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "save_failed", "");
             return false;
@@ -1884,7 +1884,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
 
         blog(LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=save_config request_id=%s",
+            "[telemy-obs-plugin] dock action completed: type=save_config request_id=%s",
             request_id.c_str());
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         return true;
@@ -1900,7 +1900,7 @@ bool DispatchDockAction(const std::string& action_json,
         (void)TryExtractJsonStringField(action_json, "value", &value);
         if (key.empty()) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=vault_set request_id=%s error=missing_key",
+                "[telemy-obs-plugin] dock action rejected: type=vault_set request_id=%s error=missing_key",
                 request_id.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_key", "");
             return false;
@@ -1919,7 +1919,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
         if (!key_allowed) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action rejected: type=vault_set request_id=%s key=%s error=key_not_allowed",
+                "[telemy-obs-plugin] dock action rejected: type=vault_set request_id=%s key=%s error=key_not_allowed",
                 request_id.c_str(), key.c_str());
             EmitDockActionResult(action_type, request_id, "rejected", false, "key_not_allowed", "");
             return false;
@@ -1927,13 +1927,13 @@ bool DispatchDockAction(const std::string& action_json,
         const bool ok = g_vault.Set(key, value);
         if (!ok) {
             blog(LOG_WARNING,
-                "[aegis-obs-plugin] dock action failed: type=vault_set request_id=%s key=%s error=vault_set_failed",
+                "[telemy-obs-plugin] dock action failed: type=vault_set request_id=%s key=%s error=vault_set_failed",
                 request_id.c_str(), key.c_str());
             EmitDockActionResult(action_type, request_id, "failed", false, "vault_set_failed", "");
             return false;
         }
         blog(LOG_INFO,
-            "[aegis-obs-plugin] dock action completed: type=vault_set request_id=%s key=%s",
+            "[telemy-obs-plugin] dock action completed: type=vault_set request_id=%s key=%s",
             request_id.c_str(), key.c_str());
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         return true;
@@ -1942,7 +1942,7 @@ bool DispatchDockAction(const std::string& action_json,
     // vault_get: disabled -- secrets must not be readable from dock JS.
     if (action_type == "vault_get") {
         blog(LOG_WARNING,
-            "[aegis-obs-plugin] dock action rejected: type=vault_get request_id=%s error=secret_readback_disabled",
+            "[telemy-obs-plugin] dock action rejected: type=vault_get request_id=%s error=secret_readback_disabled",
             request_id.c_str());
         EmitDockActionResult(action_type, request_id, "rejected", false, "secret_readback_disabled", "");
         return false;
@@ -1951,7 +1951,7 @@ bool DispatchDockAction(const std::string& action_json,
     // vault_keys: disabled -- vault key enumeration must not be exposed to dock JS.
     if (action_type == "vault_keys") {
         blog(LOG_WARNING,
-            "[aegis-obs-plugin] dock action rejected: type=vault_keys request_id=%s error=vault_keys_disabled",
+            "[telemy-obs-plugin] dock action rejected: type=vault_keys request_id=%s error=vault_keys_disabled",
             request_id.c_str());
         EmitDockActionResult(action_type, request_id, "rejected", false, "vault_keys_disabled", "");
         return false;
@@ -1959,7 +1959,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "connection_add") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action connection_add: request_id=%s",
+             "[telemy-obs-plugin] dock action connection_add: request_id=%s",
              request_id.c_str());
         std::string name, type, relay_host, stream_id, managed_region;
         int stream_slot_number = 0;
@@ -1975,7 +1975,7 @@ bool DispatchDockAction(const std::string& action_json,
             EmitDockActionResult(action_type, request_id, "rejected", false, "missing_name", "");
             return false;
         }
-        aegis::RelayConnectionConfig config;
+        telemy::RelayConnectionConfig config;
         config.name           = name;
         config.type           = type.empty() ? "byor" : type;
         config.relay_host     = relay_host;
@@ -2011,7 +2011,7 @@ bool DispatchDockAction(const std::string& action_json,
             const std::string jwt = CurrentControlPlaneJwtForActions();
             if (jwt.empty()) {
                 blog(LOG_WARNING,
-                     "[aegis-obs-plugin] connection_add: managed relay added but no JWT"
+                     "[telemy-obs-plugin] connection_add: managed relay added but no JWT"
                      " id=%s status=error",
                      new_id.c_str());
                 g_connection_manager.SetConnectionStatus(new_id, "error", "Not authenticated");
@@ -2027,7 +2027,7 @@ bool DispatchDockAction(const std::string& action_json,
             }
         }
         blog(LOG_INFO,
-             "[aegis-obs-plugin] connection_add completed: id=%s name=%s type=%s",
+             "[telemy-obs-plugin] connection_add completed: id=%s name=%s type=%s",
              new_id.c_str(), name.c_str(), config.type.c_str());
         EmitDockActionResult(action_type, request_id, "completed", true, "",
                              "{\"id\":\"" + new_id + "\"}");
@@ -2037,7 +2037,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "connection_remove") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action connection_remove: request_id=%s",
+             "[telemy-obs-plugin] dock action connection_remove: request_id=%s",
              request_id.c_str());
         std::string conn_id;
         (void)TryExtractJsonStringField(action_json, "id", &conn_id);
@@ -2047,7 +2047,7 @@ bool DispatchDockAction(const std::string& action_json,
         }
         const auto conns = g_connection_manager.ListConnections();
         const auto it = std::find_if(conns.begin(), conns.end(),
-                                     [&conn_id](const aegis::RelayConnectionConfig& c) {
+                                     [&conn_id](const telemy::RelayConnectionConfig& c) {
                                          return c.id == conn_id;
                                      });
         if (it != conns.end() && it->type == "managed" &&
@@ -2055,26 +2055,26 @@ bool DispatchDockAction(const std::string& action_json,
             const std::string jwt = CurrentControlPlaneJwtForActions();
             if (!jwt.empty()) {
                 blog(LOG_INFO,
-                     "[aegis-obs-plugin] connection_remove: deprovisioning managed relay id=%s",
+                     "[telemy-obs-plugin] connection_remove: deprovisioning managed relay id=%s",
                      conn_id.c_str());
                 g_connection_manager.StopManagedRelaySync(jwt, request_id, conn_id);
             } else {
                 blog(LOG_WARNING,
-                     "[aegis-obs-plugin] connection_remove: managed relay had active session"
+                     "[telemy-obs-plugin] connection_remove: managed relay had active session"
                      " but JWT missing id=%s",
                      conn_id.c_str());
             }
         }
         g_connection_manager.RemoveConnection(conn_id);
         blog(LOG_INFO,
-             "[aegis-obs-plugin] connection_remove completed: id=%s", conn_id.c_str());
+             "[telemy-obs-plugin] connection_remove completed: id=%s", conn_id.c_str());
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         EmitCurrentStatusSnapshotToDock("connection_remove", false);
         return true;
     }
     if (action_type == "connection_change_region") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action connection_change_region: request_id=%s",
+             "[telemy-obs-plugin] dock action connection_change_region: request_id=%s",
              request_id.c_str());
         std::string conn_id, new_region;
         (void)TryExtractJsonStringField(action_json, "id", &conn_id);
@@ -2111,13 +2111,13 @@ bool DispatchDockAction(const std::string& action_json,
 
                 if (resp.ok()) {
                     blog(LOG_INFO,
-                         "[aegis-obs-plugin] region migration accepted: conn=%s region=%s",
+                         "[telemy-obs-plugin] region migration accepted: conn=%s region=%s",
                          conn_id.c_str(), new_region.c_str());
                     EmitDockActionResult("connection_change_region", req_id,
                                          "completed", true, "", "");
                 } else {
                     blog(LOG_WARNING,
-                         "[aegis-obs-plugin] region migration failed: conn=%s status=%lu body=%s",
+                         "[telemy-obs-plugin] region migration failed: conn=%s status=%lu body=%s",
                          conn_id.c_str(), resp.status_code,
                          resp.body.substr(0, 200).c_str());
                     EmitDockActionResult("connection_change_region", req_id,
@@ -2126,7 +2126,7 @@ bool DispatchDockAction(const std::string& action_json,
                 }
             } catch (const std::exception& e) {
                 blog(LOG_WARNING,
-                     "[aegis-obs-plugin] region migration error: conn=%s err=%s",
+                     "[telemy-obs-plugin] region migration error: conn=%s err=%s",
                      conn_id.c_str(), e.what());
                 EmitDockActionResult("connection_change_region", req_id,
                                      "failed", false, e.what(), "");
@@ -2138,7 +2138,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "rename_stream_slot") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action rename_stream_slot: request_id=%s",
+             "[telemy-obs-plugin] dock action rename_stream_slot: request_id=%s",
              request_id.c_str());
         if (!g_auth) {
             EmitDockActionResult(action_type, request_id, "failed", false, "auth_not_configured", "");
@@ -2182,7 +2182,7 @@ bool DispatchDockAction(const std::string& action_json,
                     if (conn.stream_slot_number != slot_number) {
                         continue;
                     }
-                    aegis::RelayConnectionConfig updated = conn;
+                    telemy::RelayConnectionConfig updated = conn;
                     updated.stream_slot_label = label;
                     g_connection_manager.UpdateConnection(updated.id, updated);
                 }
@@ -2199,7 +2199,7 @@ bool DispatchDockAction(const std::string& action_json,
 
     if (action_type == "connection_update") {
         blog(LOG_INFO,
-             "[aegis-obs-plugin] dock action connection_update: request_id=%s",
+             "[telemy-obs-plugin] dock action connection_update: request_id=%s",
              request_id.c_str());
         std::string conn_id, name, relay_host, stream_id, managed_region;
         int relay_port = 5000;
@@ -2216,7 +2216,7 @@ bool DispatchDockAction(const std::string& action_json,
             return false;
         }
         // Resolve new slot (if provided) from auth state.
-        std::optional<aegis::StreamSlot> new_slot;
+        std::optional<telemy::StreamSlot> new_slot;
         if (stream_slot_number >= 0) {
             std::lock_guard<std::mutex> lock(g_auth_state_mu);
             new_slot = FindStreamSlotLocked(stream_slot_number);
@@ -2251,12 +2251,12 @@ bool DispatchDockAction(const std::string& action_json,
 
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] dock action rejected: type=%s request_id=%s error=unsupported_action_type",
+        "[telemy-obs-plugin] dock action rejected: type=%s request_id=%s error=unsupported_action_type",
         action_type.c_str(),
         request_id.empty() ? "" : request_id.c_str());
     EmitDockActionResult(action_type, request_id, "rejected", false, "unsupported_action_type", "");
     return false;
 }
 
-#endif // AEGIS_OBS_PLUGIN_BUILD
+#endif // TELEMY_OBS_PLUGIN_BUILD
 

@@ -19,9 +19,9 @@ Thumbs.db
 .DS_Store
 
 # Go
-aegis-control-plane/bin/
-aegis-control-plane/tmp/
-aegis-control-plane/dist/
+control-plane/bin/
+control-plane/tmp/
+control-plane/dist/
 
 # Coordination docs (outside repo)
 HANDOFF_STATUS.md
@@ -34,8 +34,8 @@ GEMINI_RELAY.md
 # Internal plans (kept locally, not pushed)
 docs/plans/
 
-aegis-control-plane/.gocache/
-aegis-control-plane/.gotmp/
+control-plane/.gocache/
+control-plane/.gotmp/
 
 # Dock dev dependencies
 obs-plugin/dock/node_modules/

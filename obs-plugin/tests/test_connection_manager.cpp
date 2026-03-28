@@ -4,11 +4,11 @@
 #include "relay_client.h"
 
 TEST_CASE("ConnectionManager derives connection cards from per-link stats", "[connections]") {
-    aegis::PerLinkSnapshot per_link;
+    telemy::PerLinkSnapshot per_link;
     per_link.available = true;
     per_link.conn_count = 2;
 
-    aegis::PerLinkStats mobile;
+    telemy::PerLinkStats mobile;
     mobile.addr = "198.51.100.99:38201";
     mobile.asn_org = "T-Mobile USA";
     mobile.share_pct = 60.0;
@@ -16,7 +16,7 @@ TEST_CASE("ConnectionManager derives connection cards from per-link stats", "[co
     mobile.uptime_s = 120;
     per_link.links.push_back(mobile);
 
-    aegis::PerLinkStats wired;
+    telemy::PerLinkStats wired;
     wired.addr = "192.0.2.44:45032";
     wired.asn_org = "Google Fiber Inc.";
     wired.share_pct = 40.0;
@@ -24,14 +24,14 @@ TEST_CASE("ConnectionManager derives connection cards from per-link stats", "[co
     wired.uptime_s = 110;
     per_link.links.push_back(wired);
 
-    aegis::RelayStats relay_stats;
+    telemy::RelayStats relay_stats;
     relay_stats.available = true;
     relay_stats.bitrate_kbps = 5000;
 
-    aegis::ConnectionManager manager;
+    telemy::ConnectionManager manager;
     manager.Update(per_link, &relay_stats);
 
-    const aegis::ConnectionSnapshot snapshot = manager.CurrentSnapshot();
+    const telemy::ConnectionSnapshot snapshot = manager.CurrentSnapshot();
     REQUIRE(snapshot.available);
     REQUIRE(snapshot.items.size() == 2);
 
@@ -49,12 +49,12 @@ TEST_CASE("ConnectionManager derives connection cards from per-link stats", "[co
 }
 
 TEST_CASE("ConnectionManager clears when no per-link data is available", "[connections]") {
-    aegis::ConnectionManager manager;
-    aegis::PerLinkSnapshot per_link;
+    telemy::ConnectionManager manager;
+    telemy::PerLinkSnapshot per_link;
 
     manager.Update(per_link, nullptr);
 
-    const aegis::ConnectionSnapshot snapshot = manager.CurrentSnapshot();
+    const telemy::ConnectionSnapshot snapshot = manager.CurrentSnapshot();
     CHECK_FALSE(snapshot.available);
     CHECK(snapshot.items.empty());
 }

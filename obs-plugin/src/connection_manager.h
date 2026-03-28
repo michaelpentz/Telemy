@@ -14,7 +14,7 @@
 
 #include "relay_client.h"
 
-namespace aegis {
+namespace telemy {
 
 struct RelaySession;
 struct RelayStats;
@@ -239,4 +239,4 @@ private:
     void LoadConnections();
 };
 
-}  // namespace aegis
+}  // namespace telemy

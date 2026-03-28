@@ -1,12 +1,12 @@
 ﻿#include "obs_browser_dock_host_scaffold.h"
 #include "dock_js_bridge_api.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD) && defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST)
+#if defined(TELEMY_OBS_PLUGIN_BUILD) && defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST)
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
 #include <QtCore/QByteArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -25,7 +25,7 @@
 #include <browser-panel.hpp>
 #endif
 
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE) || defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE) || defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
 #include <QtCore/QMetaObject>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -36,7 +36,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QByteArray>
 #include <QtCore/QCoreApplication>
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
 #include <QtWebEngineCore/QWebEnginePage>
 #include <QtWebEngineWidgets/QWebEngineView>
 #endif
@@ -54,13 +54,13 @@
 
 namespace {
 
-constexpr const char* kDockId = "aegis_obs_plugin_dock";
+constexpr const char* kDockId = "telemy_obs_plugin_dock";
 constexpr const char* kDockTitle = "Telemy";
-constexpr const char* kEnvDockBridgeRoot = "AEGIS_DOCK_BRIDGE_ROOT";
-constexpr const char* kDockActionTitlePrefix = "__AEGIS_DOCK_ACTION__:";
-constexpr const char* kDockReadyTitlePrefix = "__AEGIS_DOCK_READY__:";
+constexpr const char* kEnvDockBridgeRoot = "TELEMY_DOCK_BRIDGE_ROOT";
+constexpr const char* kDockActionTitlePrefix = "__TELEMY_DOCK_ACTION__:";
+constexpr const char* kDockReadyTitlePrefix = "__TELEMY_DOCK_READY__:";
 
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE) || defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE) || defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
 
 constexpr const char* kDockValidationBootstrapHtml = R"HTML(
 <!doctype html>
@@ -68,7 +68,7 @@ constexpr const char* kDockValidationBootstrapHtml = R"HTML(
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:;">
-  <title>Aegis Dock Host Bootstrap</title>
+  <title>Telemy Dock Host Bootstrap</title>
   <style>
     html, body { margin: 0; padding: 0; background: #101820; color: #d9e2ec; font-family: Consolas, monospace; }
     #root { padding: 10px; }
@@ -78,7 +78,7 @@ constexpr const char* kDockValidationBootstrapHtml = R"HTML(
 </head>
 <body>
   <div id="root">
-    <div id="status">Aegis Dock Host Bootstrap (validation page)</div>
+    <div id="status">Telemy Dock Host Bootstrap (validation page)</div>
     <div id="log">waiting...</div>
   </div>
   <script>
@@ -90,13 +90,13 @@ constexpr const char* kDockValidationBootstrapHtml = R"HTML(
         lines.push(line);
         while (lines.length > 40) lines.shift();
         if (logEl) logEl.textContent = lines.join("\\n");
-        try { console.log("[aegis-dock-host]", msg); } catch (_e) {}
+        try { console.log("[telemy-dock-host]", msg); } catch (_e) {}
       }
       function ok(name, payload) {
         log(name + ": " + payload);
         return true;
       }
-      window.aegisDockNative = {
+      window.telemyDockNative = {
         receiveStatusSnapshotJson(jsonText) { return ok("receiveStatusSnapshotJson", jsonText); },
         receiveSceneSnapshotJson(jsonText) { return ok("receiveSceneSnapshotJson", jsonText); },
         receiveIpcEnvelopeJson(jsonText) { return ok("receiveIpcEnvelopeJson", jsonText); },
@@ -106,9 +106,9 @@ constexpr const char* kDockValidationBootstrapHtml = R"HTML(
         receiveDockActionResultJson(jsonText) { return ok("receiveDockActionResultJson", jsonText); }
       };
       try {
-        window.dispatchEvent(new CustomEvent("aegis:dock:native-ready", { detail: { ok: true } }));
+        window.dispatchEvent(new CustomEvent("telemy:dock:native-ready", { detail: { ok: true } }));
       } catch (_e) {}
-      log("window.aegisDockNative ready");
+      log("window.telemyDockNative ready");
     })();
   </script>
 </body>
@@ -131,7 +131,7 @@ struct DockBridgeAssets {
     QString resolution_note;
 };
 
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
 struct QtDockJsExecutorState {
     std::mutex mu;
     QPointer<QWebEnginePage> page;
@@ -171,7 +171,7 @@ QString CurrentPluginModuleDir() {
     HMODULE module_handle = nullptr;
     const auto ok = GetModuleHandleExW(
         GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        reinterpret_cast<LPCWSTR>(&aegis_obs_browser_dock_host_scaffold_initialize),
+        reinterpret_cast<LPCWSTR>(&telemy_obs_browser_dock_host_scaffold_initialize),
         &module_handle);
     if (!ok || !module_handle) {
         return {};
@@ -201,7 +201,7 @@ std::vector<QString> CandidateDockAssetRoots() {
     const std::array<const char*, 3> module_asset_dirs = {
         ".",
         "data",
-        "../../data/obs-plugins/aegis-obs-plugin",
+        "../../data/obs-plugins/telemy-obs-plugin",
     };
     for (const char* rel : module_asset_dirs) {
         char* raw = obs_module_file(rel);
@@ -300,7 +300,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
         encoded = prefixed_text.mid(strict_pos + strict_prefix.size());
     } else {
         const int token_pos =
-            prefixed_text.indexOf(QStringLiteral("aegis_dock_action"), 0, Qt::CaseInsensitive);
+            prefixed_text.indexOf(QStringLiteral("telemy_dock_action"), 0, Qt::CaseInsensitive);
         if (token_pos < 0) {
             return false;
         }
@@ -321,7 +321,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
     if (encoded.isEmpty()) {
         blog(
             LOG_DEBUG,
-            "[aegis-obs-plugin] browser dock scaffold action %s parse skipped: empty encoded payload",
+            "[telemy-obs-plugin] browser dock scaffold action %s parse skipped: empty encoded payload",
             source_tag ? source_tag : "unknown");
         return false;
     }
@@ -331,7 +331,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
         const QByteArray encoded_bytes = encoded.left(160).toUtf8();
         blog(
             LOG_DEBUG,
-            "[aegis-obs-plugin] browser dock scaffold action %s parse skipped: unexpected prefix sample=%s",
+            "[telemy-obs-plugin] browser dock scaffold action %s parse skipped: unexpected prefix sample=%s",
             source_tag ? source_tag : "unknown",
             encoded_bytes.constData());
         return false;
@@ -353,7 +353,7 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
     if (decoded_bytes.isEmpty()) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-plugin] browser dock scaffold action %s decode failed",
+            "[telemy-obs-plugin] browser dock scaffold action %s decode failed",
             source_tag ? source_tag : "unknown");
         return true;
     }
@@ -366,16 +366,16 @@ bool TryHandleDockActionPrefixedMessage(const char* source_tag, const QString& p
     }
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] browser dock scaffold action %s decode: type=%s request_id=%s bytes=%d",
+        "[telemy-obs-plugin] browser dock scaffold action %s decode: type=%s request_id=%s bytes=%d",
         source_tag ? source_tag : "unknown",
         action_type.isEmpty() ? "" : action_type.toUtf8().constData(),
         request_id.isEmpty() ? "" : request_id.toUtf8().constData(),
         static_cast<int>(decoded_bytes.size()));
 
-    const bool ok = aegis_obs_shim_receive_dock_action_json(decoded_bytes.constData());
+    const bool ok = telemy_obs_shim_receive_dock_action_json(decoded_bytes.constData());
     blog(
         ok ? LOG_INFO : LOG_DEBUG,
-        "[aegis-obs-plugin] browser dock scaffold dock action %s forwarded ok=%s type=%s request_id=%s bytes=%d",
+        "[telemy-obs-plugin] browser dock scaffold dock action %s forwarded ok=%s type=%s request_id=%s bytes=%d",
         source_tag ? source_tag : "unknown",
         ok ? "true" : "false",
         action_type.isEmpty() ? "" : action_type.toUtf8().constData(),
@@ -428,28 +428,28 @@ bool TryHandleDockActionUrlMessage(const QString& url_text) {
 DockBridgeAssets LoadDockBridgeAssets() {
     DockBridgeAssets assets;
 
-    // Keep the asset stack consistent when AEGIS_DOCK_BRIDGE_ROOT is set: prefer that root for all
+    // Keep the asset stack consistent when TELEMY_DOCK_BRIDGE_ROOT is set: prefer that root for all
     // bridge assets before falling back to staged/module-data files.
     const bool env_bridge_found =
-        TryResolveDockAssetInExplicitEnvRoot("aegis-dock-bridge.js", &assets.bridge_js_path) ||
-        TryResolveDockAssetInExplicitEnvRoot("aegis-dock-bridge.global.js", &assets.bridge_js_path);
+        TryResolveDockAssetInExplicitEnvRoot("telemy-dock-bridge.js", &assets.bridge_js_path) ||
+        TryResolveDockAssetInExplicitEnvRoot("telemy-dock-bridge.global.js", &assets.bridge_js_path);
     if (!env_bridge_found &&
-        !TryResolveDockAsset("aegis-dock-bridge.js", &assets.bridge_js_path) &&
-        !TryResolveDockAsset("aegis-dock-bridge.global.js", &assets.bridge_js_path)) {
+        !TryResolveDockAsset("telemy-dock-bridge.js", &assets.bridge_js_path) &&
+        !TryResolveDockAsset("telemy-dock-bridge.global.js", &assets.bridge_js_path)) {
         assets.resolution_note =
-            QStringLiteral("bridge core asset not found (preferred: aegis-dock-bridge.js; fallback: aegis-dock-bridge.global.js)");
+            QStringLiteral("bridge core asset not found (preferred: telemy-dock-bridge.js; fallback: telemy-dock-bridge.global.js)");
         return assets;
     }
 
     const bool env_host_found =
-        TryResolveDockAssetInExplicitEnvRoot("aegis-dock-bridge-host.js", &assets.bridge_host_js_path);
+        TryResolveDockAssetInExplicitEnvRoot("telemy-dock-bridge-host.js", &assets.bridge_host_js_path);
     const bool env_bootstrap_found =
         TryResolveDockAssetInExplicitEnvRoot(
-            "aegis-dock-browser-host-bootstrap.js", &assets.browser_bootstrap_js_path);
+            "telemy-dock-browser-host-bootstrap.js", &assets.browser_bootstrap_js_path);
 
-    if ((!env_host_found && !TryResolveDockAsset("aegis-dock-bridge-host.js", &assets.bridge_host_js_path)) ||
+    if ((!env_host_found && !TryResolveDockAsset("telemy-dock-bridge-host.js", &assets.bridge_host_js_path)) ||
         (!env_bootstrap_found &&
-         !TryResolveDockAsset("aegis-dock-browser-host-bootstrap.js", &assets.browser_bootstrap_js_path))) {
+         !TryResolveDockAsset("telemy-dock-browser-host-bootstrap.js", &assets.browser_bootstrap_js_path))) {
         assets.resolution_note =
             QStringLiteral("bridge assets not found (set %1 or deploy into module data dir)")
                 .arg(QString::fromUtf8(kEnvDockBridgeRoot));
@@ -463,12 +463,12 @@ DockBridgeAssets LoadDockBridgeAssets() {
         return assets;
     }
 
-    if (TryResolveDockAssetInExplicitEnvRoot("aegis-dock.html", &assets.dock_html_path) ||
-        TryResolveDockAsset("aegis-dock.html", &assets.dock_html_path)) {
+    if (TryResolveDockAssetInExplicitEnvRoot("telemy-dock.html", &assets.dock_html_path) ||
+        TryResolveDockAsset("telemy-dock.html", &assets.dock_html_path)) {
         (void)ReadTextFileUtf8(assets.dock_html_path, &assets.dock_html);
     }
-    if (TryResolveDockAssetInExplicitEnvRoot("aegis-dock-app.js", &assets.dock_app_js_path) ||
-        TryResolveDockAsset("aegis-dock-app.js", &assets.dock_app_js_path)) {
+    if (TryResolveDockAssetInExplicitEnvRoot("telemy-dock-app.js", &assets.dock_app_js_path) ||
+        TryResolveDockAsset("telemy-dock-app.js", &assets.dock_app_js_path)) {
         (void)ReadTextFileUtf8(assets.dock_app_js_path, &assets.dock_app_js);
     }
 
@@ -528,11 +528,11 @@ QString BuildRealDockPageHtml(const DockBridgeAssets& assets) {
 
     if (!assets.dock_html.isEmpty()) {
         QString html = assets.dock_html;
-        const QString marker = QStringLiteral("<!-- AEGIS_DOCK_HOST_SCRIPTS -->");
+        const QString marker = QStringLiteral("<!-- TELEMY_DOCK_HOST_SCRIPTS -->");
         if (html.contains(marker)) {
             html.replace(marker, injected_scripts);
             if (!dock_app_inline_script.isEmpty()) {
-                html.replace(QStringLiteral("<script src=\"aegis-dock-app.js\"></script>"), dock_app_inline_script);
+                html.replace(QStringLiteral("<script src=\"telemy-dock-app.js\"></script>"), dock_app_inline_script);
             }
             return html;
         }
@@ -540,13 +540,13 @@ QString BuildRealDockPageHtml(const DockBridgeAssets& assets) {
         if (body_close >= 0) {
             html.insert(body_close, injected_scripts);
             if (!dock_app_inline_script.isEmpty()) {
-                html.replace(QStringLiteral("<script src=\"aegis-dock-app.js\"></script>"), dock_app_inline_script);
+                html.replace(QStringLiteral("<script src=\"telemy-dock-app.js\"></script>"), dock_app_inline_script);
             }
             return html;
         }
         html += injected_scripts;
         if (!dock_app_inline_script.isEmpty()) {
-            html.replace(QStringLiteral("<script src=\"aegis-dock-app.js\"></script>"), dock_app_inline_script);
+            html.replace(QStringLiteral("<script src=\"telemy-dock-app.js\"></script>"), dock_app_inline_script);
         }
         return html;
     }
@@ -557,7 +557,7 @@ QString BuildRealDockPageHtml(const DockBridgeAssets& assets) {
     html += QStringLiteral(
         "<!doctype html><html><head><meta charset=\"utf-8\" />"
         "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' 'unsafe-inline' data: blob:;\">"
-        "<title>Aegis Dock Host</title>"
+        "<title>Telemy Dock Host</title>"
         "<style>"
         "html,body{margin:0;padding:0;background:#0e141b;color:#d6e3f0;font-family:Consolas,monospace;}"
         "#app{padding:10px;display:grid;gap:10px;}"
@@ -567,7 +567,7 @@ QString BuildRealDockPageHtml(const DockBridgeAssets& assets) {
         "#events{background:#0b1015;border:1px solid #22303c;padding:8px;white-space:pre-wrap;min-height:140px;font-size:12px;line-height:1.35;}"
         "</style></head><body>"
         "<div id=\"app\">"
-        "<div id=\"status\">Aegis Dock Host (real bridge/bootstrap JS)</div>"
+        "<div id=\"status\">Telemy Dock Host (real bridge/bootstrap JS)</div>"
         "<div id=\"meta\"></div>"
         "<div id=\"state\">state pending...</div>"
         "<div id=\"events\">events pending...</div>"
@@ -587,12 +587,12 @@ QString BuildRealDockPageHtml(const DockBridgeAssets& assets) {
     lines.push(line);
     while (lines.length > 80) lines.shift();
     if (eventsEl) eventsEl.textContent = lines.join("\n");
-    try { console.log("[aegis-dock-host]", msg); } catch (_e) {}
+    try { console.log("[telemy-dock-host]", msg); } catch (_e) {}
   }
   function renderState() {
     try {
-      const s = window.aegisDockNative && window.aegisDockNative.getState
-        ? window.aegisDockNative.getState()
+      const s = window.telemyDockNative && window.telemyDockNative.getState
+        ? window.telemyDockNative.getState()
         : null;
       if (stateEl) stateEl.textContent = JSON.stringify(s, null, 2);
     } catch (e) {
@@ -603,19 +603,19 @@ QString BuildRealDockPageHtml(const DockBridgeAssets& assets) {
     metaEl.textContent = "Bridge/host/bootstrap loaded (Qt WebEngine)";
   }
   if (statusEl) {
-    statusEl.textContent = "Aegis Dock Host (native bootstrap pending)";
+    statusEl.textContent = "Telemy Dock Host (native bootstrap pending)";
   }
-  window.addEventListener("aegis:dock:native-ready", function () {
-    if (statusEl) statusEl.textContent = "Aegis Dock Host (native ready)";
+  window.addEventListener("telemy:dock:native-ready", function () {
+    if (statusEl) statusEl.textContent = "Telemy Dock Host (native ready)";
     log("native-ready");
     renderState();
   });
   [
-    "aegis:dock:ipc-envelope-json",
-    "aegis:dock:scene-snapshot-json",
-    "aegis:dock:pipe-status",
-    "aegis:dock:current-scene",
-    "aegis:dock:scene-switch-completed-json"
+    "telemy:dock:ipc-envelope-json",
+    "telemy:dock:scene-snapshot-json",
+    "telemy:dock:pipe-status",
+    "telemy:dock:current-scene",
+    "telemy:dock:scene-switch-completed-json"
   ].forEach(function (name) {
     window.addEventListener(name, function (ev) {
       log(name + " " + JSON.stringify(ev && ev.detail || {}));
@@ -629,7 +629,7 @@ QString BuildRealDockPageHtml(const DockBridgeAssets& assets) {
     return html;
 }
 
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
 bool QtDockExecuteJs(const char* js_utf8, void* user_data) {
     auto* state = static_cast<QtDockJsExecutorState*>(user_data);
     if (!state || !js_utf8) {
@@ -678,25 +678,25 @@ void ProbeDockNativeReadyAsync() {
 
     page->runJavaScript(
         QStringLiteral(
-            "(function(){ return !!(window.aegisDockNative && "
-            "typeof window.aegisDockNative.receiveStatusSnapshotJson === 'function' && "
-            "typeof window.aegisDockNative.receiveSceneSnapshotJson === 'function' && "
-            "typeof window.aegisDockNative.receivePipeStatus === 'function' && "
-            "typeof window.aegisDockNative.receiveCurrentScene === 'function' && "
-            "typeof window.aegisDockNative.receiveSceneSwitchCompletedJson === 'function' && "
-            "typeof window.aegisDockNative.receiveDockActionResultJson === 'function'); })();"),
+            "(function(){ return !!(window.telemyDockNative && "
+            "typeof window.telemyDockNative.receiveStatusSnapshotJson === 'function' && "
+            "typeof window.telemyDockNative.receiveSceneSnapshotJson === 'function' && "
+            "typeof window.telemyDockNative.receivePipeStatus === 'function' && "
+            "typeof window.telemyDockNative.receiveCurrentScene === 'function' && "
+            "typeof window.telemyDockNative.receiveSceneSwitchCompletedJson === 'function' && "
+            "typeof window.telemyDockNative.receiveDockActionResultJson === 'function'); })();"),
         [page](const QVariant& result) {
             const bool ready = result.toBool();
             if (!ready) {
-                blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold native-ready probe=false");
+                blog(LOG_DEBUG, "[telemy-obs-plugin] browser dock scaffold native-ready probe=false");
                 return;
             }
             if (g_qt_dock_state.page_ready_notified) {
                 return;
             }
             g_qt_dock_state.page_ready_notified = true;
-            blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold bootstrap/native-ready");
-            aegis_obs_browser_dock_host_scaffold_on_page_ready();
+            blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold bootstrap/native-ready");
+            telemy_obs_browser_dock_host_scaffold_on_page_ready();
             (void)page;
         });
 }
@@ -704,7 +704,7 @@ void ProbeDockNativeReadyAsync() {
 QDockWidget* CreateDockWidgetForObsMainWindow() {
     auto* main_window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
     if (!main_window) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold missing OBS main window");
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold missing OBS main window");
         return nullptr;
     }
 
@@ -719,19 +719,19 @@ QDockWidget* CreateDockWidgetForObsMainWindow() {
 
     QObject::connect(view, &QWebEngineView::loadFinished, dock, [](bool ok) {
         if (!ok) {
-            blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold page load failed");
+            blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold page load failed");
             g_qt_dock_state.page_ready_notified = false;
-            aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+            telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
             return;
         }
-        blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold page load finished");
+        blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold page load finished");
         ProbeDockNativeReadyAsync();
     });
 
     QObject::connect(view, &QObject::destroyed, dock, []() {
         g_qt_dock_state.page_ready_notified = false;
         ClearQtExecutorPage();
-        aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+        telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
     });
 
     QObject::connect(dock, &QObject::destroyed, main_window, []() {
@@ -758,14 +758,14 @@ void LoadBootstrapPage() {
     if (assets.complete) {
         blog(
             assets.uses_scaffold_fallback ? LOG_WARNING : LOG_INFO,
-            "[aegis-obs-plugin] browser dock scaffold %s",
+            "[telemy-obs-plugin] browser dock scaffold %s",
             assets.resolution_note.toUtf8().constData());
         const QString html = BuildRealDockPageHtml(assets);
         g_qt_dock_state.web_view->setHtml(html, QUrl(QStringLiteral("about:blank")));
         return;
     }
 
-    blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
+    blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
     const QString html = QString::fromUtf8(kDockValidationBootstrapHtml);
     g_qt_dock_state.web_view->setHtml(html, QUrl(QStringLiteral("about:blank")));
 }
@@ -773,14 +773,14 @@ void LoadBootstrapPage() {
 
 #endif
 
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
 
 constexpr const char* kCefDockValidationHtml = R"HTML(
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Aegis Dock Host (OBS/CEF)</title>
+  <title>Telemy Dock Host (OBS/CEF)</title>
   <style>
     html, body { margin: 0; padding: 0; background: #101820; color: #d9e2ec; font-family: Consolas, monospace; }
     #root { padding: 10px; }
@@ -790,7 +790,7 @@ constexpr const char* kCefDockValidationHtml = R"HTML(
 </head>
 <body>
   <div id="root">
-    <div id="status">Aegis Dock Host (OBS/CEF validation page)</div>
+    <div id="status">Telemy Dock Host (OBS/CEF validation page)</div>
     <div id="log">waiting...</div>
   </div>
   <script>
@@ -804,7 +804,7 @@ constexpr const char* kCefDockValidationHtml = R"HTML(
         if (logEl) logEl.textContent = lines.join("\\n");
       }
       function ok(name, payload) { log(name + ": " + payload); return true; }
-      window.aegisDockNative = {
+      window.telemyDockNative = {
         receiveStatusSnapshotJson(jsonText) { return ok("receiveStatusSnapshotJson", jsonText); },
         receiveSceneSnapshotJson(jsonText) { return ok("receiveSceneSnapshotJson", jsonText); },
         receiveIpcEnvelopeJson(jsonText) { return ok("receiveIpcEnvelopeJson", jsonText); },
@@ -813,8 +813,8 @@ constexpr const char* kCefDockValidationHtml = R"HTML(
         receiveSceneSwitchCompletedJson(jsonText) { return ok("receiveSceneSwitchCompletedJson", jsonText); },
         receiveDockActionResultJson(jsonText) { return ok("receiveDockActionResultJson", jsonText); }
       };
-      try { window.dispatchEvent(new CustomEvent("aegis:dock:native-ready", { detail: { ok: true } })); } catch (_e) {}
-      log("window.aegisDockNative ready");
+      try { window.dispatchEvent(new CustomEvent("telemy:dock:native-ready", { detail: { ok: true } })); } catch (_e) {}
+      log("window.telemyDockNative ready");
     })();
   </script>
 </body>
@@ -871,12 +871,12 @@ void ClearCefExecutorWidget() {
 
 void MarkCefPageReadyOnce(const char* reason) {
     if (g_cef_dock_state.page_ready_notified) {
-        blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold CEF page ready already notified; skipping (%s)", reason ? reason : "unknown");
+        blog(LOG_DEBUG, "[telemy-obs-plugin] browser dock scaffold CEF page ready already notified; skipping (%s)", reason ? reason : "unknown");
         return;
     }
     g_cef_dock_state.page_ready_notified = true;
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold CEF page ready (%s)", reason ? reason : "unknown");
-    aegis_obs_browser_dock_host_scaffold_on_page_ready();
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold CEF page ready (%s)", reason ? reason : "unknown");
+    telemy_obs_browser_dock_host_scaffold_on_page_ready();
 }
 
 void StopCefReadyProbeTimer() {
@@ -899,14 +899,14 @@ void StopCefInitRetryTimer() {
 QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     auto* main_window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
     if (!main_window) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold missing OBS main window");
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold missing OBS main window");
         return nullptr;
     }
 
     if (!g_obs_cef) {
         g_obs_cef = obs_browser_init_panel();
         if (!g_obs_cef) {
-            blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF panel init unavailable (obs-browser missing?)");
+            blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold CEF panel init unavailable (obs-browser missing?)");
             return nullptr;
         }
     }
@@ -916,7 +916,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
         (void)g_obs_cef->wait_for_browser_init();
     }
     if (!g_obs_cef->initialized()) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF init failed");
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold CEF init failed");
         return nullptr;
     }
 
@@ -931,11 +931,11 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     if (assets.complete) {
         blog(
             assets.uses_scaffold_fallback ? LOG_WARNING : LOG_INFO,
-            "[aegis-obs-plugin] browser dock scaffold %s",
+            "[telemy-obs-plugin] browser dock scaffold %s",
             assets.resolution_note.toUtf8().constData());
         html = BuildRealDockPageHtml(assets);
     } else {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold %s", assets.resolution_note.toUtf8().constData());
         html = QString::fromUtf8(kCefDockValidationHtml);
     }
 
@@ -951,7 +951,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
         const QString border = pal.color(QPalette::Dark).name();
 
         QString theme_css = QStringLiteral(
-            "<style id=\"aegis-initial-theme\">:root{"
+            "<style id=\"telemy-initial-theme\">:root{"
             "--bg:") + bg + QStringLiteral(";"
             "--bg-elev:") + surface + QStringLiteral(";"
             "--bg-panel:") + bg + QStringLiteral(";"
@@ -975,7 +975,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     const QByteArray html_utf8 = html.toUtf8();
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] browser dock scaffold CEF bootstrap html prepared mode=%s html_bytes=%d data_url_bytes=%d app_inline=%s",
+        "[telemy-obs-plugin] browser dock scaffold CEF bootstrap html prepared mode=%s html_bytes=%d data_url_bytes=%d app_inline=%s",
         assets.complete ? "real_bridge_assets" : "validation_fallback",
         static_cast<int>(html_utf8.size()),
         static_cast<int>(data_url.size()),
@@ -983,7 +983,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
 
     QCefWidget* view = g_obs_cef->create_widget(dock, data_url, nullptr);
     if (!view) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF create_widget failed");
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold CEF create_widget failed");
         dock->deleteLater();
         return nullptr;
     }
@@ -993,7 +993,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     const int sig_url_idx = view_meta ? view_meta->indexOfSignal("urlChanged(QString)") : -1;
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] browser dock scaffold CEF signal introspection: class=%s titleChanged_idx=%d urlChanged_idx=%d",
+        "[telemy-obs-plugin] browser dock scaffold CEF signal introspection: class=%s titleChanged_idx=%d urlChanged_idx=%d",
         view_meta ? view_meta->className() : "null",
         sig_title_idx,
         sig_url_idx);
@@ -1002,7 +1002,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
         g_cef_dock_state.page_ready_notified = false;
         StopCefReadyProbeTimer();
         ClearCefExecutorWidget();
-        aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+        telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
     });
     QObject::connect(dock, &QObject::destroyed, main_window, []() {
         g_cef_dock_state.dock_widget = nullptr;
@@ -1020,10 +1020,10 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     const auto url_bridge_conn =
         QObject::connect(view, SIGNAL(urlChanged(QString)), dock, SLOT(setWindowTitle(QString)));
     if (!title_bridge_conn) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold titleChanged bridge connect failed");
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold titleChanged bridge connect failed");
     }
     if (!url_bridge_conn) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold urlChanged bridge connect failed");
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold urlChanged bridge connect failed");
     }
     QObject::connect(dock, &QWidget::windowTitleChanged, dock, [dock](const QString& title) {
         // Intercept data/about URL titles that flash during CEF page initialization.
@@ -1038,14 +1038,14 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
             const QByteArray sample = title.left(180).toUtf8();
             blog(
                 LOG_DEBUG,
-                "[aegis-obs-plugin] browser dock scaffold windowTitleChanged bytes=%d sample=%s",
+                "[telemy-obs-plugin] browser dock scaffold windowTitleChanged bytes=%d sample=%s",
                 static_cast<int>(title.toUtf8().size()),
                 sample.constData());
         }
-        if (title.contains(QStringLiteral("#__AEGIS_DOCK_ACTION__:"), Qt::CaseInsensitive)) {
+        if (title.contains(QStringLiteral("#__TELEMY_DOCK_ACTION__:"), Qt::CaseInsensitive)) {
             blog(
                 LOG_INFO,
-                "[aegis-obs-plugin] browser dock scaffold observed window title transport payload bytes=%d",
+                "[telemy-obs-plugin] browser dock scaffold observed window title transport payload bytes=%d",
                 static_cast<int>(title.toUtf8().size()));
         }
         if (ContainsDockReadySignal(title)) {
@@ -1064,7 +1064,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     auto* ready_timer = new QTimer(dock);
     ready_timer->setSingleShot(true);
     QObject::connect(ready_timer, &QTimer::timeout, dock, []() {
-        blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold CEF ready probe timer fired");
+        blog(LOG_DEBUG, "[telemy-obs-plugin] browser dock scaffold CEF ready probe timer fired");
         if (!g_cef_dock_state.page_ready_notified) {
             // Timer-based page ready probe avoids direct linkage to QCefWidget Qt signal symbols,
             // which are not exported for plugin linking.
@@ -1078,7 +1078,7 @@ QDockWidget* CreateCefDockWidgetForObsMainWindow() {
     g_cef_dock_state.ready_probe_timer = ready_timer;
     SetCefExecutorWidget(view);
 
-    blog(LOG_DEBUG, "[aegis-obs-plugin] browser dock scaffold CEF ready probe timer start delay_ms=500");
+    blog(LOG_DEBUG, "[telemy-obs-plugin] browser dock scaffold CEF ready probe timer start delay_ms=500");
     ready_timer->start(500);
     return dock;
 }
@@ -1097,7 +1097,7 @@ bool TryRegisterCefDockHost() {
     if (!added) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-plugin] browser dock scaffold failed to register dock id=%s (already exists?)",
+            "[telemy-obs-plugin] browser dock scaffold failed to register dock id=%s (already exists?)",
             kDockId);
         StopCefReadyProbeTimer();
         ClearCefExecutorWidget();
@@ -1106,7 +1106,7 @@ bool TryRegisterCefDockHost() {
     }
 
     g_cef_dock_state.dock_registered = true;
-    aegis_obs_browser_dock_host_scaffold_set_js_executor(&CefDockExecuteJs, &g_cef_executor_state);
+    telemy_obs_browser_dock_host_scaffold_set_js_executor(&CefDockExecuteJs, &g_cef_executor_state);
     // Defer the show/float decision to give OBS time to restore its saved
     // DockState layout.  Without this delay the dock briefly floats in the
     // center of the screen before OBS moves it to its saved docked position,
@@ -1118,7 +1118,7 @@ bool TryRegisterCefDockHost() {
         if (dock->isVisible()) {
             // OBS restored saved layout â€” dock is already where it should be.
             blog(LOG_INFO,
-                 "[aegis-obs-plugin] browser dock scaffold deferred show: "
+                 "[telemy-obs-plugin] browser dock scaffold deferred show: "
                  "already visible (saved layout restored)");
             return;
         }
@@ -1130,13 +1130,13 @@ bool TryRegisterCefDockHost() {
         dock->raise();
         dock->activateWindow();
         blog(LOG_INFO,
-             "[aegis-obs-plugin] browser dock scaffold deferred show: "
+             "[telemy-obs-plugin] browser dock scaffold deferred show: "
              "floating (no saved layout)");
     });
     show_timer->start(1500);
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s (OBS/CEF host active)",
+        "[telemy-obs-plugin] browser dock scaffold initialize id=%s title=%s (OBS/CEF host active)",
         kDockId,
         kDockTitle);
     return true;
@@ -1150,7 +1150,7 @@ void EnsureCefInitRetryTimerStarted() {
 
     auto* main_window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
     if (!main_window) {
-        blog(LOG_WARNING, "[aegis-obs-plugin] browser dock scaffold CEF retry unavailable (no OBS main window)");
+        blog(LOG_WARNING, "[telemy-obs-plugin] browser dock scaffold CEF retry unavailable (no OBS main window)");
         return;
     }
 
@@ -1173,7 +1173,7 @@ void EnsureCefInitRetryTimerStarted() {
         g_cef_dock_state.init_retry_attempts += 1;
         blog(
             LOG_DEBUG,
-            "[aegis-obs-plugin] browser dock scaffold CEF init retry attempt=%d",
+            "[telemy-obs-plugin] browser dock scaffold CEF init retry attempt=%d",
             g_cef_dock_state.init_retry_attempts);
         if (TryRegisterCefDockHost()) {
             StopCefInitRetryTimer();
@@ -1183,7 +1183,7 @@ void EnsureCefInitRetryTimerStarted() {
         if (g_cef_dock_state.init_retry_attempts >= 10) {
             blog(
                 LOG_WARNING,
-                "[aegis-obs-plugin] browser dock scaffold CEF retry exhausted after %d attempts",
+                "[telemy-obs-plugin] browser dock scaffold CEF retry exhausted after %d attempts",
                 g_cef_dock_state.init_retry_attempts);
             StopCefInitRetryTimer();
         }
@@ -1192,7 +1192,7 @@ void EnsureCefInitRetryTimerStarted() {
 
     g_cef_dock_state.init_retry_timer = timer;
     g_cef_dock_state.init_retry_attempts = 0;
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold scheduling OBS/CEF init retry");
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold scheduling OBS/CEF init retry");
     timer->start();
 }
 
@@ -1200,24 +1200,24 @@ void EnsureCefInitRetryTimerStarted() {
 
 } // namespace
 
-void aegis_obs_browser_dock_host_scaffold_initialize() {
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
+void telemy_obs_browser_dock_host_scaffold_initialize() {
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
     if (g_cef_dock_state.dock_registered && g_cef_dock_state.dock_widget) {
-        blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold initialize skipped (CEF host already active)");
+        blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold initialize skipped (CEF host already active)");
         return;
     }
 
     if (!TryRegisterCefDockHost()) {
         blog(
             LOG_INFO,
-            "[aegis-obs-plugin] browser dock scaffold initialize deferred (OBS/CEF host not ready yet)");
+            "[telemy-obs-plugin] browser dock scaffold initialize deferred (OBS/CEF host not ready yet)");
         EnsureCefInitRetryTimerStarted();
-        aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+        telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
         return;
     }
-#elif defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
+#elif defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
     if (g_qt_dock_state.dock_registered && g_qt_dock_state.dock_widget) {
-        blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold initialize skipped (already active)");
+        blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold initialize skipped (already active)");
         return;
     }
 
@@ -1225,8 +1225,8 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
     if (!dock) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-plugin] browser dock scaffold initialize fallback (Qt/WebEngine host create failed)");
-        aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+            "[telemy-obs-plugin] browser dock scaffold initialize fallback (Qt/WebEngine host create failed)");
+        telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
         return;
     }
 
@@ -1234,42 +1234,42 @@ void aegis_obs_browser_dock_host_scaffold_initialize() {
     if (!added) {
         blog(
             LOG_WARNING,
-            "[aegis-obs-plugin] browser dock scaffold failed to register dock id=%s (already exists?)",
+            "[telemy-obs-plugin] browser dock scaffold failed to register dock id=%s (already exists?)",
             kDockId);
         ClearQtExecutorPage();
         dock->deleteLater();
-        aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+        telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
         return;
     }
 
     g_qt_dock_state.dock_registered = true;
-    aegis_obs_browser_dock_host_scaffold_set_js_executor(&QtDockExecuteJs, &g_qt_executor_state);
+    telemy_obs_browser_dock_host_scaffold_set_js_executor(&QtDockExecuteJs, &g_qt_executor_state);
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s (Qt/WebEngine host active)",
+        "[telemy-obs-plugin] browser dock scaffold initialize id=%s title=%s (Qt/WebEngine host active)",
         kDockId,
         kDockTitle);
 
     LoadBootstrapPage();
 #else
-    // No dock host backend is enabled in this build (neither AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF
-    // nor AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE). The dock is unavailable; mark the page
+    // No dock host backend is enabled in this build (neither TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF
+    // nor TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE). The dock is unavailable; mark the page
     // unloaded so the rest of the plugin degrades gracefully (no JS bridge, no metric injection).
     blog(
         LOG_WARNING,
-        "[aegis-obs-plugin] browser dock scaffold initialize id=%s title=%s:"
+        "[telemy-obs-plugin] browser dock scaffold initialize id=%s title=%s:"
         " no dock host backend enabled, dock unavailable",
         kDockId,
         kDockTitle);
-    aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+    telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
 #endif
 }
 
-void aegis_obs_browser_dock_host_scaffold_shutdown() {
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold shutdown (OBS/CEF host)");
+void telemy_obs_browser_dock_host_scaffold_shutdown() {
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold shutdown (OBS/CEF host)");
 
-    aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+    telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
     StopCefInitRetryTimer();
     StopCefReadyProbeTimer();
     ClearCefExecutorWidget();
@@ -1277,7 +1277,7 @@ void aegis_obs_browser_dock_host_scaffold_shutdown() {
     if (g_cef_dock_state.cef_widget) {
         const int panel_version = obs_browser_qcef_version();
         if (panel_version >= 2) {
-            blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold CEF closeBrowser (panel_version=%d)", panel_version);
+            blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold CEF closeBrowser (panel_version=%d)", panel_version);
             g_cef_dock_state.cef_widget->closeBrowser();
         }
     }
@@ -1289,10 +1289,10 @@ void aegis_obs_browser_dock_host_scaffold_shutdown() {
     g_cef_dock_state.cef_widget = nullptr;
     g_cef_dock_state.dock_widget = nullptr;
     g_cef_dock_state.page_ready_notified = false;
-#elif defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold shutdown (Qt/WebEngine host)");
+#elif defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold shutdown (Qt/WebEngine host)");
 
-    aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+    telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
 
     if (g_qt_dock_state.dock_registered) {
         obs_frontend_remove_dock(kDockId);
@@ -1311,33 +1311,33 @@ void aegis_obs_browser_dock_host_scaffold_shutdown() {
     }
     g_qt_dock_state.page_ready_notified = false;
 #else
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold shutdown");
-    aegis_obs_browser_dock_host_scaffold_on_page_unloaded();
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold shutdown");
+    telemy_obs_browser_dock_host_scaffold_on_page_unloaded();
 #endif
 }
 
-void aegis_obs_browser_dock_host_scaffold_set_js_executor(
-    aegis_dock_js_execute_fn fn,
+void telemy_obs_browser_dock_host_scaffold_set_js_executor(
+    telemy_dock_js_execute_fn fn,
     void* user_data) {
     blog(
         LOG_INFO,
-        "[aegis-obs-plugin] browser dock scaffold set_js_executor: %s",
+        "[telemy-obs-plugin] browser dock scaffold set_js_executor: %s",
         fn ? "registered" : "cleared");
-    aegis_obs_shim_register_dock_js_executor(fn, user_data);
+    telemy_obs_shim_register_dock_js_executor(fn, user_data);
 }
 
-void aegis_obs_browser_dock_host_scaffold_on_page_ready() {
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold page ready");
-    aegis_obs_shim_notify_dock_page_ready();
+void telemy_obs_browser_dock_host_scaffold_on_page_ready() {
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold page ready");
+    telemy_obs_shim_notify_dock_page_ready();
 }
 
-void aegis_obs_browser_dock_host_scaffold_on_page_unloaded() {
-    blog(LOG_INFO, "[aegis-obs-plugin] browser dock scaffold page unloaded");
-    aegis_obs_shim_notify_dock_page_unloaded();
+void telemy_obs_browser_dock_host_scaffold_on_page_unloaded() {
+    blog(LOG_INFO, "[telemy-obs-plugin] browser dock scaffold page unloaded");
+    telemy_obs_shim_notify_dock_page_unloaded();
 }
 
-bool aegis_obs_browser_dock_host_scaffold_show_dock() {
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
+bool telemy_obs_browser_dock_host_scaffold_show_dock() {
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF)
     if (g_cef_dock_state.dock_widget) {
         g_cef_dock_state.dock_widget->setFloating(true);
         g_cef_dock_state.dock_widget->show();
@@ -1346,7 +1346,7 @@ bool aegis_obs_browser_dock_host_scaffold_show_dock() {
         return true;
     }
 #endif
-#if defined(AEGIS_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
+#if defined(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
     if (g_qt_dock_state.dock_widget) {
         g_qt_dock_state.dock_widget->setFloating(true);
         g_qt_dock_state.dock_widget->show();

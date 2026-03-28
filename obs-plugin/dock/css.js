@@ -26,9 +26,9 @@ export function getDockCss(theme) {
     0%, 100% { opacity: 0.2; }
     50% { opacity: 1; }
   }
-  .aegis-dock-scroll::-webkit-scrollbar { width: 3px; }
-  .aegis-dock-scroll::-webkit-scrollbar-track { background: transparent; }
-  .aegis-dock-scroll::-webkit-scrollbar-thumb { background: ${theme.scrollbar}; border-radius: 2px; }
-  .aegis-dock-scroll::-webkit-scrollbar-thumb:hover { background: ${theme.border}; border-radius: 2px; }
+  .telemy-dock-scroll::-webkit-scrollbar { width: 3px; }
+  .telemy-dock-scroll::-webkit-scrollbar-track { background: transparent; }
+  .telemy-dock-scroll::-webkit-scrollbar-thumb { background: ${theme.scrollbar}; border-radius: 2px; }
+  .telemy-dock-scroll::-webkit-scrollbar-thumb:hover { background: ${theme.border}; border-radius: 2px; }
 `;
 }

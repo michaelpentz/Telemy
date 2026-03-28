@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
 # --------------------------------------------------------------------------
-# Aegis OBS plugin — unit test suite (Catch2 v3)
+# Telemy OBS plugin — unit test suite (Catch2 v3)
 #
-# Enable with: cmake -DAEGIS_BUILD_TESTS=ON ...
+# Enable with: cmake -DTELEMY_BUILD_TESTS=ON ...
 # Run with:    ctest --test-dir <build>/tests --output-on-failure
 # --------------------------------------------------------------------------
 
@@ -21,7 +21,7 @@ set(PLUGIN_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 # --------------------------------------------------------------------------
 # Test executable
 # --------------------------------------------------------------------------
-add_executable(aegis-tests
+add_executable(telemy-tests
     test_connection_manager.cpp
     test_parse_session_response.cpp
     test_json_extract.cpp
@@ -35,30 +35,30 @@ add_executable(aegis-tests
     ${PLUGIN_SRC_DIR}/config_vault.cpp
 )
 
-target_include_directories(aegis-tests PRIVATE
+target_include_directories(telemy-tests PRIVATE
     ${PLUGIN_SRC_DIR}
     # Stub <obs-module.h> so plugin sources compile without the OBS SDK.
     "${CMAKE_CURRENT_SOURCE_DIR}/test_stubs"
 )
 
 # C++17 to match the plugin.
-target_compile_features(aegis-tests PRIVATE cxx_std_17)
+target_compile_features(telemy-tests PRIVATE cxx_std_17)
 
 # Catch2 v3
-target_link_libraries(aegis-tests PRIVATE Catch2::Catch2WithMain)
+target_link_libraries(telemy-tests PRIVATE Catch2::Catch2WithMain)
 
 # Qt6::Core — required by relay_client.cpp (QJsonDocument) and
 # config_vault.cpp (QFile, QDir, QJsonDocument).
 find_package(Qt6 COMPONENTS Core REQUIRED)
-target_link_libraries(aegis-tests PRIVATE Qt6::Core)
+target_link_libraries(telemy-tests PRIVATE Qt6::Core)
 
 # Platform libraries (Windows)
 if (WIN32)
-    target_compile_definitions(aegis-tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(aegis-tests PRIVATE crypt32 rpcrt4 winhttp)
+    target_compile_definitions(telemy-tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(telemy-tests PRIVATE crypt32 rpcrt4 winhttp)
 
     # https_client.cpp is needed by relay_client.cpp (HttpsClient&).
-    target_sources(aegis-tests PRIVATE ${PLUGIN_SRC_DIR}/https_client.cpp)
+    target_sources(telemy-tests PRIVATE ${PLUGIN_SRC_DIR}/https_client.cpp)
 endif()
 
 # --------------------------------------------------------------------------
@@ -71,8 +71,8 @@ list(APPEND CMAKE_MODULE_PATH "${Catch2_SOURCE_DIR}/extras")
 include(Catch OPTIONAL RESULT_VARIABLE _catch_extras_found)
 
 if (_catch_extras_found AND COMMAND catch_discover_tests)
-    catch_discover_tests(aegis-tests)
+    catch_discover_tests(telemy-tests)
 else()
     # Simple fallback: register the whole executable as a single CTest test.
-    add_test(NAME aegis-tests COMMAND aegis-tests)
+    add_test(NAME telemy-tests COMMAND telemy-tests)
 endif()

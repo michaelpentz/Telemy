@@ -8,8 +8,8 @@
 
 #include "relay_client.h"
 
-using aegis::RelayClient;
-using aegis::RelaySession;
+using telemy::RelayClient;
+using telemy::RelaySession;
 
 // ---------------------------------------------------------------------------
 // Helper: build a fully-populated control-plane JSON response.

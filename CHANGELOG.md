@@ -39,7 +39,7 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 - **Per-user routing** - handleRelayStart() routes based on plan_tier: free -> BYORProvisioner, managed tiers -> AWSProvisioner. Returns yor_config_required error for unconfigured free users.
 - **relay_mode in auth session** - GET /api/v1/auth/session returns relay_mode field (yor/managed/none) so the dock UI can show appropriate controls.
 - **Plugin ConnectDirect** - C++ plugin ConnectDirect/DisconnectDirect path for BYOR relays, bypassing managed provisioning lifecycle.
-- **Dock BYOR UI** - BYOR settings panel in aegis-dock.jsx with toggle, host/port/stream inputs, connect/disconnect button. Bridge JS wired for relay_connect_direct/relay_disconnect_direct actions.
+- **Dock BYOR UI** - BYOR settings panel in telemy-dock.jsx with toggle, host/port/stream inputs, connect/disconnect button. Bridge JS wired for relay_connect_direct/relay_disconnect_direct actions.
 - **BYOR test plan** - Integration test plan covering Go unit tests, C++ plugin tests, E2E manual procedure, and regression tests.
 - **Graceful stats degradation** - Plugin handles missing/unreachable stats endpoints on non-SLS relays without erroring.
 ## [0.0.4] - 2026-03-16
@@ -106,7 +106,7 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 
 ### Architecture
 
-- **All-native C++ OBS plugin** - replaced the v0.0.3 Rust bridge + C++ shim + IPC named-pipe architecture with a single `aegis-obs-plugin.dll`. No standalone process, no IPC, no Rust dependency.
+- **All-native C++ OBS plugin** - replaced the v0.0.3 Rust bridge + C++ shim + IPC named-pipe architecture with a single `telemy-obs-plugin.dll`. No standalone process, no IPC, no Rust dependency.
 - **Bridge JS simplified** - reducer/projection eliminated. C++ produces the full dock state JSON directly; bridge is a thin pass-through.
 
 ### Added - C++ Plugin (`obs-plugin/src/`)
@@ -118,12 +118,12 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 - **DockHost** (`obs_browser_dock_host_scaffold.cpp`) - creates a CEF browser dock panel in OBS, injects the JS bridge, pushes telemetry snapshots into the dock via `ExecuteJavaScript()`. Deferred show pattern (1.5s QTimer) respects OBS DockState layout serialization.
 - **PluginEntry** (`obs_plugin_entry.cpp`) - OBS module lifecycle (`obs_module_load`/`obs_module_unload`), 500ms tick callback, action dispatch from dock UI back to native code, scene prefs persistence via `dock_scene_prefs.json`.
 
-### Added - Go Control Plane (`aegis-control-plane/`)
+### Added - Go Control Plane (`control-plane/`)
 
 - **srtla-receiver relay integration** - EC2 relay instances now auto-install Docker + [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) via user-data bootstrap script.
 - **User-data bootstrap** (`scripts/relay-user-data.sh`) - installs Docker + Docker Compose on AL2023, downloads and runs srtla-receiver containers. ~2-3 min boot time.
 - **AWS provisioner** (`internal/relay/aws.go`) - user-data script embedded as const, base64-encoded for `RunInstances`. SRT port changed from 9000 to 5000 (SRTLA bonded ingest).
-- **Security group** (`aegis-relay-sg`) - UDP 5000 (SRTLA ingest), UDP 4000 (SRT player), UDP 4001 (SRT direct), TCP 3000 (management UI, restricted), TCP 8090 (backend API, restricted).
+- **Security group** (`telemy-relay-sg`) - UDP 5000 (SRTLA ingest), UDP 4000 (SRT player), UDP 4001 (SRT direct), TCP 3000 (management UI, restricted), TCP 8090 (backend API, restricted).
 
 ### Added - Dock UI
 
@@ -141,7 +141,7 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 ### Removed
 
 - Rust bridge binary (`obs-telemetry-bridge.exe`)
-- IPC named pipes (`aegis_cmd_v1`, `aegis_evt_v1`)
+- IPC named pipes (`telemy_cmd_v1`, `telemy_evt_v1`)
 - MsgPack codec in C++ (`ipc_client.cpp`)
 - obs-websocket connection (`obws` crate)
 - HTTP/WebSocket server (port 7070)
@@ -152,5 +152,5 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 ### Infrastructure
 
 - Terminated 2 stale bare EC2 relay instances (no SRT software)
-- Moved `aegis-control-plane/` and `docs/` from `telemy-v0.0.3/` to `telemy-v0.0.4/`
+- Moved `control-plane/` and `docs/` from `telemy-v0.0.3/` to `telemy-v0.0.4/`
 - v0.0.3 archived with tag on GitHub + GitLab

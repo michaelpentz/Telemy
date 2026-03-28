@@ -1,6 +1,6 @@
 #include "dock_theme.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 #include <obs-module.h>
 #include <QApplication>
@@ -220,7 +220,7 @@ ObsDockThemeSlots qt_palette_to_theme() {
     if (out.fontSizePx < 8) out.fontSizePx = 8; // floor
     out.densityLevel = obsDensity;
 
-    blog(LOG_INFO, "[aegis-obs-plugin] font sample: family=%s sizePx=%d densityLevel=%d (obsFontScale=%d obsDensity=%d)",
+    blog(LOG_INFO, "[telemy-obs-plugin] font sample: family=%s sizePx=%d densityLevel=%d (obsFontScale=%d obsDensity=%d)",
          out.fontFamily.c_str(), out.fontSizePx, out.densityLevel, obsFontScale, obsDensity);
     out.valid = true;
     return out;
@@ -265,7 +265,7 @@ void RefreshCachedObsDockThemeFromQt(const char* reason) {
     }
     blog(
         (theme.valid && changed) ? LOG_INFO : LOG_DEBUG,
-        "[aegis-obs-plugin] obs dock theme cache refresh: valid=%s changed=%s reason=%s",
+        "[telemy-obs-plugin] obs dock theme cache refresh: valid=%s changed=%s reason=%s",
         theme.valid ? "true" : "false",
         changed ? "true" : "false",
         reason ? reason : "unknown");
@@ -286,4 +286,4 @@ std::string AugmentSnapshotJsonWithTheme(const std::string& snapshot_json) {
     return QJsonDocument(obj).toJson(QJsonDocument::Compact).toStdString();
 }
 
-#endif // AEGIS_OBS_PLUGIN_BUILD
+#endif // TELEMY_OBS_PLUGIN_BUILD

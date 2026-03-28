@@ -20,7 +20,7 @@ Telemy incorporates and interacts with the following third-party components:
 ## Go Dependencies
 
 All Go module dependencies use permissive licenses (MIT, BSD, Apache-2.0).
-See `aegis-control-plane/go.mod` for the full dependency list.
+See `control-plane/go.mod` for the full dependency list.
 
 ## OBS Studio SDK
 

@@ -3,20 +3,20 @@
 // v0.0.5 — Browser dock bootstrap exposing the plugin-call surface.
 //
 // Inbound (native -> dock):
-//   window.aegisDockNative.receiveStatusSnapshotJson(...)    [NEW in v0.0.4 — primary data]
-//   window.aegisDockNative.receiveSceneSnapshotJson(...)
-//   window.aegisDockNative.receivePipeStatus(...)
-//   window.aegisDockNative.receiveCurrentScene(...)
-//   window.aegisDockNative.receiveSceneSwitchCompletedJson(...)
-//   window.aegisDockNative.receiveDockActionResultJson(...)
-//   window.aegisDockNative.receiveIpcEnvelopeJson(...)       [Legacy no-op for compat]
+//   window.telemyDockNative.receiveStatusSnapshotJson(...)    [NEW in v0.0.4 — primary data]
+//   window.telemyDockNative.receiveSceneSnapshotJson(...)
+//   window.telemyDockNative.receivePipeStatus(...)
+//   window.telemyDockNative.receiveCurrentScene(...)
+//   window.telemyDockNative.receiveSceneSwitchCompletedJson(...)
+//   window.telemyDockNative.receiveDockActionResultJson(...)
+//   window.telemyDockNative.receiveIpcEnvelopeJson(...)       [Legacy no-op for compat]
 //
 // Outbound (dock -> native):
-//   window.aegisDockNative.sendDockAction({ type, ...payload })
-//   window.aegisDockNative.getState()
-//   window.aegisDockNative.getCapabilities()
+//   window.telemyDockNative.sendDockAction({ type, ...payload })
+//   window.telemyDockNative.getState()
+//   window.telemyDockNative.getCapabilities()
 
-(function initAegisDockBrowserHostBootstrap(globalObj) {
+(function initTelemyDockBrowserHostBootstrap(globalObj) {
   var g = globalObj || (typeof window !== "undefined" ? window : globalThis);
   if (!g) return;
 
@@ -32,17 +32,17 @@
   }
 
   function createFallbackHostFromBridge() {
-    var bridgeApi = g.AegisDockBridge;
-    if (!bridgeApi || typeof bridgeApi.createAegisDockBridgeHost !== "function") {
+    var bridgeApi = g.TelemyDockBridge;
+    if (!bridgeApi || typeof bridgeApi.createTelemyDockBridgeHost !== "function") {
       return null;
     }
-    var bridge = (g.__AEGIS_DOCK_BRIDGE__ && typeof g.__AEGIS_DOCK_BRIDGE__.getState === "function")
-      ? g.__AEGIS_DOCK_BRIDGE__
-      : bridgeApi.createAegisDockBridgeHost();
-    if (typeof bridgeApi.attachAegisDockBridgeToWindow === "function") {
-      bridgeApi.attachAegisDockBridgeToWindow(bridge);
+    var bridge = (g.__TELEMY_DOCK_BRIDGE__ && typeof g.__TELEMY_DOCK_BRIDGE__.getState === "function")
+      ? g.__TELEMY_DOCK_BRIDGE__
+      : bridgeApi.createTelemyDockBridgeHost();
+    if (typeof bridgeApi.attachTelemyDockBridgeToWindow === "function") {
+      bridgeApi.attachTelemyDockBridgeToWindow(bridge);
     } else {
-      g.__AEGIS_DOCK_BRIDGE__ = bridge;
+      g.__TELEMY_DOCK_BRIDGE__ = bridge;
     }
 
     var fallbackHost = {
@@ -131,24 +131,24 @@
   }
 
   function ensureHost() {
-    if (g.aegisDockHost && typeof g.aegisDockHost.getState === "function") {
-      return g.aegisDockHost;
+    if (g.telemyDockHost && typeof g.telemyDockHost.getState === "function") {
+      return g.telemyDockHost;
     }
-    // Prefer fallback host that directly wraps the AegisDockBridge global API.
+    // Prefer fallback host that directly wraps the TelemyDockBridge global API.
     var fallbackHost = createFallbackHostFromBridge();
     if (fallbackHost) {
-      g.aegisDockHost = fallbackHost;
-      dispatch("aegis:dock:host-fallback", { ok: true, source: "AegisDockBridge" });
+      g.telemyDockHost = fallbackHost;
+      dispatch("telemy:dock:host-fallback", { ok: true, source: "TelemyDockBridge" });
       return fallbackHost;
     }
 
-    var exports = g.AegisDockBridgeHost;
-    if (!exports || typeof exports.createWindowAegisDockBridgeHost !== "function") {
+    var exports = g.TelemyDockBridgeHost;
+    if (!exports || typeof exports.createWindowTelemyDockBridgeHost !== "function") {
       throw new Error("No compatible dock bridge host is available");
     }
     try {
-      var host = exports.createWindowAegisDockBridgeHost();
-      g.aegisDockHost = host;
+      var host = exports.createWindowTelemyDockBridgeHost();
+      g.telemyDockHost = host;
       return host;
     } catch (_e) {
       throw new Error("Failed to initialize dock bridge host");
@@ -166,7 +166,7 @@
     try {
       return { ok: true, value: JSON.parse(String(jsonText)) };
     } catch (_e) {
-      dispatch("aegis:dock:error", {
+      dispatch("telemy:dock:error", {
         message: errorMsg || "Invalid JSON",
         jsonText: String(jsonText),
       });
@@ -179,7 +179,7 @@
     if (typeof document === "undefined" || typeof document.title !== "string") return false;
     if (typeof encodeURIComponent !== "function") return false;
     try {
-      var actionTitle = "__AEGIS_DOCK_ACTION__:" + encodeURIComponent(actionJson);
+      var actionTitle = "__TELEMY_DOCK_ACTION__:" + encodeURIComponent(actionJson);
       document.title = actionTitle;
       return true;
     } catch (_e) {
@@ -192,7 +192,7 @@
     if (typeof location === "undefined") return false;
     if (typeof encodeURIComponent !== "function") return false;
     try {
-      var actionHash = "__AEGIS_DOCK_ACTION__:" + encodeURIComponent(actionJson);
+      var actionHash = "__TELEMY_DOCK_ACTION__:" + encodeURIComponent(actionJson);
       if (location.hash === "#" + actionHash) {
         location.hash = "";
       }
@@ -211,7 +211,7 @@
 
   function signalDockReadyToNative() {
     if (typeof encodeURIComponent !== "function") return false;
-    var marker = "__AEGIS_DOCK_READY__:" + encodeURIComponent(String(Date.now()));
+    var marker = "__TELEMY_DOCK_READY__:" + encodeURIComponent(String(Date.now()));
     var sent = false;
     try {
       if (typeof document !== "undefined" && typeof document.title === "string") {
@@ -248,7 +248,7 @@
       if (typeof host.receiveStatusSnapshot === "function") {
         ok = host.receiveStatusSnapshot(snapshot);
       }
-      dispatch("aegis:dock:status-snapshot", { ok: ok });
+      dispatch("telemy:dock:status-snapshot", { ok: ok });
       return ok;
     },
 
@@ -265,7 +265,7 @@
       if (typeof host.receiveIpcEnvelope === "function") {
         host.receiveIpcEnvelope(envelope);
       }
-      dispatch("aegis:dock:ipc-envelope", { ok: true, envelope: envelope || null });
+      dispatch("telemy:dock:ipc-envelope", { ok: true, envelope: envelope || null });
       return true;
     },
 
@@ -279,7 +279,7 @@
 
     receiveSceneSnapshot: function (payload) {
       var ok = ensureHost().setObsSceneSnapshot(payload);
-      dispatch("aegis:dock:scene-snapshot", { ok: ok, payload: payload || null });
+      dispatch("telemy:dock:scene-snapshot", { ok: ok, payload: payload || null });
       return ok;
     },
 
@@ -294,7 +294,7 @@
           ok = nativeApi.receiveSceneSnapshot(parsed.value);
         }
       }
-      dispatch("aegis:dock:scene-snapshot-json", { ok: ok });
+      dispatch("telemy:dock:scene-snapshot-json", { ok: ok });
       return ok;
     },
 
@@ -302,7 +302,7 @@
 
     receivePipeStatus: function (status, reason) {
       var ok = ensureHost().setPipeStatus(status, reason);
-      dispatch("aegis:dock:pipe-status", { ok: ok, status: status || null, reason: reason || null });
+      dispatch("telemy:dock:pipe-status", { ok: ok, status: status || null, reason: reason || null });
       return ok;
     },
 
@@ -310,7 +310,7 @@
 
     receiveCurrentScene: function (sceneName) {
       var ok = ensureHost().setObsCurrentScene(sceneName);
-      dispatch("aegis:dock:current-scene", { ok: ok, sceneName: sceneName || null });
+      dispatch("telemy:dock:current-scene", { ok: ok, sceneName: sceneName || null });
       return ok;
     },
 
@@ -318,7 +318,7 @@
 
     receiveSceneSwitchCompleted: function (result) {
       var ok = ensureHost().notifySceneSwitchCompleted(result);
-      dispatch("aegis:dock:scene-switch-completed", { ok: ok, result: result || null });
+      dispatch("telemy:dock:scene-switch-completed", { ok: ok, result: result || null });
       return ok;
     },
 
@@ -333,7 +333,7 @@
           ok = nativeApi.receiveSceneSwitchCompleted(parsed.value);
         }
       }
-      dispatch("aegis:dock:scene-switch-completed-json", { ok: ok });
+      dispatch("telemy:dock:scene-switch-completed-json", { ok: ok });
       return ok;
     },
 
@@ -390,7 +390,7 @@
         // RF-016: Sanitize relay_start results before dispatching as CustomEvent
         // to prevent secret fields from leaking into the CEF page event bus.
         var dispatchPayload = nativeApi._sanitizeRelayStartResult(parsed.value);
-        dispatch("aegis:dock:action-native-result", dispatchPayload);
+        dispatch("telemy:dock:action-native-result", dispatchPayload);
       }
       return ok || (parsed.ok);
     },
@@ -429,13 +429,13 @@
         try {
           hostResult = host.sendDockAction(action);
         } catch (err) {
-          dispatch("aegis:dock:error", {
+          dispatch("telemy:dock:error", {
             message: "Host sendDockAction threw",
             error: String((err && err.message) || err || ""),
           });
         }
       } else {
-        dispatch("aegis:dock:action-unsupported", { action: action || null });
+        dispatch("telemy:dock:action-unsupported", { action: action || null });
       }
       return hostResult != null ? hostResult : forwarded;
     },
@@ -451,7 +451,7 @@
           host.sendDockAction(parsed.value);
           hostOk = true;
         } catch (err) {
-          dispatch("aegis:dock:error", {
+          dispatch("telemy:dock:error", {
             message: "Host sendDockActionJson threw",
             error: String((err && err.message) || err || ""),
           });
@@ -475,7 +475,7 @@
     },
   };
 
-  g.aegisDockNative = nativeApi;
+  g.telemyDockNative = nativeApi;
   signalDockReadyToNative();
-  dispatch("aegis:dock:native-ready", { ok: true });
+  dispatch("telemy:dock:native-ready", { ok: true });
 })(typeof window !== "undefined" ? window : undefined);

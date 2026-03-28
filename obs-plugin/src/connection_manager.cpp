@@ -2,7 +2,7 @@
 #include "config_vault.h"
 #include "relay_client.h"
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 #include "dock_replay_cache.h"
 #include <obs-module.h>
 #endif
@@ -26,9 +26,9 @@
 #include <utility>
 
 // Forward declaration — defined in obs_plugin_entry.cpp
-std::string BuildRelaySessionDetailJson(const aegis::RelaySession& session);
+std::string BuildRelaySessionDetailJson(const telemy::RelaySession& session);
 
-namespace aegis {
+namespace telemy {
 
 namespace {
 
@@ -197,9 +197,9 @@ void ConnectionManager::Initialize(Vault* vault, HttpsClient* http,
 
     LoadConnections();
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
     blog(LOG_INFO,
-         "[aegis-cm] initialized: host=%s shared_key=%s",
+         "[telemy-cm] initialized: host=%s shared_key=%s",
          api_host.c_str(),
          relay_shared_key.empty() ? "missing" : "configured");
 #endif
@@ -260,8 +260,8 @@ void ConnectionManager::Shutdown()
         active_clients_.clear();
     }
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
-    blog(LOG_INFO, "[aegis-cm] shutdown complete");
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
+    blog(LOG_INFO, "[telemy-cm] shutdown complete");
 #endif
 }
 
@@ -278,8 +278,8 @@ void ConnectionManager::Reconfigure(const std::string& api_host,
             byor_relay_->Reconfigure(api_host, relay_shared_key);
         } else if (!api_host.empty() && http_) {
             byor_relay_ = std::make_shared<RelayClient>(*http_, api_host, relay_shared_key);
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
-            blog(LOG_INFO, "[aegis-cm] byor relay client created on reconfigure: host=%s",
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
+            blog(LOG_INFO, "[telemy-cm] byor relay client created on reconfigure: host=%s",
                  api_host.c_str());
 #endif
         }
@@ -530,7 +530,7 @@ void ConnectionManager::StatsPollingLoop()
 // Legacy async relay lifecycle
 // ---------------------------------------------------------------------------
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 void ConnectionManager::SetConnectionStatus(const std::string& id,
                                             const std::string& status,
@@ -567,7 +567,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
 
     if (!relay) {
         blog(LOG_WARNING,
-             "[aegis-cm] StartManagedRelayAsync: relay not configured request_id=%s",
+             "[telemy-cm] StartManagedRelayAsync: relay not configured request_id=%s",
              request_id.c_str());
         if (!connection_id.empty()) {
             SetConnectionStatus(connection_id, "idle", "relay_not_configured");
@@ -608,7 +608,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
         }
         if (old_worker.joinable()) {
             old_worker.join();
-            blog(LOG_INFO, "[aegis-cm] relay_start: cancelled previous worker for conn=%s",
+            blog(LOG_INFO, "[telemy-cm] relay_start: cancelled previous worker for conn=%s",
                  conn_id.c_str());
         }
     }
@@ -663,7 +663,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                         while (std::chrono::steady_clock::now() < deadline) {
                             if (cancel_flag->load()) {
                                 blog(LOG_INFO,
-                                     "[aegis-cm] relay_start cancelled: request_id=%s conn=%s",
+                                     "[telemy-cm] relay_start cancelled: request_id=%s conn=%s",
                                      req_id.c_str(), conn_id.c_str());
                                 reset_on_failure();
                                 return;
@@ -693,7 +693,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                                 relay->StartHeartbeatLoop(jwt, polled->session_id,
                                                          heartbeat_interval_sec);
                                 blog(LOG_INFO,
-                                     "[aegis-cm] relay_start completed: request_id=%s"
+                                     "[telemy-cm] relay_start completed: request_id=%s"
                                      " conn=%s region=%s status=%s",
                                      req_id.c_str(),
                                      conn_id.c_str(),
@@ -708,7 +708,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
 
                             if (polled->status == "failed" || polled->status == "stopped") {
                                 blog(LOG_WARNING,
-                                     "[aegis-cm] relay_start failed: request_id=%s"
+                                     "[telemy-cm] relay_start failed: request_id=%s"
                                      " conn=%s error=relay_start_failed",
                                      req_id.c_str(), conn_id.c_str());
                                 reset_on_failure();
@@ -728,13 +728,13 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
 
                         if (cancel_flag->load()) {
                             blog(LOG_INFO,
-                                 "[aegis-cm] relay_start cancelled: request_id=%s conn=%s",
+                                 "[telemy-cm] relay_start cancelled: request_id=%s conn=%s",
                                  req_id.c_str(), conn_id.c_str());
                             reset_on_failure();
                             return;
                         }
                         blog(LOG_WARNING,
-                             "[aegis-cm] relay_start failed: request_id=%s"
+                             "[telemy-cm] relay_start failed: request_id=%s"
                              " conn=%s error=provision_timeout",
                              req_id.c_str(), conn_id.c_str());
                         reset_on_failure();
@@ -747,7 +747,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                         relay->StartHeartbeatLoop(jwt, session->session_id,
                                                   heartbeat_interval_sec);
                         blog(LOG_INFO,
-                             "[aegis-cm] relay_start completed: request_id=%s"
+                             "[telemy-cm] relay_start completed: request_id=%s"
                              " conn=%s region=%s status=%s",
                              req_id.c_str(),
                              conn_id.c_str(),
@@ -758,7 +758,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                         stats_cv_.notify_all();
                     } else {
                         blog(LOG_WARNING,
-                             "[aegis-cm] relay_start failed: request_id=%s"
+                             "[telemy-cm] relay_start failed: request_id=%s"
                              " conn=%s error=relay_start_failed",
                              req_id.c_str(), conn_id.c_str());
                         reset_on_failure();
@@ -767,7 +767,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                     }
                 } else {
                     blog(LOG_WARNING,
-                         "[aegis-cm] relay_start failed: request_id=%s"
+                         "[telemy-cm] relay_start failed: request_id=%s"
                          " conn=%s error=relay_start_failed",
                          req_id.c_str(), conn_id.c_str());
                     reset_on_failure();
@@ -776,7 +776,7 @@ void ConnectionManager::StartManagedRelayAsync(const std::string& jwt,
                 }
             } catch (const std::exception& e) {
                 blog(LOG_WARNING,
-                     "[aegis-cm] relay_start exception: request_id=%s conn=%s error=%s",
+                     "[telemy-cm] relay_start exception: request_id=%s conn=%s error=%s",
                      req_id.c_str(), conn_id.c_str(), e.what());
                 reset_on_failure();
                 EmitDockActionResult("relay_start", req_id, "failed", false, e.what(), "");
@@ -809,7 +809,7 @@ void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
 
     if (!relay || !relay->HasActiveSession()) {
         blog(LOG_WARNING,
-             "[aegis-cm] StopManagedRelayAsync: no active session request_id=%s conn=%s",
+             "[telemy-cm] StopManagedRelayAsync: no active session request_id=%s conn=%s",
              request_id.c_str(), connection_id.c_str());
         EmitDockActionResult("relay_stop", request_id, "failed", false,
                              "no_active_session", "");
@@ -839,12 +839,12 @@ void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
                 const bool ok = relay->Stop(jwt, sid);
                 if (ok) {
                     blog(LOG_INFO,
-                         "[aegis-cm] relay_stop completed: request_id=%s conn=%s",
+                         "[telemy-cm] relay_stop completed: request_id=%s conn=%s",
                          req_id.c_str(), conn_id.c_str());
                     EmitDockActionResult("relay_stop", req_id, "completed", true, "", "");
                 } else {
                     blog(LOG_WARNING,
-                         "[aegis-cm] relay_stop failed: request_id=%s"
+                         "[telemy-cm] relay_stop failed: request_id=%s"
                          " conn=%s error=relay_stop_failed",
                          req_id.c_str(), conn_id.c_str());
                     EmitDockActionResult("relay_stop", req_id, "failed", false,
@@ -859,7 +859,7 @@ void ConnectionManager::StopManagedRelayAsync(const std::string& jwt,
                 stats_cv_.notify_all();
             } catch (const std::exception& e) {
                 blog(LOG_WARNING,
-                     "[aegis-cm] relay_stop exception: request_id=%s conn=%s error=%s",
+                     "[telemy-cm] relay_stop exception: request_id=%s conn=%s error=%s",
                      req_id.c_str(), conn_id.c_str(), e.what());
                 EmitDockActionResult("relay_stop", req_id, "failed", false, e.what(), "");
             }
@@ -901,7 +901,7 @@ void ConnectionManager::AutoProvisionSavedConnections(const std::string& jwt,
                                                       int heartbeat_interval_sec)
 {
     if (jwt.empty()) {
-        blog(LOG_INFO, "[aegis-cm] auto-provision skipped: no JWT");
+        blog(LOG_INFO, "[telemy-cm] auto-provision skipped: no JWT");
         return;
     }
 
@@ -916,11 +916,11 @@ void ConnectionManager::AutoProvisionSavedConnections(const std::string& jwt,
     }
 
     if (managed.empty()) {
-        blog(LOG_INFO, "[aegis-cm] auto-provision: no managed connections");
+        blog(LOG_INFO, "[telemy-cm] auto-provision: no managed connections");
         return;
     }
 
-    blog(LOG_INFO, "[aegis-cm] auto-provision: scheduling %zu managed connection(s)",
+    blog(LOG_INFO, "[telemy-cm] auto-provision: scheduling %zu managed connection(s)",
          managed.size());
 
     {
@@ -959,7 +959,7 @@ void ConnectionManager::AutoProvisionSavedConnections(const std::string& jwt,
                 const std::string request_id =
                     "auto_provision_" + std::to_string(now_ms) + "_" + std::to_string(i + 1);
                 blog(LOG_INFO,
-                     "[aegis-cm] auto-provision start: conn=%s region=%s slot=%d",
+                     "[telemy-cm] auto-provision start: conn=%s region=%s slot=%d",
                      conn.id.c_str(), conn.managed_region.c_str(), conn.stream_slot_number);
                 StartManagedRelayAsync(jwt, request_id, heartbeat_interval_sec, conn.id);
             }
@@ -975,7 +975,7 @@ bool ConnectionManager::HasActiveSessionForConnection(const std::string&) const 
 void ConnectionManager::StopManagedRelaySync(const std::string&, const std::string&, const std::string&) {}
 void ConnectionManager::AutoProvisionSavedConnections(const std::string&, int) {}
 
-#endif  // AEGIS_OBS_PLUGIN_BUILD
+#endif  // TELEMY_OBS_PLUGIN_BUILD
 
 // ---------------------------------------------------------------------------
 // BYOR direct connect/disconnect
@@ -1219,8 +1219,8 @@ void ConnectionManager::RemoveManagedConnections()
     for (const auto& id : managed_ids) {
         RemoveConnection(id);
     }
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
-    blog(LOG_INFO, "[aegis-cm] removed %zu managed connections (sign-out)",
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
+    blog(LOG_INFO, "[telemy-cm] removed %zu managed connections (sign-out)",
          managed_ids.size());
 #endif
 }
@@ -1306,8 +1306,8 @@ void ConnectionManager::SaveConnections()
         }
     }
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
-    blog(LOG_INFO, "[aegis-cm] saved %zu connections to disk",
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
+    blog(LOG_INFO, "[telemy-cm] saved %zu connections to disk",
          conns.size());
 #endif
 }
@@ -1372,10 +1372,10 @@ void ConnectionManager::LoadConnections()
         connections_ = std::move(loaded);
     }
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
-    blog(LOG_INFO, "[aegis-cm] loaded %zu connections from disk",
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
+    blog(LOG_INFO, "[telemy-cm] loaded %zu connections from disk",
          connections_.size());
 #endif
 }
 
-}  // namespace aegis
+}  // namespace telemy

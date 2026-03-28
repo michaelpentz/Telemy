@@ -13,7 +13,7 @@
 #include <mutex>
 #include <string>
 
-#if defined(AEGIS_OBS_PLUGIN_BUILD)
+#if defined(TELEMY_OBS_PLUGIN_BUILD)
 
 // ---------------------------------------------------------------------------
 // Dock replay cache — last-known state replayed to newly connected dock pages.
@@ -177,4 +177,4 @@ DockReplayCache& GetDockReplayCacheRef();
 std::mutex& GetDockJsDeliveryValidationMutex();
 DockJsDeliveryValidationState& GetDockJsDeliveryValidationRef();
 
-#endif // AEGIS_OBS_PLUGIN_BUILD
+#endif // TELEMY_OBS_PLUGIN_BUILD

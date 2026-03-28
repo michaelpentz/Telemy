@@ -8,7 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 
-namespace aegis {
+namespace telemy {
 
 struct RelaySession {
     std::string session_id;
@@ -188,7 +188,7 @@ private:
 
 class RelayClient {
 public:
-    // api_host is just the hostname, e.g. "api.aegis.example.com"
+    // api_host is just the hostname, e.g. "api.telemy.example.com"
     RelayClient(HttpsClient& http,
                 const std::string& api_host,
                 const std::string& relay_shared_key = "");
@@ -293,5 +293,5 @@ private:
     void ClearStatsSnapshots();
 };
 
-}  // namespace aegis
+}  // namespace telemy
 
