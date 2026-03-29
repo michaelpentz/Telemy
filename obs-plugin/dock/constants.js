@@ -2,33 +2,11 @@
 // CONSTANTS & THEME
 // =============================================================================
 
-// Canonical engine states (STATE_MACHINE_v1.md)
-export const ENGINE_STATES = [
-  { id: "STUDIO",         short: "STU",  color: "#5ba3f5", bgActive: "#0d1a2e", borderActive: "#1a3a5a" },
-  { id: "IRL_CONNECTING",  short: "CONN", color: "#fbbf24", bgActive: "#261e0d", borderActive: "#3a2a0d" },
-  { id: "IRL_ACTIVE",      short: "ACTV", color: "#4ade80", bgActive: "#0d2618", borderActive: "#1a3a1a" },
-  { id: "IRL_GRACE",       short: "GRC",  color: "#a78bfa", bgActive: "#1a0d26", borderActive: "#2a1a3a" },
-  { id: "DEGRADED",        short: "DRGD", color: "#fbbf24", bgActive: "#261e0d", borderActive: "#3a2a0d" },
-  { id: "FATAL",           short: "FATL", color: "#da3633", bgActive: "#260d0d", borderActive: "#3a1a1a" },
-];
-
-export const HEALTH_COLORS = {
-  healthy:  "#2ea043",
-  degraded: "#d29922",
-  offline:  "#da3633",
-};
-
 export const SCENE_INTENT_COLORS = {
   LIVE:    { bg: "#1a3a1a", border: "#2ea043", text: "#4ade80" },
   BRB:     { bg: "#2a1a2a", border: "#8b5cf6", text: "#a78bfa" },
   HOLD:    { bg: "#3a2a1a", border: "#d29922", text: "#fbbf24" },
   OFFLINE: { bg: "#1a1a2a", border: "#4a4f5c", text: "#8b8f98" },
-};
-
-export const PIPE_STATUS_COLORS = {
-  ok:       "#2ea043",
-  degraded: "#d29922",
-  down:     "#da3633",
 };
 
 // Per-key colors for settings toggles (bridge doesn't provide colors)
