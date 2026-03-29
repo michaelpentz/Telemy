@@ -681,7 +681,7 @@ bool SetDockSettingValueByKey(const std::string& key, bool value) {
             body["enabled"] = value;
             body["provider"] = QString("twitch");
             body["command_prefix"] = QString::fromStdString(g_chatbot_runtime.GetCommandPrefix());
-            body["allowed_role"] = QString("broadcaster");
+            body["allowed_role"] = QString::fromStdString(g_chatbot_runtime.GetAllowedRole());
             body["announce_scene_switches"] = g_chatbot_runtime.GetAnnounceSceneSwitches();
             body["announce_auto_resume"] = g_chatbot_runtime.GetAnnounceAutoResume();
             body["send_status_replies"] = g_chatbot_runtime.GetSendStatusReplies();
@@ -1092,42 +1092,40 @@ bool DispatchDockAction(const std::string& action_json,
 
         std::ifstream in(prefs_path, std::ios::in | std::ios::binary);
         if (!in.is_open()) {
-            // v0.0.4 migration: try old telemy-obs-shim config path
-            std::string old_prefs_path;
-            {
-                auto pos = prefs_path.rfind("telemy-obs-plugin");
-                if (pos != std::string::npos) {
-                    old_prefs_path = prefs_path.substr(0, pos) + "telemy-obs-shim/dock_scene_prefs.json";
-                }
-            }
-            if (!old_prefs_path.empty()) {
+            // Migration: try legacy config paths (aegis-obs-plugin, telemy-obs-shim)
+            static const char* kLegacyModules[] = { "aegis-obs-plugin", "telemy-obs-shim" };
+            auto pos = prefs_path.rfind("telemy-obs-plugin");
+            for (const char* legacy : kLegacyModules) {
+                if (pos == std::string::npos) break;
+                std::string old_prefs_path = prefs_path.substr(0, pos) + legacy + "/dock_scene_prefs.json";
                 std::ifstream old_in(old_prefs_path, std::ios::in | std::ios::binary);
-                if (old_in.is_open()) {
-                    std::ostringstream old_contents;
-                    old_contents << old_in.rdbuf();
-                    old_in.close();
-                    const std::string old_data = old_contents.str();
-                    blog(LOG_INFO,
-                        "[telemy-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s "
-                        "migrated_from=telemy-obs-shim bytes=%d",
-                        request_id.c_str(),
-                        static_cast<int>(old_data.size()));
-                    // Save to new path for future loads
-                    auto dir_end = prefs_path.rfind('/');
-                    if (dir_end != std::string::npos) {
-                        QDir().mkpath(QString::fromStdString(prefs_path.substr(0, dir_end)));
-                    }
-                    std::ofstream migrate_out(prefs_path, std::ios::out | std::ios::trunc | std::ios::binary);
-                    if (migrate_out.is_open()) {
-                        migrate_out.write(old_data.data(), static_cast<std::streamsize>(old_data.size()));
-                        migrate_out.close();
-                    }
-                    EmitDockActionResult(action_type, request_id, "completed", true, "", old_data);
-                    return true;
+                if (!old_in.is_open()) continue;
+
+                std::ostringstream old_contents;
+                old_contents << old_in.rdbuf();
+                old_in.close();
+                const std::string old_data = old_contents.str();
+                blog(LOG_INFO,
+                    "[telemy-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s "
+                    "migrated_from=%s bytes=%d",
+                    request_id.c_str(), legacy,
+                    static_cast<int>(old_data.size()));
+                // Save to new path for future loads
+                auto dir_end = prefs_path.rfind('/');
+                if (dir_end != std::string::npos) {
+                    QDir().mkpath(QString::fromStdString(prefs_path.substr(0, dir_end)));
                 }
+                std::ofstream migrate_out(prefs_path, std::ios::out | std::ios::trunc | std::ios::binary);
+                if (migrate_out.is_open()) {
+                    migrate_out.write(old_data.data(), static_cast<std::streamsize>(old_data.size()));
+                    migrate_out.close();
+                }
+                (void)g_chatbot_runtime.ApplyPrefsJson(old_data);
+                EmitDockActionResult(action_type, request_id, "completed", true, "", old_data);
+                return true;
             }
 
-            // No prefs file at either path -- return empty object so the dock hydrates cleanly
+            // No prefs file at any path -- return empty object so the dock hydrates cleanly
             blog(LOG_INFO,
                 "[telemy-obs-plugin] dock action completed: type=load_scene_prefs request_id=%s detail=no_prefs_file",
                 request_id.c_str());
@@ -1144,6 +1142,36 @@ bool DispatchDockAction(const std::string& action_json,
             request_id.c_str(),
             static_cast<int>(data.size()));
         EmitDockActionResult(action_type, request_id, "completed", true, "", data);
+
+        // Auto-push rules to backend on dock load if chatbot is enabled
+        if (g_config.chat_bot) {
+            std::thread([]() {
+                // Brief delay to let auth refresh complete after OBS startup
+                std::this_thread::sleep_for(std::chrono::seconds(3));
+                const std::string jwt = CurrentControlPlaneJwtForActions();
+                if (jwt.empty()) return;
+                QJsonObject body;
+                body["enabled"] = true;
+                body["provider"] = QString("twitch");
+                body["command_prefix"] = QString::fromStdString(g_chatbot_runtime.GetCommandPrefix());
+                body["allowed_role"] = QString::fromStdString(g_chatbot_runtime.GetAllowedRole());
+                body["announce_scene_switches"] = g_chatbot_runtime.GetAnnounceSceneSwitches();
+                body["announce_auto_resume"] = g_chatbot_runtime.GetAnnounceAutoResume();
+                body["send_status_replies"] = g_chatbot_runtime.GetSendStatusReplies();
+                body["rules"] = g_chatbot_runtime.GetRulesJson();
+                std::string payload = QJsonDocument(body).toJson(QJsonDocument::Compact).toStdString();
+                try {
+                    telemy::HttpsClient http;
+                    std::wstring wide_jwt(jwt.begin(), jwt.end());
+                    auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/config", payload, wide_jwt);
+                    if (resp.ok()) {
+                        blog(LOG_INFO, "[chat-config] startup push: rules synced");
+                    } else {
+                        blog(LOG_WARNING, "[chat-config] startup push failed: %d", resp.status_code);
+                    }
+                } catch (...) {}
+            }).detach();
+        }
         return true;
     }
 
@@ -1191,6 +1219,34 @@ bool DispatchDockAction(const std::string& action_json,
             static_cast<int>(prefs_json.size()));
         EmitCurrentStatusSnapshotToDock("save_scene_prefs", false);
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
+
+        // Auto-push updated rules to backend if chatbot is enabled
+        if (g_config.chat_bot) {
+            std::thread([]() {
+                const std::string jwt = CurrentControlPlaneJwtForActions();
+                if (jwt.empty()) return;
+                QJsonObject body;
+                body["enabled"] = true;
+                body["provider"] = QString("twitch");
+                body["command_prefix"] = QString::fromStdString(g_chatbot_runtime.GetCommandPrefix());
+                body["allowed_role"] = QString::fromStdString(g_chatbot_runtime.GetAllowedRole());
+                body["announce_scene_switches"] = g_chatbot_runtime.GetAnnounceSceneSwitches();
+                body["announce_auto_resume"] = g_chatbot_runtime.GetAnnounceAutoResume();
+                body["send_status_replies"] = g_chatbot_runtime.GetSendStatusReplies();
+                body["rules"] = g_chatbot_runtime.GetRulesJson();
+                std::string payload = QJsonDocument(body).toJson(QJsonDocument::Compact).toStdString();
+                try {
+                    telemy::HttpsClient http;
+                    std::wstring wide_jwt(jwt.begin(), jwt.end());
+                    auto resp = http.Post(L"api.telemyapp.com", L"/api/v1/chat/config", payload, wide_jwt);
+                    if (resp.ok()) {
+                        blog(LOG_INFO, "[chat-config] auto-push: rules updated");
+                    } else {
+                        blog(LOG_WARNING, "[chat-config] auto-push failed: %d", resp.status_code);
+                    }
+                } catch (...) {}
+            }).detach();
+        }
         return true;
     }
 

@@ -53,6 +53,7 @@ public:
         const ChatbotCommandRequest& request) const;
 
     std::string GetCommandPrefix() const;
+    std::string GetAllowedRole() const;
     bool GetAnnounceSceneSwitches() const;
     bool GetAnnounceAutoResume() const;
     bool GetSendStatusReplies() const;
@@ -71,6 +72,7 @@ private:
         bool announce_auto_resume = true;
         bool send_status_replies = true;
         bool broadcaster_only = true;
+        std::string allowed_role = "broadcaster";
         std::string identity_label = "@TelemyBot";
         std::string runtimeStatus;
         std::string runtimeLabel;

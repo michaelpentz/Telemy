@@ -128,6 +128,8 @@ bool ChatbotRuntime::ApplyPrefsJson(const std::string& prefs_json) {
         chatbot.value(QStringLiteral("sendStatusReplies")).toBool(true);
     next.broadcaster_only = !chatbot.contains(QStringLiteral("broadcasterOnly")) ||
         chatbot.value(QStringLiteral("broadcasterOnly")).toBool(true);
+    next.allowed_role = chatbot.value(QStringLiteral("allowedRole")).toString(
+        QStringLiteral("broadcaster")).toStdString();
     next.identity_label = chatbot.value(QStringLiteral("identityLabel")).toString(
         QStringLiteral("@TelemyBot")).toStdString();
 
@@ -170,6 +172,11 @@ bool ChatbotRuntime::ApplyPrefsJson(const std::string& prefs_json) {
 std::string ChatbotRuntime::GetCommandPrefix() const {
     std::lock_guard<std::mutex> lock(mu_);
     return config_.command_prefix.empty() ? "!telemy" : config_.command_prefix;
+}
+
+std::string ChatbotRuntime::GetAllowedRole() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return config_.allowed_role.empty() ? "broadcaster" : config_.allowed_role;
 }
 
 bool ChatbotRuntime::GetAnnounceSceneSwitches() const {
@@ -231,12 +238,15 @@ QJsonObject ChatbotRuntime::BuildSnapshotJson(bool enabled) const {
     } else if (cfg.provider == "none") {
         runtime_status = QStringLiteral("disabled");
         runtime_label = QStringLiteral("Provider off");
+    } else if (!cfg.runtimeStatus.empty()) {
+        // Backend-confirmed status takes precedence (e.g. "active" after
+        // successful /chat/config call, which knows the channel from the
+        // linked OAuth account even when local prefs lack a channel field).
+        runtime_status = QString::fromStdString(cfg.runtimeStatus);
+        runtime_label = QString::fromStdString(cfg.runtimeLabel);
     } else if (TrimCopy(cfg.channel).empty()) {
         runtime_status = QStringLiteral("config_error");
         runtime_label = QStringLiteral("Set a channel to enable commands");
-    } else if (!cfg.runtimeStatus.empty()) {
-        runtime_status = QString::fromStdString(cfg.runtimeStatus);
-        runtime_label = QString::fromStdString(cfg.runtimeLabel);
     } else {
         runtime_status = QStringLiteral("ready");
         runtime_label = QStringLiteral("Native command parser ready");
