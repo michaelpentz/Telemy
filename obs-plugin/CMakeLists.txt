@@ -5,7 +5,6 @@ option(TELEMY_BUILD_OBS_PLUGIN "Build OBS plugin target (requires OBS Studio SDK
 option(TELEMY_BUILD_TESTS "Build Telemy unit tests (Catch2 v3, requires Qt6::Core)" OFF)
 option(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST "Enable OBS plugin browser-dock host wiring scaffold" OFF)
 option(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF "Enable OBS browser-panel/QCef-backed dock host implementation" OFF)
-option(TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE "Enable Qt WebEngine-backed OBS browser dock host implementation" OFF)
 option(TELEMY_STAGE_DOCK_BRIDGE_ASSETS "Stage dock bridge JS assets next to OBS plugin build outputs" ON)
 set(TELEMY_DOCK_BRIDGE_ASSET_SOURCE_ROOT "" CACHE PATH "Optional override root containing telemy-dock-bridge*.js assets")
 
@@ -139,20 +138,6 @@ if (TELEMY_BUILD_OBS_PLUGIN)
         )
       else()
         message(WARNING "TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_OBS_CEF=ON but Qt6 Core/Widgets and/or obs-browser panel headers were not found; building scaffold fallback only.")
-      endif()
-    endif()
-    if (TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE)
-      find_package(Qt6 COMPONENTS Core Widgets WebEngineCore WebEngineWidgets QUIET)
-      if (Qt6WebEngineCore_FOUND AND Qt6WebEngineWidgets_FOUND)
-        target_compile_definitions(telemy-obs-plugin PRIVATE TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE=1)
-        target_link_libraries(telemy-obs-plugin PRIVATE
-          Qt6::Core
-          Qt6::Widgets
-          Qt6::WebEngineCore
-          Qt6::WebEngineWidgets
-        )
-      else()
-        message(WARNING "TELEMY_ENABLE_OBS_BROWSER_DOCK_HOST_QT_WEBENGINE=ON but Qt6 WebEngine components were not found; building scaffold fallback only.")
       endif()
     endif()
   endif()
