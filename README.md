@@ -15,7 +15,7 @@ No standalone process. No IPC. No Rust dependency.
 | `obs-plugin/` | C++ OBS plugin — metrics collection, relay management, dock hosting |
 | `control-plane/` | Go backend — relay provisioning, JWT auth, session state |
 | `srtla-fork/` | Forked `srtla_rec` with per-link stats + ASN lookup |
-| `srtla-receiver-fork/` | Forked Docker image (`michaelpentz/srtla-receiver`) |
+| `srtla-receiver-fork/` | Forked Docker image (`telemyapp/srtla-receiver`) |
 | `obs-plugin/dock/` | React dock UI source (esbuild bundle) |
 
 ## Quick Build

@@ -31,8 +31,8 @@ HANDOFF_STATUS_ARCHIVE.md
 AGENT_RELAY.md
 GEMINI_RELAY.md
 
-# Internal plans (kept locally, not pushed)
-docs/plans/
+# Internal docs (kept locally, not pushed)
+docs/
 
 control-plane/.gocache/
 control-plane/.gotmp/

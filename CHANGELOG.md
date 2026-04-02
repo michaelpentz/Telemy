@@ -28,18 +28,18 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 
 ### Added - Phase 1: Provider Abstraction
 
-- **InstanceID rename** - Renamed AWSInstanceID -> InstanceID across provisioner interface, handlers, store, model, types. Migration 010 renames DB column. Removes AWS coupling from shared types.
-- **EIP behind AWS provider** - Moved Elastic IP allocation/association/DNS logic fully behind the AWSProvisioner boundary. unProvisionPipeline() no longer type-asserts the provisioner - EIP orchestration is an internal AWS concern.
+- **InstanceID rename** - Renamed InstanceID across provisioner interface, handlers, store, model, types. Migration 010 renames DB column. Removes cloud coupling from shared types.
+- **Provider encapsulation** - unProvisionPipeline() no longer type-asserts the provisioner — IP orchestration is an internal cloud concern.
 
 ### Added - Phase 2: BYOR (Bring Your Own Relay)
 
 - **BYORProvisioner** (internal/relay/byor.go) - Implements Provisioner interface for user-owned relays. Reads stored relay config (host, port, stream key) from DB instead of launching cloud infrastructure.
-- **Migration 011** - Adds yor_host, yor_port, yor_stream_key columns to users table. Updates CHECK constraint on relay_sessions.provider to include 'byor'.
+relay_sessions.provider to include 'byor'.
 - **Relay config endpoint** - POST /api/v1/user/relay-config allows free-tier users to save their BYOR relay connection details.
-- **Per-user routing** - handleRelayStart() routes based on plan_tier: free -> BYORProvisioner, managed tiers -> AWSProvisioner. Returns yor_config_required error for unconfigured free users.
-- **relay_mode in auth session** - GET /api/v1/auth/session returns relay_mode field (yor/managed/none) so the dock UI can show appropriate controls.
+- **Per-user routing** - handleRelayStart() routes based on plan_tier: free -> BYORProvisioner, managed tiers -> cloud provisioner. Returns yor_config_required error for unconfigured free users.
+relay_mode field (yor/managed/none) so the dock UI can show appropriate controls.
 - **Plugin ConnectDirect** - C++ plugin ConnectDirect/DisconnectDirect path for BYOR relays, bypassing managed provisioning lifecycle.
-- **Dock BYOR UI** - BYOR settings panel in telemy-dock.jsx with toggle, host/port/stream inputs, connect/disconnect button. Bridge JS wired for relay_connect_direct/relay_disconnect_direct actions.
+relay_disconnect_direct actions.
 - **BYOR test plan** - Integration test plan covering Go unit tests, C++ plugin tests, E2E manual procedure, and regression tests.
 - **Graceful stats degradation** - Plugin handles missing/unreachable stats endpoints on non-SLS relays without erroring.
 ## [0.0.4] - 2026-03-16
@@ -114,15 +114,15 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 - **MetricsCollector** (`metrics_collector.cpp`) - polls OBS C API (`obs_enum_outputs`, `obs_get_active_fps`, general stats, studio mode), Win32 system CPU/memory (`GetSystemTimes`/`GlobalMemoryStatusEx`), and NVIDIA NVML GPU metrics every 500ms. Produces a JSON telemetry snapshot with delta-based network throughput and encoding lag.
 - **ConfigVault** (`config_vault.cpp`) - JSON config at `%APPDATA%/Telemy/config.json` with DPAPI-encrypted vault (`CryptProtectData`/`CryptUnprotectData`) at `vault.json`. Round-trip safe via `QJsonDocument`.
 - **HttpsClient** (`https_client.cpp`) - WinHTTP RAII wrapper for outbound HTTPS calls. Supports Bearer auth, sync calls on worker threads. Zero external deps beyond Windows SDK.
-- **RelayClient** (`relay_client.cpp`) - relay lifecycle management (start/stop/heartbeat). 30s heartbeat interval, 5min server-side TTL. Communicates with AWS Go control plane via HTTPS.
+- **RelayClient** (`relay_client.cpp`) - relay lifecycle management (start/stop/heartbeat). 30s heartbeat interval, 5min server-side TTL. Communicates with Go control plane via HTTPS.
 - **DockHost** (`obs_browser_dock_host_scaffold.cpp`) - creates a CEF browser dock panel in OBS, injects the JS bridge, pushes telemetry snapshots into the dock via `ExecuteJavaScript()`. Deferred show pattern (1.5s QTimer) respects OBS DockState layout serialization.
 - **PluginEntry** (`obs_plugin_entry.cpp`) - OBS module lifecycle (`obs_module_load`/`obs_module_unload`), 500ms tick callback, action dispatch from dock UI back to native code, scene prefs persistence via `dock_scene_prefs.json`.
 
 ### Added - Go Control Plane (`control-plane/`)
 
-- **srtla-receiver relay integration** - EC2 relay instances now auto-install Docker + [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) via user-data bootstrap script.
-- **User-data bootstrap** (`scripts/relay-user-data.sh`) - installs Docker + Docker Compose on AL2023, downloads and runs srtla-receiver containers. ~2-3 min boot time.
-- **AWS provisioner** (`internal/relay/aws.go`) - user-data script embedded as const, base64-encoded for `RunInstances`. SRT port changed from 9000 to 5000 (SRTLA bonded ingest).
+- **srtla-receiver relay integration** - Relay instances now auto-install Docker + [OpenIRL srtla-receiver](https://github.com/OpenIRL/srtla-receiver) via user-data bootstrap script.
+- **User-data bootstrap** (`scripts/relay-user-data.sh`) - installs Docker + Docker Compose on Linux, downloads and runs srtla-receiver containers. ~2-3 min boot time.
+- **Cloud provisioner** (`internal/relay/aws.go`) - user-data script embedded as const, base64-encoded for instance launch. SRT port changed from 9000 to 5000 (SRTLA bonded ingest).
 - **Security group** (`telemy-relay-sg`) - UDP 5000 (SRTLA ingest), UDP 4000 (SRT player), UDP 4001 (SRT direct), TCP 3000 (management UI, restricted), TCP 8090 (backend API, restricted).
 
 ### Added - Dock UI
@@ -151,6 +151,6 @@ All notable changes to telemy-v0.0.5 will be documented in this file.
 
 ### Infrastructure
 
-- Terminated 2 stale bare EC2 relay instances (no SRT software)
+- Cleaned up stale relay instances
 - Moved `control-plane/` and `docs/` from `telemy-v0.0.3/` to `telemy-v0.0.4/`
 - v0.0.3 archived with tag on GitHub + GitLab

@@ -23,9 +23,9 @@ static std::string MakeFullSessionJson() {
             "instance_id": "i-0123456789abcdef0",
             "provision_step": "complete",
             "relay": {
-                "public_ip": "44.237.197.131",
+                "public_ip": "198.51.100.1",
                 "srt_port": 5000,
-                "relay_hostname": "k7mx2p.relay.telemyapp.com"
+                "relay_hostname": "abc123.relay.example.com"
             },
             "credentials": {
                 "pair_token": "tok-secret"
@@ -50,9 +50,9 @@ TEST_CASE("ParseSessionResponse: full valid JSON", "[relay][parse]") {
     CHECK(s.session_id == "ses-abc123");
     CHECK(s.status == "active");
     CHECK(s.region == "us-west-2");
-    CHECK(s.public_ip == "44.237.197.131");
+    CHECK(s.public_ip == "198.51.100.1");
     CHECK(s.srt_port == 5000);
-    CHECK(s.relay_hostname == "k7mx2p.relay.telemyapp.com");
+    CHECK(s.relay_hostname == "abc123.relay.example.com");
     CHECK(s.pair_token == "tok-secret");
     CHECK(s.instance_id == "i-0123456789abcdef0");
     CHECK(s.grace_window_seconds == 300);
