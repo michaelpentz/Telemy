@@ -320,15 +320,26 @@ static std::string fmt(const char* format, Args... args) {
 // UpnpClient implementation
 // ---------------------------------------------------------------------------
 
+UpnpClient::UpnpClient() {
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) == 0) {
+        wsa_initialized_ = true;
+    } else {
+        UPNP_LOG(LOG_WARNING, "WSAStartup failed in constructor");
+    }
+}
+
 UpnpClient::~UpnpClient() {
     StopRefreshLoop();
+    if (wsa_initialized_) {
+        WSACleanup();
+        wsa_initialized_ = false;
+    }
 }
 
 bool UpnpClient::Discover() {
-    // Initialize Winsock (idempotent if already initialized).
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        UPNP_LOG(LOG_WARNING, "WSAStartup failed");
+    if (!wsa_initialized_) {
+        UPNP_LOG(LOG_WARNING, "Winsock not initialized");
         return false;
     }
 
@@ -336,7 +347,6 @@ bool UpnpClient::Discover() {
     std::string local_ip = getLocalIP();
     if (local_ip.empty()) {
         UPNP_LOG(LOG_WARNING, "could not determine local IP");
-        WSACleanup();
         return false;
     }
 
@@ -344,7 +354,6 @@ bool UpnpClient::Discover() {
     SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (s == INVALID_SOCKET) {
         UPNP_LOG(LOG_WARNING, "SSDP socket creation failed");
-        WSACleanup();
         return false;
     }
 
@@ -363,7 +372,6 @@ bool UpnpClient::Discover() {
     if (sent <= 0) {
         UPNP_LOG(LOG_WARNING, "SSDP M-SEARCH send failed");
         closesocket(s);
-        WSACleanup();
         return false;
     }
 
@@ -404,7 +412,6 @@ bool UpnpClient::Discover() {
 
     if (location_url.empty()) {
         UPNP_LOG(LOG_WARNING, "no UPnP gateway discovered");
-        WSACleanup();
         return false;
     }
 
@@ -413,7 +420,6 @@ bool UpnpClient::Discover() {
     if (desc_xml.empty()) {
         UPNP_LOG(LOG_WARNING, "failed to fetch device description from %s",
                  location_url.c_str());
-        WSACleanup();
         return false;
     }
 
@@ -447,7 +453,6 @@ bool UpnpClient::Discover() {
 
     if (found_control_url.empty()) {
         UPNP_LOG(LOG_WARNING, "no WANIPConnection controlURL in device XML");
-        WSACleanup();
         return false;
     }
 
@@ -461,7 +466,6 @@ bool UpnpClient::Discover() {
         UrlParts loc_parts;
         if (!parseUrl(location_url, loc_parts)) {
             UPNP_LOG(LOG_WARNING, "failed to parse location URL");
-            WSACleanup();
             return false;
         }
         std::string base = (loc_parts.use_tls ? "https://" : "http://") +
@@ -490,12 +494,13 @@ bool UpnpClient::Discover() {
 bool UpnpClient::MapPort(uint16_t internal_port, uint16_t external_port,
                           const std::string& description) {
     {
-        std::lock_guard<std::mutex> lk(mu_);
+        std::unique_lock<std::mutex> lk(mu_);
         if (!discovered_) {
             // Release lock before discovery (network I/O).
-            mu_.unlock();
+            lk.unlock();
             if (!Discover()) return false;
-            mu_.lock();
+            // Lock is not re-acquired here — we read state in a fresh
+            // lock_guard below, avoiding double-lock issues.
         }
     }
 

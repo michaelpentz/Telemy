@@ -16,7 +16,7 @@ struct UpnpMapping {
 
 class UpnpClient {
 public:
-    UpnpClient() = default;
+    UpnpClient();
     ~UpnpClient();
 
     // Try to map a UDP port. Returns true on success.
@@ -34,13 +34,13 @@ public:
                           int refresh_interval_sec = 1800);
     void StopRefreshLoop();
 
-    bool IsAvailable() const { return available_; }
-    bool IsMapped() const { return mapped_; }
+    bool IsAvailable() const { return available_.load(std::memory_order_acquire); }
+    bool IsMapped() const { return mapped_.load(std::memory_order_acquire); }
 
 private:
     mutable std::mutex mu_;
-    bool available_ = false;
-    bool mapped_ = false;
+    std::atomic<bool> available_{false};
+    std::atomic<bool> mapped_{false};
     std::string external_ip_;
 
     std::atomic<bool> refresh_running_{false};
@@ -51,6 +51,8 @@ private:
     std::string control_url_;
     std::string service_type_;
     std::string lan_address_;
+
+    bool wsa_initialized_ = false;
 
     bool Discover();
 };
