@@ -67,6 +67,9 @@ static void telemy_source_update(void* data, obs_data_t* settings) {
         obs_data_set_bool(ms, "restart_on_activate", true);
         obs_data_set_bool(ms, "close_when_inactive", false);
         d->media_source = obs_source_create_private("ffmpeg_source", "telemy_internal", ms);
+        if (!d->media_source) {
+            blog(LOG_WARNING, "[telemy-source] Failed to create internal ffmpeg_source");
+        }
         obs_data_release(ms);
     }
 }
@@ -134,8 +137,7 @@ void telemy_source_register() {
     struct obs_source_info info = {};
     info.id = "telemy_source";
     info.type = OBS_SOURCE_TYPE_INPUT;
-    info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_AUDIO |
-                        OBS_SOURCE_DO_NOT_DUPLICATE;
+    info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_DO_NOT_DUPLICATE;
     info.get_name = telemy_source_get_name;
     info.create = telemy_source_create;
     info.destroy = telemy_source_destroy;

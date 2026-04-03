@@ -133,7 +133,7 @@ void BandwidthChecker::CalculateHeadroom(BandwidthReport& report) {
 
     if (report.upload_mbps <= 0) {
         report.verdict = "unknown";
-        report.message = "Speed test not available. Check your upload speed manually.";
+        report.message = "Speed test not available — bandwidth headroom cannot be calculated.";
         return;
     }
 

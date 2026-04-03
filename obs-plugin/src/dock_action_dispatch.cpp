@@ -2310,13 +2310,8 @@ bool DispatchDockAction(const std::string& action_json,
         blog(LOG_INFO,
              "[telemy-obs-plugin] dock action self_hosted_start: request_id=%s",
              request_id.c_str());
-        std::string conn_id;
-        (void)TryExtractJsonStringField(action_json, "connection_id", &conn_id);
-        if (conn_id.empty()) {
-            EmitDockActionResult(action_type, request_id, "rejected", false,
-                                 "missing_connection_id", "");
-            return false;
-        }
+        // Generate connection_id server-side so it is registered in ConnectionManager
+        std::string conn_id = "self_hosted_" + request_id;
         const std::string jwt = CurrentControlPlaneJwtForActions();
         if (jwt.empty()) {
             EmitDockActionResult(action_type, request_id, "failed", false,

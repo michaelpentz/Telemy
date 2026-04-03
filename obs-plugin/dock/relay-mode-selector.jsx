@@ -158,13 +158,11 @@ export function SelfHostedDiagnostics({ onAction, onComplete, onCancel }) {
         if (started) return;
         setStarted(true);
 
-        // Send self_hosted_start action — the C++ side runs the diagnostic pipeline
-        // and emits progress updates as dock action results
-        const connId = 'self_hosted_' + Date.now();
+        // Send self_hosted_start action — the C++ side generates the connection_id,
+        // runs the diagnostic pipeline, and emits progress updates as dock action results
         onAction({
             type: 'self_hosted_start',
-            requestId: 'diag_' + connId,
-            connection_id: connId,
+            requestId: 'diag_' + Date.now(),
         });
 
         // Simulate step progress for now — in production, these come from dock action results
@@ -187,7 +185,6 @@ export function SelfHostedDiagnostics({ onAction, onComplete, onCancel }) {
 
             onComplete({
                 success: true,
-                connectionId: connId,
                 fqdn: 'abc123.relay.telemyapp.com',
                 port: 5000,
             });
