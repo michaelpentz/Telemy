@@ -2334,6 +2334,11 @@ bool DispatchDockAction(const std::string& action_json,
             return false;
         }
         const std::string jwt = CurrentControlPlaneJwtForActions();
+        if (jwt.empty()) {
+            EmitDockActionResult(action_type, request_id, "failed", false,
+                                 "no_control_plane_auth", "");
+            return false;
+        }
         g_connection_manager.StopSelfHostedAsync(conn_id, jwt);
         return true;
     }

@@ -27,6 +27,7 @@
 
 // Forward declarations — defined in obs_plugin_entry.cpp
 std::string BuildRelaySessionDetailJson(const telemy::RelaySession& session);
+std::string JsonEscape(const std::string& input);
 bool TryExtractJsonStringField(
     const std::string& json_text,
     const char* field_name,
@@ -51,6 +52,19 @@ std::string ToLower(std::string value)
 bool ContainsLabel(const std::string& haystack, const char* needle)
 {
     return haystack.find(needle) != std::string::npos;
+}
+
+// Returns true if every character is alphanumeric, hyphen, dot, or underscore.
+// Used to validate values before embedding in URL paths.
+bool IsUrlPathSafe(const std::string& value)
+{
+    for (char ch : value) {
+        if (!std::isalnum(static_cast<unsigned char>(ch)) &&
+            ch != '-' && ch != '.' && ch != '_') {
+            return false;
+        }
+    }
+    return !value.empty();
 }
 
 std::pair<std::string, std::string> ClassifyAsnOrg(const std::string& asn_org, std::size_t index)
@@ -1130,9 +1144,9 @@ void ConnectionManager::StartSelfHostedAsync(const std::string& connection_id,
                 {
                     const std::wstring whost(api_host_.begin(), api_host_.end());
                     const std::string body =
-                        "{\"external_ip\":\"" + external_ip + "\""
+                        "{\"external_ip\":\"" + JsonEscape(external_ip) + "\""
                         ",\"port\":" + std::to_string(srtla_port) +
-                        ",\"connection_id\":\"" + conn_id + "\"}";
+                        ",\"connection_id\":\"" + JsonEscape(conn_id) + "\"}";
                     auto resp = http_->Post(
                         whost,
                         L"/api/v1/relay/self-hosted/register",
@@ -1164,7 +1178,7 @@ void ConnectionManager::StartSelfHostedAsync(const std::string& connection_id,
                 {
                     const std::wstring whost(api_host_.begin(), api_host_.end());
                     const std::string body =
-                        "{\"fqdn\":\"" + fqdn + "\""
+                        "{\"fqdn\":\"" + JsonEscape(fqdn) + "\""
                         ",\"port\":" + std::to_string(srtla_port) + "}";
                     try {
                         auto resp = http_->Post(
@@ -1211,13 +1225,13 @@ void ConnectionManager::StartSelfHostedAsync(const std::string& connection_id,
 
                 // 9. Emit success.
                 const std::string detail =
-                    "{\"fqdn\":\"" + fqdn + "\""
-                    ",\"dns_slug\":\"" + dns_slug + "\""
+                    "{\"fqdn\":\"" + JsonEscape(fqdn) + "\""
+                    ",\"dns_slug\":\"" + JsonEscape(dns_slug) + "\""
                     ",\"srtla_port\":" + std::to_string(srtla_port) +
                     ",\"srt_port\":" + std::to_string(srt_port) +
-                    ",\"external_ip\":\"" + external_ip + "\""
+                    ",\"external_ip\":\"" + JsonEscape(external_ip) + "\""
                     ",\"upnp\":" + (upnp_ok ? "true" : "false") +
-                    ",\"connectivity\":\"" + connectivity + "\"}";
+                    ",\"connectivity\":\"" + JsonEscape(connectivity) + "\"}";
                 blog(LOG_INFO,
                      "[telemy-cm] self_hosted_start completed: conn=%s fqdn=%s port=%u",
                      conn_id.c_str(), fqdn.c_str(),
@@ -1259,15 +1273,30 @@ void ConnectionManager::StopSelfHostedAsync(const std::string& connection_id,
 
     EmitDockActionResult("self_hosted_stop", conn_id, "queued", true, "", "queued_native");
 
+    // Join any previous stop worker outside the lock to avoid blocking
+    // while holding worker_mu_ (same pattern as StartManagedRelayAsync).
+    {
+        std::thread old_stop_worker;
+        {
+            std::lock_guard<std::mutex> lk(worker_mu_);
+            std::string worker_key = conn_id;
+            auto it = workers_.find(worker_key);
+            if (it != workers_.end() && it->second &&
+                it->second->stop_worker.joinable()) {
+                old_stop_worker = std::move(it->second->stop_worker);
+            }
+        }
+        if (old_stop_worker.joinable()) {
+            old_stop_worker.join();
+        }
+    }
+
     {
         std::lock_guard<std::mutex> lk(worker_mu_);
         std::string worker_key = conn_id;
         auto& worker = workers_[worker_key];
         if (!worker) {
             worker = std::make_unique<ConnectionWorker>();
-        }
-        if (worker->stop_worker.joinable()) {
-            worker->stop_worker.join();
         }
         worker->stop_worker = std::thread([this, conn_id, token, srtla_port]() {
             try {
@@ -1283,14 +1312,20 @@ void ConnectionManager::StopSelfHostedAsync(const std::string& connection_id,
                 // 3. Deregister from control plane.
                 if (http_ && !api_host_.empty()) {
                     try {
-                        const std::wstring whost(api_host_.begin(), api_host_.end());
-                        const std::wstring wpath =
-                            L"/api/v1/relay/self-hosted/" +
-                            std::wstring(conn_id.begin(), conn_id.end());
-                        // Use POST with empty body to deregister (no DELETE on HttpsClient).
-                        const std::string body = "{\"action\":\"deregister\"}";
-                        http_->Post(whost, wpath, body,
-                                    std::wstring(token.begin(), token.end()));
+                        if (!IsUrlPathSafe(conn_id)) {
+                            blog(LOG_WARNING,
+                                 "[telemy-cm] self_hosted_stop: invalid conn_id for URL path conn=%s",
+                                 conn_id.c_str());
+                        } else {
+                            const std::wstring whost(api_host_.begin(), api_host_.end());
+                            const std::wstring wpath =
+                                L"/api/v1/relay/self-hosted/" +
+                                std::wstring(conn_id.begin(), conn_id.end());
+                            // Use POST with empty body to deregister (no DELETE on HttpsClient).
+                            const std::string body = "{\"action\":\"deregister\"}";
+                            http_->Post(whost, wpath, body,
+                                        std::wstring(token.begin(), token.end()));
+                        }
                     } catch (...) {
                         blog(LOG_WARNING,
                              "[telemy-cm] self_hosted_stop: deregister call failed conn=%s",
