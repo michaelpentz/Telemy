@@ -1,3 +1,4 @@
+#include "telemy_source.h"
 #include "dock_js_bridge_api.h"
 #include "chatbot_runtime.h"
 #include "config_vault.h"
@@ -1359,6 +1360,8 @@ extern "C" bool telemy_obs_shim_receive_dock_action_json(const char* action_json
 
 bool obs_module_load(void) {
     blog(LOG_INFO, "[telemy-obs-plugin] module load");
+
+    telemy_source_register();
 
     g_vault.Load();
     g_config.LoadFromDisk();
