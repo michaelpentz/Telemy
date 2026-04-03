@@ -18,24 +18,9 @@ CMakeSettings.json
 Thumbs.db
 .DS_Store
 
-# Go
-control-plane/bin/
-control-plane/tmp/
-control-plane/dist/
-
-# Coordination docs (outside repo)
-HANDOFF_STATUS.md
-CURRENT_STATUS.md
-HANDOFF_HISTORY.md
-HANDOFF_STATUS_ARCHIVE.md
-AGENT_RELAY.md
-GEMINI_RELAY.md
-
-# Internal docs (kept locally, not pushed)
-docs/
-
-control-plane/.gocache/
-control-plane/.gotmp/
+# Dock source (lives in private repo)
+obs-plugin/dock/*.jsx
+obs-plugin/dock/use-simulated-state.js
 
 # Dock dev dependencies
 obs-plugin/dock/node_modules/
@@ -44,3 +29,6 @@ obs-plugin/dock/node_modules/
 .env
 */.env
 **/.env
+
+# Internal docs
+docs/

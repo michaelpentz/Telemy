@@ -1,28 +1,28 @@
-# Telemy v0.0.5
+# Telemy OBS Plugin
 
-IRL streaming platform for OBS — native telemetry, relay management, and bonded stream health monitoring.
+Open-source OBS plugin for IRL streaming telemetry, relay management, and bonded stream health monitoring.
 
 ## What It Is
 
-Telemy is a single-DLL OBS plugin (`telemy-obs-plugin.dll`) that runs entirely inside the OBS process. It collects metrics directly from the OBS C API, manages relay connections (managed pool relays and Bring Your Own Relay), and drives a React dock UI via CEF JavaScript injection.
+Telemy is a single-DLL OBS plugin (`telemy-obs-plugin.dll`) that runs entirely inside the OBS process. It collects metrics directly from the OBS C API, manages SRT/SRTLA relay connections, and drives a dock UI via CEF JavaScript injection.
 
 No standalone process. No IPC. No Rust dependency.
 
-## Components
+## Features
 
-| Component | Description |
-|-----------|-------------|
-| `obs-plugin/` | C++ OBS plugin — metrics collection, relay management, dock hosting |
-| `control-plane/` | Go backend — relay provisioning, JWT auth, session state |
-| `srtla-fork/` | Forked `srtla_rec` with per-link stats + ASN lookup |
-| `srtla-receiver-fork/` | Forked Docker image (`telemyapp/srtla-receiver`) |
-| `obs-plugin/dock/` | React dock UI source (esbuild bundle) |
+- **Real-time telemetry** — CPU, GPU (NVIDIA NVML), memory, encoder stats, per-output bitrate monitoring
+- **Relay management** — managed pool relays and Bring Your Own Relay (BYOR) support
+- **Bonded stream health** — per-link SRTLA stats, connection quality indicators
+- **Dock UI** — embedded React panel in OBS with scene linking, encoder health bars, relay controls
+- **Secure config** — DPAPI-encrypted vault for tokens and credentials
 
-## Quick Build
+## Build from Source
 
-From `telemy-v0.0.5/obs-plugin/`:
+Requires: OBS Studio SDK headers, Qt6, CMake, MSVC
 
 ```bash
+cd obs-plugin
+
 cmake -B build-obs-cef \
   -DTELEMY_BUILD_OBS_PLUGIN=ON \
   -DTELEMY_ENABLE_OBS_BROWSER_DOCK_HOST=ON \
@@ -36,19 +36,17 @@ cmake -B build-obs-cef \
 cmake --build build-obs-cef --config Release
 ```
 
-**Deploy**: Copy `telemy-obs-plugin.dll` to `<OBS>/obs-plugins/64bit/`. Copy dock assets to `<OBS>/data/obs-plugins/telemy-obs-plugin/`. Restart OBS.
+## Install
 
-## Dock JS Build
+1. Copy `telemy-obs-plugin.dll` to `<OBS>/obs-plugins/64bit/`
+2. Copy dock assets to `<OBS>/data/obs-plugins/telemy-obs-plugin/`
+3. Restart OBS
 
-From `telemy-v0.0.5/obs-plugin/dock/`:
+## Hosted Relay Service
 
-```bash
-NODE_PATH=../../../dock-preview/node_modules npx esbuild telemy-dock-entry.jsx \
-  --bundle --format=iife --jsx=automatic --outfile=telemy-dock-app.js \
-  --target=es2020 --minify
-```
+For managed relay infrastructure (no self-hosting required), visit [telemyapp.com](https://telemyapp.com).
 
-## Architecture Overview
+## Architecture
 
 ```
 OBS C API
@@ -58,32 +56,24 @@ NVML                                                |                     |
                                           ConnectionManager         Dock UI (React)
                                                |
                                                v
-                                          RelayClient --> HTTPS --> Go Control Plane
+                                          RelayClient --> HTTPS --> Control Plane API
 ```
 
-Key design decisions:
-- **ConnectionManager** owns all `RelayClient` instances and runs background stats polling so the OBS tick thread is never blocked by network I/O.
-- **ConfigVault** stores sensitive fields (JWT tokens, BYOR stream keys) in DPAPI-encrypted `vault.json`; non-sensitive settings in plain `config.json`.
-- **BYOR support** — users can connect their own relay (no account required) via `ConnectDirect`/`DisconnectDirect`, bypassing managed provisioning.
-
-See `docs/ARCHITECTURE.md` for the full architecture reference.
-
-## Documentation
-
-| Doc | Description |
-|-----|-------------|
-| `docs/ARCHITECTURE.md` | Component architecture, data flows, bridge contract |
-| `docs/API_SPEC_v1.md` | Control plane REST API reference |
-| `docs/DB_SCHEMA_v1.md` | PostgreSQL schema |
-| `docs/AUTH_ENTITLEMENT_MODEL.md` | Auth layers and relay access model |
-| `docs/RELAY_DEPLOYMENT.md` | Relay pool deployment guide |
-| `docs/STATE_MACHINE_v1.md` | IRL/Studio state machine spec |
-| `docs/QA_CHECKLIST_RELAY_TELEMETRY.md` | QA test checklist |
-| `CHANGELOG.md` | Version history |
-| `RELEASE_NOTES.md` | Release summaries |
+- **MetricsCollector** — polls OBS C API, Win32 system stats, NVIDIA NVML every 500ms
+- **ConnectionManager** — manages RelayClient instances, background stats polling
+- **ConfigVault** — DPAPI-encrypted storage for sensitive fields
+- **DockHost** — CEF browser dock panel with JS bridge for telemetry injection
 
 ## Platform
 
-- **Windows only** — Win32 DPAPI, WinHTTP, `GetSystemTimes`/`GlobalMemoryStatusEx`
+- **Windows only** — Win32 DPAPI, WinHTTP, Windows system APIs
 - **OBS Studio** with browser source support (CEF required)
 - **NVIDIA GPU optional** — NVML metrics degrade gracefully if absent
+
+## Contributing
+
+Issues and pull requests welcome. Please open an issue before starting large changes.
+
+## License
+
+[MIT](LICENSE)
