@@ -12,7 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "embedded_srtla.h"
 #include "relay_client.h"
+#include "upnp_client.h"
 
 namespace telemy {
 
@@ -51,7 +53,7 @@ struct ConnectionSnapshot {
 struct RelayConnectionConfig {
     std::string id;               // UUID
     std::string name;             // User display name
-    std::string type;             // "byor" or "managed"
+    std::string type;             // "byor", "managed", or "self_hosted"
     // BYOR fields (sensitive — stored in vault, keyed by id):
     std::string relay_host;
     int         relay_port = 5000;
@@ -64,6 +66,14 @@ struct RelayConnectionConfig {
     std::string session_id;
     std::string sender_url;
     std::string media_source_url;
+    // Self-hosted fields:
+    uint16_t    self_hosted_srtla_port = 0;
+    uint16_t    self_hosted_srt_port = 0;
+    std::string self_hosted_dns_slug;
+    std::string self_hosted_fqdn;
+    bool        self_hosted_upnp_active = false;
+    std::string self_hosted_external_ip;
+    std::string self_hosted_connectivity;  // "unknown", "reachable", "unreachable"
     // Runtime state (not persisted):
     std::string status;           // "idle", "provisioning", "ready", "live", "error"
     std::string error_msg;
@@ -168,6 +178,10 @@ public:
     void ConnectDirect(const std::string& host, int port, const std::string& stream_id);
     void DisconnectDirect();
 
+    // ── Self-hosted relay lifecycle ─────────────────────────────────────
+    void StartSelfHostedAsync(const std::string& connection_id, const std::string& jwt);
+    void StopSelfHostedAsync(const std::string& connection_id, const std::string& jwt);
+
     // Cancel any in-flight relay_start worker(s).
     void CancelPendingStart();
 
@@ -218,6 +232,10 @@ private:
     mutable std::mutex                                              connections_mu_;
     std::vector<RelayConnectionConfig>                             connections_;
     std::unordered_map<std::string, std::shared_ptr<RelayClient>> active_clients_;
+
+    // Self-hosted relay subsystems.
+    EmbeddedSrtla embedded_srtla_;
+    UpnpClient    upnp_;
 
     // Dependencies (set by Initialize).
     Vault*       vault_                = nullptr;

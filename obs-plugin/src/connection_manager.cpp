@@ -25,8 +25,12 @@
 #include <string>
 #include <utility>
 
-// Forward declaration — defined in obs_plugin_entry.cpp
+// Forward declarations — defined in obs_plugin_entry.cpp
 std::string BuildRelaySessionDetailJson(const telemy::RelaySession& session);
+bool TryExtractJsonStringField(
+    const std::string& json_text,
+    const char* field_name,
+    std::string* out_value);
 
 namespace telemy {
 
@@ -247,6 +251,10 @@ void ConnectionManager::Shutdown()
         }
         workers_.clear();
     }
+
+    // Stop self-hosted subsystems.
+    embedded_srtla_.StopAll();
+    upnp_.StopRefreshLoop();
 
     // Destroy BYOR relay client.
     {
@@ -967,6 +975,362 @@ void ConnectionManager::AutoProvisionSavedConnections(const std::string& jwt,
     }
 }
 
+// ---------------------------------------------------------------------------
+// Self-hosted relay lifecycle
+// ---------------------------------------------------------------------------
+
+void ConnectionManager::StartSelfHostedAsync(const std::string& connection_id,
+                                             const std::string& jwt)
+{
+    if (!initialized_ || connection_id.empty()) {
+        return;
+    }
+
+    const std::string conn_id = connection_id;
+    const std::string token = jwt;
+
+    // Cancel any in-flight start worker for this connection and join it.
+    {
+        std::thread old_worker;
+        {
+            std::lock_guard<std::mutex> lk(worker_mu_);
+            auto wit = workers_.find(conn_id);
+            if (wit != workers_.end() && wit->second->start_worker.joinable()) {
+                wit->second->start_cancel.store(true);
+                old_worker = std::move(wit->second->start_worker);
+            }
+        }
+        if (old_worker.joinable()) {
+            old_worker.join();
+            blog(LOG_INFO,
+                 "[telemy-cm] self_hosted_start: cancelled previous worker conn=%s",
+                 conn_id.c_str());
+        }
+    }
+
+    if (!initialized_) {
+        return;
+    }
+
+    SetConnectionStatus(conn_id, "provisioning", "");
+    EmitDockActionResult("self_hosted_start", conn_id, "provisioning", true, "", "");
+
+    {
+        std::lock_guard<std::mutex> lk(worker_mu_);
+        auto& worker = workers_[conn_id];
+        if (!worker) {
+            worker = std::make_unique<ConnectionWorker>();
+        }
+        worker->start_cancel.store(false);
+        std::atomic<bool>* cancel_flag = &worker->start_cancel;
+
+        // Look up label from connection config.
+        std::string label;
+        {
+            std::lock_guard<std::mutex> cl(connections_mu_);
+            for (const auto& c : connections_) {
+                if (c.id == conn_id) {
+                    label = c.name;
+                    break;
+                }
+            }
+        }
+
+        worker->start_worker = std::thread([this, conn_id, token, label, cancel_flag]() {
+            try {
+                // 1. Allocate ports.
+                const uint16_t srtla_port = embedded_srtla_.AllocateSrtlaPort();
+                const uint16_t srt_port = embedded_srtla_.AllocateSrtPort();
+                if (srtla_port == 0 || srt_port == 0) {
+                    blog(LOG_WARNING,
+                         "[telemy-cm] self_hosted_start failed: port allocation conn=%s",
+                         conn_id.c_str());
+                    SetConnectionStatus(conn_id, "error", "port_allocation_failed");
+                    EmitDockActionResult("self_hosted_start", conn_id, "failed", false,
+                                         "port_allocation_failed", "");
+                    return;
+                }
+
+                if (cancel_flag->load()) return;
+
+                // 2. Start srtla instance.
+                if (!embedded_srtla_.StartInstance(conn_id, label, srtla_port, srt_port)) {
+                    blog(LOG_WARNING,
+                         "[telemy-cm] self_hosted_start failed: srtla start conn=%s",
+                         conn_id.c_str());
+                    SetConnectionStatus(conn_id, "error", "srtla_start_failed");
+                    EmitDockActionResult("self_hosted_start", conn_id, "failed", false,
+                                         "srtla_start_failed", "");
+                    return;
+                }
+
+                if (cancel_flag->load()) {
+                    embedded_srtla_.StopInstance(conn_id);
+                    return;
+                }
+
+                // 3. Attempt UPnP port mapping.
+                bool upnp_ok = upnp_.MapPort(srtla_port, srtla_port, "Telemy SRTLA");
+
+                // 4. Get external IP — prefer UPnP, fall back to control plane.
+                std::string external_ip;
+                if (upnp_ok) {
+                    external_ip = upnp_.GetExternalIP();
+                }
+                if (external_ip.empty() && http_) {
+                    // Fall back: query control plane for our external IP.
+                    try {
+                        const std::wstring whost(api_host_.begin(), api_host_.end());
+                        auto resp = http_->Get(whost, L"/api/v1/ip",
+                                               std::wstring(token.begin(), token.end()));
+                        if (resp.status_code == 200) {
+                            // Response body is the IP as plain text or JSON {"ip":"..."}.
+                            std::string ip_str;
+                            if (TryExtractJsonStringField(resp.body, "ip", &ip_str)) {
+                                external_ip = ip_str;
+                            } else {
+                                // Plain text response — trim whitespace.
+                                external_ip = resp.body;
+                                while (!external_ip.empty() &&
+                                       (external_ip.back() == '\n' ||
+                                        external_ip.back() == '\r' ||
+                                        external_ip.back() == ' ')) {
+                                    external_ip.pop_back();
+                                }
+                            }
+                        }
+                    } catch (...) {
+                        blog(LOG_WARNING,
+                             "[telemy-cm] self_hosted_start: external IP fallback failed conn=%s",
+                             conn_id.c_str());
+                    }
+                }
+
+                if (cancel_flag->load()) {
+                    if (upnp_ok) upnp_.UnmapPort(srtla_port);
+                    embedded_srtla_.StopInstance(conn_id);
+                    return;
+                }
+
+                if (external_ip.empty()) {
+                    blog(LOG_WARNING,
+                         "[telemy-cm] self_hosted_start failed: no external IP conn=%s",
+                         conn_id.c_str());
+                    if (upnp_ok) upnp_.UnmapPort(srtla_port);
+                    embedded_srtla_.StopInstance(conn_id);
+                    SetConnectionStatus(conn_id, "error", "no_external_ip");
+                    EmitDockActionResult("self_hosted_start", conn_id, "failed", false,
+                                         "no_external_ip", "");
+                    return;
+                }
+
+                // 5. Register with control plane.
+                std::string dns_slug;
+                std::string fqdn;
+                {
+                    const std::wstring whost(api_host_.begin(), api_host_.end());
+                    const std::string body =
+                        "{\"external_ip\":\"" + external_ip + "\""
+                        ",\"port\":" + std::to_string(srtla_port) +
+                        ",\"connection_id\":\"" + conn_id + "\"}";
+                    auto resp = http_->Post(
+                        whost,
+                        L"/api/v1/relay/self-hosted/register",
+                        body,
+                        std::wstring(token.begin(), token.end()));
+                    if (resp.status_code != 200 && resp.status_code != 201) {
+                        blog(LOG_WARNING,
+                             "[telemy-cm] self_hosted_start failed: register status=%d conn=%s",
+                             resp.status_code, conn_id.c_str());
+                        if (upnp_ok) upnp_.UnmapPort(srtla_port);
+                        embedded_srtla_.StopInstance(conn_id);
+                        SetConnectionStatus(conn_id, "error", "register_failed");
+                        EmitDockActionResult("self_hosted_start", conn_id, "failed", false,
+                                             "register_failed", "");
+                        return;
+                    }
+                    (void)TryExtractJsonStringField(resp.body, "dns_slug", &dns_slug);
+                    (void)TryExtractJsonStringField(resp.body, "fqdn", &fqdn);
+                }
+
+                if (cancel_flag->load()) {
+                    if (upnp_ok) upnp_.UnmapPort(srtla_port);
+                    embedded_srtla_.StopInstance(conn_id);
+                    return;
+                }
+
+                // 6. Probe connectivity.
+                std::string connectivity = "unknown";
+                {
+                    const std::wstring whost(api_host_.begin(), api_host_.end());
+                    const std::string body =
+                        "{\"fqdn\":\"" + fqdn + "\""
+                        ",\"port\":" + std::to_string(srtla_port) + "}";
+                    try {
+                        auto resp = http_->Post(
+                            whost,
+                            L"/api/v1/relay/self-hosted/probe",
+                            body,
+                            std::wstring(token.begin(), token.end()));
+                        if (resp.status_code == 200) {
+                            std::string result;
+                            if (TryExtractJsonStringField(resp.body, "connectivity", &result)) {
+                                connectivity = result;
+                            }
+                        }
+                    } catch (...) {
+                        blog(LOG_WARNING,
+                             "[telemy-cm] self_hosted_start: probe failed conn=%s",
+                             conn_id.c_str());
+                    }
+                }
+
+                // 7. Start UPnP refresh loop.
+                if (upnp_ok) {
+                    upnp_.StartRefreshLoop(srtla_port, srtla_port);
+                }
+
+                // 8. Update connection config.
+                {
+                    std::lock_guard<std::mutex> cl(connections_mu_);
+                    for (auto& c : connections_) {
+                        if (c.id == conn_id) {
+                            c.self_hosted_srtla_port = srtla_port;
+                            c.self_hosted_srt_port = srt_port;
+                            c.self_hosted_dns_slug = dns_slug;
+                            c.self_hosted_fqdn = fqdn;
+                            c.self_hosted_upnp_active = upnp_ok;
+                            c.self_hosted_external_ip = external_ip;
+                            c.self_hosted_connectivity = connectivity;
+                            break;
+                        }
+                    }
+                }
+                SetConnectionStatus(conn_id, "ready", "");
+                stats_cv_.notify_all();
+
+                // 9. Emit success.
+                const std::string detail =
+                    "{\"fqdn\":\"" + fqdn + "\""
+                    ",\"dns_slug\":\"" + dns_slug + "\""
+                    ",\"srtla_port\":" + std::to_string(srtla_port) +
+                    ",\"srt_port\":" + std::to_string(srt_port) +
+                    ",\"external_ip\":\"" + external_ip + "\""
+                    ",\"upnp\":" + (upnp_ok ? "true" : "false") +
+                    ",\"connectivity\":\"" + connectivity + "\"}";
+                blog(LOG_INFO,
+                     "[telemy-cm] self_hosted_start completed: conn=%s fqdn=%s port=%u",
+                     conn_id.c_str(), fqdn.c_str(),
+                     static_cast<unsigned>(srtla_port));
+                EmitDockActionResult("self_hosted_start", conn_id, "completed", true, "", detail);
+            } catch (const std::exception& e) {
+                blog(LOG_WARNING,
+                     "[telemy-cm] self_hosted_start exception: conn=%s error=%s",
+                     conn_id.c_str(), e.what());
+                embedded_srtla_.StopInstance(conn_id);
+                SetConnectionStatus(conn_id, "error", e.what());
+                EmitDockActionResult("self_hosted_start", conn_id, "failed", false, e.what(), "");
+            }
+        });
+    }
+}
+
+void ConnectionManager::StopSelfHostedAsync(const std::string& connection_id,
+                                            const std::string& jwt)
+{
+    if (connection_id.empty()) {
+        return;
+    }
+
+    const std::string conn_id = connection_id;
+    const std::string token = jwt;
+
+    // Read self-hosted fields before launching the stop thread.
+    uint16_t srtla_port = 0;
+    {
+        std::lock_guard<std::mutex> cl(connections_mu_);
+        for (const auto& c : connections_) {
+            if (c.id == conn_id) {
+                srtla_port = c.self_hosted_srtla_port;
+                break;
+            }
+        }
+    }
+
+    EmitDockActionResult("self_hosted_stop", conn_id, "queued", true, "", "queued_native");
+
+    {
+        std::lock_guard<std::mutex> lk(worker_mu_);
+        std::string worker_key = conn_id;
+        auto& worker = workers_[worker_key];
+        if (!worker) {
+            worker = std::make_unique<ConnectionWorker>();
+        }
+        if (worker->stop_worker.joinable()) {
+            worker->stop_worker.join();
+        }
+        worker->stop_worker = std::thread([this, conn_id, token, srtla_port]() {
+            try {
+                // 1. Stop UPnP refresh loop and unmap port.
+                upnp_.StopRefreshLoop();
+                if (srtla_port != 0) {
+                    upnp_.UnmapPort(srtla_port);
+                }
+
+                // 2. Stop srtla instance.
+                embedded_srtla_.StopInstance(conn_id);
+
+                // 3. Deregister from control plane.
+                if (http_ && !api_host_.empty()) {
+                    try {
+                        const std::wstring whost(api_host_.begin(), api_host_.end());
+                        const std::wstring wpath =
+                            L"/api/v1/relay/self-hosted/" +
+                            std::wstring(conn_id.begin(), conn_id.end());
+                        // Use POST with empty body to deregister (no DELETE on HttpsClient).
+                        const std::string body = "{\"action\":\"deregister\"}";
+                        http_->Post(whost, wpath, body,
+                                    std::wstring(token.begin(), token.end()));
+                    } catch (...) {
+                        blog(LOG_WARNING,
+                             "[telemy-cm] self_hosted_stop: deregister call failed conn=%s",
+                             conn_id.c_str());
+                    }
+                }
+
+                // 4. Clear self-hosted fields on connection config.
+                {
+                    std::lock_guard<std::mutex> cl(connections_mu_);
+                    for (auto& c : connections_) {
+                        if (c.id == conn_id) {
+                            c.self_hosted_srtla_port = 0;
+                            c.self_hosted_srt_port = 0;
+                            c.self_hosted_dns_slug.clear();
+                            c.self_hosted_fqdn.clear();
+                            c.self_hosted_upnp_active = false;
+                            c.self_hosted_external_ip.clear();
+                            c.self_hosted_connectivity.clear();
+                            break;
+                        }
+                    }
+                }
+                SetConnectionStatus(conn_id, "idle", "");
+                stats_cv_.notify_all();
+
+                blog(LOG_INFO,
+                     "[telemy-cm] self_hosted_stop completed: conn=%s",
+                     conn_id.c_str());
+                EmitDockActionResult("self_hosted_stop", conn_id, "completed", true, "", "");
+            } catch (const std::exception& e) {
+                blog(LOG_WARNING,
+                     "[telemy-cm] self_hosted_stop exception: conn=%s error=%s",
+                     conn_id.c_str(), e.what());
+                EmitDockActionResult("self_hosted_stop", conn_id, "failed", false, e.what(), "");
+            }
+        });
+    }
+}
+
 #else  // non-OBS build stubs
 
 void ConnectionManager::StartManagedRelayAsync(const std::string&, const std::string&, int, const std::string&) {}
@@ -974,6 +1338,8 @@ void ConnectionManager::StopManagedRelayAsync(const std::string&, const std::str
 bool ConnectionManager::HasActiveSessionForConnection(const std::string&) const { return false; }
 void ConnectionManager::StopManagedRelaySync(const std::string&, const std::string&, const std::string&) {}
 void ConnectionManager::AutoProvisionSavedConnections(const std::string&, int) {}
+void ConnectionManager::StartSelfHostedAsync(const std::string&, const std::string&) {}
+void ConnectionManager::StopSelfHostedAsync(const std::string&, const std::string&) {}
 
 #endif  // TELEMY_OBS_PLUGIN_BUILD
 

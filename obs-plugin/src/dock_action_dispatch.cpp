@@ -93,6 +93,7 @@ static const std::unordered_set<std::string> kRateLimitedActions = {
     "relay_start", "relay_stop", "connection_add", "connection_remove",
     "connection_update", "auth_login_start", "auth_logout",
     "auth_refresh", "relay_migrate", "rename_stream_slot",
+    "self_hosted_start", "self_hosted_stop",
 };
 
 static bool IsActionRateLimited(const std::string& action_type) {
@@ -2302,6 +2303,43 @@ bool DispatchDockAction(const std::string& action_json,
         }
         EmitDockActionResult(action_type, request_id, "completed", true, "", "");
         EmitCurrentStatusSnapshotToDock("connection_update", false);
+        return true;
+    }
+
+    if (action_type == "self_hosted_start") {
+        blog(LOG_INFO,
+             "[telemy-obs-plugin] dock action self_hosted_start: request_id=%s",
+             request_id.c_str());
+        std::string conn_id;
+        (void)TryExtractJsonStringField(action_json, "connection_id", &conn_id);
+        if (conn_id.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false,
+                                 "missing_connection_id", "");
+            return false;
+        }
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        if (jwt.empty()) {
+            EmitDockActionResult(action_type, request_id, "failed", false,
+                                 "no_control_plane_auth", "");
+            return false;
+        }
+        g_connection_manager.StartSelfHostedAsync(conn_id, jwt);
+        return true;
+    }
+
+    if (action_type == "self_hosted_stop") {
+        blog(LOG_INFO,
+             "[telemy-obs-plugin] dock action self_hosted_stop: request_id=%s",
+             request_id.c_str());
+        std::string conn_id;
+        (void)TryExtractJsonStringField(action_json, "connection_id", &conn_id);
+        if (conn_id.empty()) {
+            EmitDockActionResult(action_type, request_id, "rejected", false,
+                                 "missing_connection_id", "");
+            return false;
+        }
+        const std::string jwt = CurrentControlPlaneJwtForActions();
+        g_connection_manager.StopSelfHostedAsync(conn_id, jwt);
         return true;
     }
 
